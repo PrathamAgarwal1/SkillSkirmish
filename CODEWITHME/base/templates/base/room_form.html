@@ -1,0 +1,115 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Room</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background: url("{% static 'images/devroom.png' %}") no-repeat center center/cover;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'Poppins', sans-serif;
+            position: relative;
+            color: white;
+        }
+
+        body::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(8px);
+            z-index: 0;
+        }
+
+        .form-container {
+            background: rgba(15, 15, 20, 0.9);
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 0 25px rgba(0, 153, 255, 0.5);
+            text-align: center;
+            backdrop-filter: blur(10px);
+            width: 100%;
+            max-width: 420px;
+            position: relative;
+            z-index: 1;
+            border: 1px solid rgba(0, 153, 255, 0.2);
+            transition: transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
+        }
+
+        .form-container:hover {
+            box-shadow: 0 0 40px rgba(0, 153, 255, 0.7);
+            transform: scale(1.02);
+        }
+
+        .form-container h2 {
+            margin-bottom: 15px;
+            font-size: 22px;
+            color: #0099ff;
+        }
+
+        input[type="text"], input[type="email"], textarea {
+            width: 100%;
+            padding: 12px;
+            margin: 10px 0;
+            border: none;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            font-size: 16px;
+            transition: all 0.3s ease-in-out;
+            border: 1px solid rgba(0, 153, 255, 0.3);
+        }
+
+        input[type="text"]:focus, input[type="email"]:focus, textarea:focus {
+            outline: none;
+            background: rgba(255, 255, 255, 0.15);
+            transform: scale(1.02);
+            box-shadow: 0 0 8px rgba(0, 153, 255, 0.6);
+        }
+
+        input[type="submit"] {
+            background: linear-gradient(135deg, #007bff, #0099ff);
+            color: white;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 16px;
+            width: 100%;
+            margin-top: 10px;
+            transition: background 0.3s, transform 0.3s, box-shadow 0.3s;
+        }
+
+        input[type="submit"]:hover {
+            background: linear-gradient(135deg, #0056b3, #007bff);
+            transform: translateY(-3px);
+            box-shadow: 0 0 10px rgba(0, 153, 255, 0.7);
+        }
+    </style>
+</head>
+<body>
+    <div class="form-container">
+        <h2>Create a New Room</h2>
+        <form method="POST">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <input type="submit" value="Create Room">
+        </form>
+    </div>
+</body>
+</html>

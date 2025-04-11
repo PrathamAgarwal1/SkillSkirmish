@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CodeCoLab Room</title>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/theme/monokai.min.css">
+
+    <style>
+        /* (Your complete CSS styles from the original code) */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: url('https://images.unsplash.com/photo-1497215728101-856f4ea42174?auto=format&fit=crop&w=1350&q=80') no-repeat center center fixed;
+            background-size: cover;
+            color: #e6f0fa;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+        }
+
+        body::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, rgba(10, 20, 40, 0.7), rgba(20, 40, 60, 0.9));
+            z-index: -1;
+            animation: lofiGlow 10s infinite alternate;
+        }
+
+        @keyframes lofiGlow {
+            0% {
+                filter: brightness(0.95);
+            }
+
+            100% {
+                filter: brightness(1.05);
+            }
+        }
+
+        .header {
+            background: linear-gradient(to right, #4682b4, #87ceeb);
+            padding: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-radius: 0 0 10px 10px;
+            box-shadow: 0 4px 10px rgba(70, 130, 180, 0.3);
+            z-index: 10;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            color: #fff;
+        }
+
+        .header .user-info {
+            font-size: 16px;
+            color: #b0c4de;
+        }
+
+        .platform-container {
+            display: flex;
+            flex-grow: 1;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 70px;
+            background: rgba(10, 20, 40, 0.8);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px 0;
+            border-right: 1px solid rgba(135, 206, 235, 0.2);
+            z-index: 10;
+        }
+
+        .sidebar-btn {
+            background: transparent;
+            border: none;
+            color: #87ceeb;
+            margin: 15px 0;
+            padding: 10px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+        }
+
+        .sidebar-btn:hover,
+        .sidebar-btn.active {
+            background: rgba(135, 206, 235, 0.2);
+            color: #6495ed;
+        }
+
+        .main-content {
+            flex-grow: 1;
+            display: flex;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .content-area {
+            flex-grow: 1;
+            padding: 20px;
+            background: rgba(10, 20, 40, 0.8);
+            margin: 15px;
+            border-radius: 10px;
+            overflow: auto;
+            display: none;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .content-area.active {
+            display: block;
+        }
+
+        .right-panel {
+            width: 320px;
+            background: rgba(10, 20, 40, 0.8);
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            border-left: 1px solid rgba(135, 206, 235, 0.2);
+            z-index: 10;
+        }
+
+        .video-panel {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            border-radius: 8px;
+            background: rgba(20, 40, 60, 0.9);
+            padding: 10px;
+        }
+
+        .video-preview {
+            width: 100%;
+            height: 220px;
+            background: #2a4066;
+            border-radius: 8px;
+            overflow: hidden;
+            position: relative;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 6px rgba(70, 130, 180, 0.3);
+        }
+
+        .video-preview.fullscreen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 20;
+            border-radius: 0;
+            background: #1e2a44;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            border-radius: 8px;
+            object-fit: cover;
+        }
+
+        .video-preview.fullscreen video {
+            border-radius: 0;
+        }
+
+        .controls {
+            display: flex;
+            gap: 8px;
+            margin: 10px 0;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .control-btn {
+            background: #87ceeb;
+            border: none;
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.9rem;
+            box-shadow: 0 1px 4px rgba(70, 130, 180, 0.2);
+        }
+
+        .control-btn:hover {
+            background: #6495ed;
+            transform: translateY(-2px);
+        }
+
+        .end-call-btn {
+            background: #ff6b6b;
+            color: #fff;
+            width: 100%;
+            padding: 10px;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: all 0.3s ease;
+            box-shadow: 0 1px 4px rgba(255, 107, 107, 0.3);
+        }
+
+        .end-call-btn:hover {
+            background: #ff4757;
+            transform: translateY(-2px);
+        }
+
+        .code-editor-container {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .CodeMirror {
+            height: 100% !important;
+            border: 1px solid #87ceeb;
+            border-radius: 8px;
+            background: #1e2a44;
+        }
+
+        .video-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            padding: 10px;
+            background: rgba(20, 40, 60, 0.9);
+            border-radius: 8px;
+            height: 100%;
+            overflow-y: auto;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+        }
+
+        .video-grid video {
+            width: 100%;
+            height: auto;
+            max-height: 300px;
+            border-radius: 6px;
+            background: #2a4066;
+            object-fit: contain;
+            box-shadow: 0 2px 4px rgba(70, 130, 180, 0.3);
+        }
+
+        .chat-panel {
+            background: rgba(20, 40, 60, 0.9);
+            padding: 15px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            height: 250px;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+        }
+
+        .chat-panel.fullscreen {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 300px;
+            height: 400px;
+            z-index: 30;
+            box-shadow: 0 4px 12px rgba(70, 130, 180, 0.4);
+        }
+
+        .chat-messages {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 10px;
+            font-size: 0.9rem;
+            background: #1e2a44;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+
+        .chat-message {
+            margin: 6px 0;
+            padding: 8px 12px;
+            background: #87ceeb;
+            border-radius: 10px;
+            display: flex;
+            justify-content: space-between;
+            color: #1e2a44;
+        }
+
+        .chat-message .username {
+            font-weight: bold;
+            margin-right: 8px;
+        }
+
+        .chat-input {
+            display: flex;
+            gap: 8px;
+        }
+
+        .chat-input input {
+            flex-grow: 1;
+            padding: 8px;
+            border: 1px solid #87ceeb;
+            border-radius: 20px;
+            background: #1e2a44;
+            color: #e6f0fa;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+        }
+
+        .chat-input input:focus {
+            border-color: #6495ed;
+            outline: none;
+            box-shadow: 0 0 8px rgba(70, 130, 180, 0.3);
+        }
+
+        .chat-input button {
+            padding: 8px 15px;
+            background: #4682b4;
+            border: none;
+            border-radius: 20px;
+            color: #fff;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 1px 4px rgba(70, 130, 180, 0.2);
+        }
+
+        .chat-input button:hover {
+            background: #4169e1;
+            transform: translateY(-2px);
+        }
+
+        .participants-area {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .participants-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .participants-list {
+            flex-grow: 1;
+            overflow-y: auto;
+            list-style: none;
+            padding: 0;
+            background: #1e2a44;
+            border-radius: 6px;
+        }
+
+        .participant-item {
+            padding: 12px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: all 0.3s ease;
+            border-bottom: 1px solid rgba(135, 206, 235, 0.1);
+        }
+
+        .participant-item:hover {
+            background: rgba(135, 206, 235, 0.1);
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #2ecc71;
+        }
+
+        .status-dot.offline {
+            background: #ff6b6b;
+        }
+
+        .ai-panel {
+            background: rgba(20, 40, 60, 0.9);
+            padding: 15px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            height: 350px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+        }
+
+        .ai-chat {
+            height: 250px;
+            overflow-y: auto;
+            background: #1e2a44;
+            border-radius: 6px;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+
+        .ai-message {
+            margin: 8px 0;
+            padding: 10px 15px;
+            border-radius: 10px;
+        }
+
+        .ai-message.user {
+            background: #87ceeb;
+            color: #1e2a44;
+        }
+
+        .ai-message.assistant {
+            background: #4682b4;
+            color: #fff;
+        }
+
+        .ai-message.error {
+            background: #ff6b6b;
+            color: #fff;
+        }
+
+        .ai-message.ai-loading {
+            color: #b0c4de;
+            font-style: italic;
+        }
+
+        .ai-input {
+            display: flex;
+            gap: 8px;
+        }
+
+        .ai-input input {
+            flex-grow: 1;
+            padding: 8px;
+            border: 1px solid #87ceeb;
+            border-radius: 20px;
+            background: #1e2a44;
+            color: #e6f0fa;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+        }
+
+        .ai-input input:focus {
+            border-color: #6495ed;
+            outline: none;
+            box-shadow: 0 0 8px rgba(70, 130, 180, 0.3);
+        }
+
+        .ai-input button {
+            padding: 8px 15px;
+            background: #4682b4;
+            border: none;
+            border-radius: 20px;
+            color: #fff;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 1px 4px rgba(70, 130, 180, 0.2);
+        }
+
+        .ai-input button:hover {
+            background: #4169e1;
+            transform: translateY(-2px);
+        }
+
+        @media (max-width: 1024px) {
+            .main-content {
+                flex-direction: column;
+            }
+
+            .right-panel {
+                width: 100%;
+                height: 300px;
+            }
+
+            .content-area {
+                margin: 10px 0;
+            }
+
+            .sidebar {
+                flex-direction: row;
+                width: 100%;
+                padding: 10px 0;
+                justify-content: center;
+            }
+
+            .sidebar-btn {
+                margin: 0 10px;
+                width: 40px;
+                height: 40px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .video-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .chat-panel,
+            .ai-panel {
+                height: 200px;
+            }
+
+            .ai-chat {
+                height: 150px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>CodeCoLab Room</h1>
+        <div class="user-info">Welcome, <span id="username">Guest</span></div>
+    </div>
+
+    <div class="platform-container">
+        <div class="sidebar">
+            <button class="sidebar-btn active" data-section="code">💻</button>
+            <button class="sidebar-btn" data-section="participants">👥</button>
+            <button class="sidebar-btn" data-section="videos">🎥</button>
+            <button class="sidebar-btn" data-section="ai">🤖</button>
+        </div>
+
+        <div class="main-content">
+            <div class="content-area active" id="codeSection">
+                <div class="code-editor-container">
+                    <select id="languageSelect">
+                        <option value="javascript">JavaScript</option>
+                        <option value="python">Python</option>
+                        <option value="htmlmixed">HTML</option>
+                    </select>
+                    <textarea id="codeEditor">// Write your code here...</textarea>
+                </div>
+            </div>
+
+            <div class="content-area" id="participantsSection">
+                <div class="participants-area">
+                    <div class="participants-header">
+                        <h3>Online Members</h3>
+                        <span id="memberCount">0</span>
+                    </div>
+                    <ul class="participants-list" id="participantsList">
+                        <li class="participant-item">No participants
+                            yet.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="content-area" id="videosSection">
+                <div class="video-grid" id="videoGrid">
+                    <video id="videoGrid1" autoplay muted></video>
+                    <video id="videoGrid2" autoplay></video>
+                </div>
+            </div>
+
+            <div class="content-area" id="aiSection">
+                <div class="ai-panel">
+                    <div class="ai-chat" id="aiChat">
+                        <div class="ai-message assistant">AI: Ask me
+                            anything about coding! (Free DeepSeek
+                            model)</div>
+                    </div>
+                    <div class="ai-input">
+                        <input type="text" id="aiInput" placeholder="Ask the AI...">
+                        <button id="aiSubmit">Send</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="right-panel">
+            <div class="video-panel">
+                <div class="video-preview" id="videoPreview">
+                    <video id="videoElement" autoplay muted></video>
+                </div>
+                <div class="controls">
+                    <button class="control-btn" id="toggleMic">🎙️ Mic
+                        Off</button>
+                    <button class="control-btn" id="toggleCamera">📹 Camera
+                        Off</button>
+                    <button class="control-btn" id="toggleScreenShare">🖥️
+                        Screen Share</button>
+                    <button class="control-btn" id="toggleFullScreen">⛶ Full
+                        Screen</button>
+                </div>
+                <button class="end-call-btn" id="endCall">End Call</button>
+            </div>
+            <div class="chat-panel" id="chatPanel">
+                <div class="chat-messages" id="chatMessages">
+                    <div class="chat-message">No messages yet.</div>
+                </div>
+                <div class="chat-input">
+                    <input type="text" id="chatInput" placeholder="Message...">
+                    <button>➤</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/mode/javascript/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/mode/python/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/mode/htmlmixed/htmlmixed.min.js"></script>
+    <script>
+        // (Your complete JavaScript logic from the original code)
+        // Sidebar navigation
+        document.querySelectorAll('.sidebar-btn').forEach(button => {
+            button.addEventListener('click', () => {
+                document.querySelectorAll('.sidebar-btn').forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+                document.querySelectorAll('.content-area').forEach(section => section.classList.remove('active'));
+                document.getElementById(button.dataset.section + 'Section').classList.add('active');
+            });
+        });
+
+        // Code editor setup
+        const editor = CodeMirror.fromTextArea(document.getElementById('codeEditor'), {
+            mode: "javascript",
+            lineNumbers: true,
+            theme: "monokai",
+            autofocus: true
+        });
+        document.getElementById('languageSelect').addEventListener('change', (e) => {
+            editor.setOption('mode', e.target.value);
+        });
+
+        // Video and screen sharing
+        let stream;
+        let screenStream;
+        const videoElement = document.getElementById('videoElement');
+        const videoPreview = document.getElementById('videoPreview');
+        const chatPanel = document.getElementById('chatPanel');
+
+        navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(s => {
+            stream = s;
+            videoElement.srcObject = stream;
+            document.getElementById('videoGrid1').srcObject = stream;
+        }).catch(err => console.error('Error accessing media devices:', err));
+
+        document.getElementById('toggleMic').addEventListener('click', () => {
+            if (stream && !screenStream) {
+                const enabled = stream.getAudioTracks()[0].enabled;
+                stream.getAudioTracks()[0].enabled = !enabled;
+                document.getElementById('toggleMic').textContent = enabled ? '🎙️ Mic On' : '🎙️ Mic Off';
+            }
+        });
+
+        document.getElementById('toggleCamera').addEventListener('click', () => {
+            if (stream && !screenStream) {
+                const enabled = stream.getVideoTracks()[0].enabled;
+                stream.getVideoTracks()[0].enabled = !enabled;
+                document.getElementById('toggleCamera').textContent = enabled ? '📹 Camera On' : '📹 Camera Off';
+            }
+        });
+
+        document.getElementById('toggleScreenShare').addEventListener('click', () => {
+            if (!screenStream) {
+                navigator.mediaDevices.getDisplayMedia({ video: true }).then(s => {
+                    screenStream = s;
+                    videoElement.srcObject = screenStream;
+                    document.getElementById('videoGrid2').srcObject = screenStream;
+                    document.getElementById('toggleScreenShare').textContent = '🖥️ Stop Sharing';
+                    screenStream.getVideoTracks()[0].onended = () => stopScreenShare();
+                }).catch(err => console.error('Error sharing screen:', err));
+            } else {
+                stopScreenShare();
+            }
+        });
+
+        function stopScreenShare() {
+            if (screenStream) {
+                screenStream.getTracks().forEach(track => track.stop());
+                screenStream = null;
+                videoElement.srcObject = stream;
+                document.getElementById('videoGrid2').srcObject = null;
+                document.getElementById('toggleScreenShare').textContent = '🖥️ Screen Share';
+                if (videoPreview.classList.contains('fullscreen')) {
+                    toggleFullScreen();
+                }
+            }
+        }
+
+        document.getElementById('toggleFullScreen').addEventListener('click', () => {
+            toggleFullScreen();
+        });
+
+        function toggleFullScreen() {
+            videoPreview.classList.toggle('fullscreen');
+            chatPanel.classList.toggle('fullscreen');
+            document.getElementById('toggleFullScreen').textContent =
+                videoPreview.classList.contains('fullscreen') ? '⛶ Exit Full Screen' : '⛶ Full Screen';
+        }
+
+        document.getElementById('endCall').addEventListener('click', () => {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+                videoElement.srcObject = null;
+            }
+            stopScreenShare();
+        });
+
+        // Chat functionality
+        const chatMessages = document.getElementById('chatMessages');
+        document.querySelector('.chat-input button').addEventListener('click', () => {
+            const input = document.getElementById('chatInput');
+            const message = input.value.trim();
+            if (message) {
+                const msgDiv = document.createElement('div');
+                msgDiv.className = 'chat-message';
+                msgDiv.innerHTML = `<span class="username">You</span><span>${message}</span>`;
+                chatMessages.appendChild(msgDiv);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+                input.value = '';
+            }
+        });
+
+        async function callCodingAI(prompt, codeContext, retries = 2) {
+            const OPENROUTER_API_KEY = "***REMOVED***"; // Replace this with your real OpenRouter API key
+
+            const fullPrompt = `You are a helpful coding assistant. Here's some code:\n\n${codeContext}\n\nQuestion: ${prompt}`;
+
+            for (let attempt = 0; attempt <= retries; attempt++) {
+                try {
+                    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+                            "HTTP-Referer": "https://your-site-url.com", // Optional
+                            "X-Title": "CodeCoLab" // Optional
+                        },
+                        body: JSON.stringify({
+                            model: "deepseek/deepseek-r1-distill-qwen-32b:free",
+                            messages: [
+                                {
+                                    role: "system",
+                                    content: "You are a helpful coding assistant."
+                                },
+                                {
+                                    role: "user",
+                                    content: fullPrompt
+                                }
+                            ]
+                        })
+                    });
+
+                    const data = await response.json();
+                    console.log("OpenRouter response:", data);
+
+                    const content = data?.choices?.[0]?.message?.content;
+                    return content || "No recognizable response from model.";
+                } catch (error) {
+                    console.error(`Attempt ${attempt + 1} failed:`, error);
+                    if (attempt === retries) return `Error: ${error.message}`;
+                    await new Promise(resolve => setTimeout(resolve, 2000 * (attempt + 1)));
+                }
+            }
+        }
+
+
+
+        const aiChat = document.getElementById('aiChat');
+        document.getElementById('aiSubmit').addEventListener('click', async () => {
+            const input = document.getElementById('aiInput');
+            const query = input.value.trim();
+            if (!query) return;
+
+            const userMsg = document.createElement('div');
+            userMsg.className = 'ai-message user';
+            userMsg.innerHTML = `<strong>You</strong>: ${query}`;
+            aiChat.appendChild(userMsg);
+
+            const loadingMsg = document.createElement('div');
+            loadingMsg.className = 'ai-message ai-loading';
+            loadingMsg.innerHTML = `<strong>AI</strong>: Thinking...`;
+            aiChat.appendChild(loadingMsg);
+            aiChat.scrollTop = aiChat.scrollHeight;
+
+            const codeContext = editor.getValue();
+            const aiResponse = await callHuggingFaceAPI(query, codeContext);
+
+            loadingMsg.remove();
+
+            const aiMsg = document.createElement('div');
+            aiMsg.className = `ai-message ${aiResponse.startsWith('Error:') ? 'error' : 'assistant'}`;
+            aiMsg.innerHTML = `<strong>AI</strong>: ${aiResponse}`;
+
+            if (!aiResponse.startsWith('Error:')) {
+                aiMsg.innerHTML = aiMsg.innerHTML.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
+                aiMsg.style.cursor = 'pointer';
+                aiMsg.title = 'Click to apply code suggestions';
+                aiMsg.addEventListener('click', () => {
+                    const codeMatch = aiResponse.match(/```(?:[a-z]+\n)?([\s\S]*?)```/);
+                    if (codeMatch && codeMatch[1]) {
+                        editor.setValue(codeMatch[1]);
+                    }
+                });
+            }
+
+            aiChat.appendChild(aiMsg);
+            aiChat.scrollTop = aiChat.scrollHeight;
+
+            input.value = '';
+        });
+
+        // Set username dynamically (placeholder for now)
+        document.getElementById('username').textContent = 'User' + Math.floor(Math.random() * 1000);
+    </script>
+</body>
+
+</html>

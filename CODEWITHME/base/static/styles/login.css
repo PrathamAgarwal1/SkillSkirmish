@@ -1,0 +1,91 @@
+.login-box {
+    display: flex;
+    flex-direction: column;
+    background: url('/static/images/login.JPG') no-repeat center center;
+    background-size: cover;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 20px;
+    padding: 40px 30px; /* more breathing room */
+    max-width: 700px;    /* was 320px */
+    min-height: 550px;   /* was 420px */
+    margin: 50px auto;   /* less top space */
+    z-index: 20;
+    position: relative;
+    box-shadow: 0 0 30px rgba(0, 0, 0, 0.3);
+    color: white;
+    backdrop-filter: blur(4px);
+    width: 700px;
+    overflow: hidden; /* to prevent content from pushing box */
+}
+
+/* Optional dark overlay for contrast */
+.login-box::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45); /* overlay for contrast */
+    border-radius: 20px;
+    z-index: -1;
+}
+
+/* Form Section */
+.login-container {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    color: #f0f0f0;
+}
+
+.login-container h2 {
+    margin-bottom: 10px;
+    font-size: 1.6em;
+    color: #fff;
+}
+
+.login-container p {
+    font-size: 0.85em;
+    margin-bottom: 20px;
+    text-align: center;
+    color: #cfd8dc;
+}
+
+.login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+}
+
+.login-form input {
+    padding: 10px;
+    font-size: 14px;
+    border-radius: 10px;
+    border: 1.5px solid #90e0ef;
+    background: rgba(255, 255, 255, 0.1);
+    color: #00cfc1;
+    transition: border-color 0.3s ease, background 0.3s ease;
+}
+
+.login-form input:focus {
+    border-color: #00f5d4;
+    background: rgba(255, 255, 255, 0.15);
+    outline: none;
+}
+
+.login-form button {
+    padding: 10px;
+    font-size: 14px;
+    font-weight: bold;
+    background: #00f5d4;
+    color: black;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.3s, box-shadow 0.3s;
+}
+
+.login-form button:hover {
+    background: #00cfc1;
+    color: white;
+    box-shadow: 0 0 15px #00f5d4;
+}

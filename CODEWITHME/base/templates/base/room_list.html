@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="room-container">
+    <div class="room-header">
+        <h1>{{ room.name }}</h1>
+        {% if is_host %}
+        <div class="host-controls">
+            <a href="#" class="edit-btn">Edit Room</a>
+            <a href="#" class="delete-btn">Delete Room</a>
+        </div>
+        {% endif %}
+    </div>
+    
+    <div class="room-description">
+        <p>{{ room.description }}</p>
+    </div>
+    
+    <div class="participants-section">
+        <h3>Participants ({{ participants|length }})</h3>
+        <div class="participants-list">
+            {% for user in participants %}
+            <div class="participant">
+                <img src="{{ user.profile.profile_pic.url }}" alt="{{ user.username }}">
+                <span>{{ user.username }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

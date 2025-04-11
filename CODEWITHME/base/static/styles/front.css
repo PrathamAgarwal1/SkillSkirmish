@@ -1,0 +1,407 @@
+/* General styles */
+header {
+    position: relative;
+    font-family: Cambria, Cochin, Georgia, Times, 'Times New Roman', serif;
+    padding: 20px;
+    font-size: 2em;
+    font-weight: bold;
+    text-align: center; /* Center the text */
+    background: linear-gradient(90deg, #0ef3ef, #9b30ff); /* Added gradient */
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent; /* Makes the gradient visible through text */
+    text-shadow: 2px 2px 5px rgba(14, 243, 239, 0.7);
+    animation: fadeIn 0.8s ease-out forwards, glowPulse 2s infinite alternate ease-in-out;
+}
+
+@keyframes fadeIn {
+    0% {
+        opacity: 0;
+        transform: translateY(8px);
+        filter: blur(4px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+        filter: blur(0);
+    }
+}
+
+@keyframes glowPulse {
+    0% {
+        text-shadow: 2px 2px 5px rgba(14, 243, 239, 0.7);
+    }
+    100% {
+        text-shadow: 3px 3px 10px rgba(14, 243, 239, 1);
+    }
+}
+
+/* Button container */
+.button-container {
+    display: flex;
+    justify-content: center;
+    gap: 70px;
+    margin-top: 50px;
+    animation: buttonContainerAnimation 1s ease-out;
+}
+
+@keyframes buttonContainerAnimation {
+    0% {
+        transform: translateY(100%); /* Starts off-screen from the bottom */
+        opacity: 0;
+    }
+    100% {
+        transform: translateY(0); /* Ends at the normal position */
+        opacity: 1;
+    }
+}
+
+/* Button styling */
+.btn {
+    padding: 40px 40px;
+    font-size: 20px;
+    color: #e0e0ff; /* Updated text color */
+    background: rgba(21, 13, 56, 0.7); /* Changed from solid silver to transparent dark purple */
+    border: 3px solid rgb(14, 243, 239);
+    cursor: pointer;
+    border-radius: 10px;
+    transition: background 0.3s, box-shadow 0.3s, transform 0.3s;
+    font-weight: bold;
+    width: 200px;
+    height: 200px;
+    box-shadow: 0 0 15px rgba(14, 243, 239, 0.3); /* Added subtle glow */
+}
+.btn h2 {
+    margin: 0;
+    font-family: Cambria, Cochin, Georgia, Times, 'Times New Roman', serif;
+    font-size: 25px;
+    font-style: underline;
+    color: #0ef3ef; /* Changed from black to cyan */
+}
+
+.btn span {
+    font-size: 13px;
+    color: #e0e0ff; /* Changed from black to soft lavender-white */
+    margin-top: 5px;
+    transition: color 0.3s;
+}
+
+/* Bounce animation for each button with increased distance */
+@keyframes buttonBounce1 {
+    0% {
+        transform: translateY(100%); /* Starts off-screen from the bottom */
+        opacity: 0;
+    }
+    25% {
+        transform: translateY(-60px); /* Bounce higher */
+    }
+    50% {
+        transform: translateY(30px); /* Bounce down */
+    }
+    75% {
+        transform: translateY(-20px); /* Bounce up again */
+    }
+    100% {
+        transform: translateY(0); /* End at the normal position */
+        opacity: 1;
+    }
+}
+
+@keyframes buttonBounce2 {
+    0% {
+        transform: translateY(100%); /* Starts off-screen from the bottom */
+        opacity: 0;
+    }
+    25% {
+        transform: translateY(-50px); /* Bounce up */
+    }
+    50% {
+        transform: translateY(20px); /* Bounce down */
+    }
+    75% {
+        transform: translateY(-15px); /* Bounce up slightly */
+    }
+    100% {
+        transform: translateY(0); /* End at the normal position */
+        opacity: 1;
+    }
+}
+
+@keyframes buttonBounce3 {
+    0% {
+        transform: translateY(100%); /* Starts off-screen from the bottom */
+        opacity: 0;
+    }
+    25% {
+        transform: translateY(-80px); /* Bounce higher */
+    }
+    50% {
+        transform: translateY(40px); /* Bounce down */
+    }
+    75% {
+        transform: translateY(-30px); /* Bounce up */
+    }
+    100% {
+        transform: translateY(0); /* End at the normal position */
+        opacity: 1;
+    }
+}
+
+/* Apply different bounce animations for each button */
+.btn:nth-child(1) { 
+    animation: buttonBounce1 1.5s ease-out forwards;
+}
+
+.btn:nth-child(2) { 
+    animation: buttonBounce2 1.5s ease-out 0.3s forwards;
+}
+
+.btn:nth-child(3) { 
+    animation: buttonBounce3 1.5s ease-out 0.6s forwards;
+}
+
+/* Hover effect: Only color change & glow, no movement */
+.btn:hover {
+    background: rgba(0, 0, 0, 0.8); /* Darker transparent background */
+    color: silver;
+    box-shadow: 0px 0px 20px rgb(14, 243, 239); /* Stronger glow on hover */
+    transform: scale(1.2) translateY(-10px);
+}
+
+.btn:hover h2 {
+    color: #ffffff; /* Bright white on hover */
+}
+
+.btn:hover span {
+    color: #ffffff; /* Bright white on hover */
+}
+
+.login-btn {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 15px 30px;
+    font-size: 20px;
+    color: white;
+    background:rgba(14,243,239,0.2);
+    border: 2px solid rgb(14, 243, 239);
+    cursor: pointer;
+    border-radius: 10px;
+    font-weight: bold;
+    transition: background 0.3s, box-shadow 0.3s;
+    z-index: 10;
+    animation: fadeIn 3s ease-in forwards;
+}
+.signup-btn {
+    position: fixed;
+    top: 20px;
+    right: 150px;
+    padding: 15px 25px;
+    font-size: 20px;
+    color: white;
+    background: rgba(14, 243, 239, 0.2);
+    border: 2px solid rgb(14, 243, 239);
+    cursor: pointer;
+    border-radius: 10px;
+    font-weight: bold;
+    transition: background 0.3s, box-shadow 0.3s;
+    z-index: 10;
+    animation: fadeIn 3s ease-in forwards;
+}
+
+/* Sign Up Button Hover effect */
+.signup-btn:hover , .login-btn:hover {
+    background: rgba(14, 243, 239, 0.5);
+    color: white;
+    box-shadow: 0px 0px 15px rgb(14, 243, 239);
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+/* Popup container on the right side */
+.news-popup-container {
+    position: fixed;
+    right: 20px; /* Position it fixed on the right */
+    top: 300px; 
+    width: 200px;
+    height: 500px;
+    overflow: hidden;
+    background-color: rgba(0, 0, 0, 0.7); /* Semi-transparent background */
+    border-radius: 15px;
+    box-shadow: 0px 0px 15px silver;
+    z-index: 100; /* Ensure it's on top of other content */
+    opacity: 0;
+    pointer-events: none; /* Initially disable interactions */
+    transform: translateY(-50%) translateX(100%); /* Start from off-screen */
+    transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+}
+.popup-box {
+    position: fixed;
+    right: 20px; /* Position it fixed on the right */
+    top: 300px;
+    transform: translateY(-50%); /* Adjust for perfect center */
+    width: 300px;
+    height: 500px;
+}
+
+/* Show the popup when hovered over the right area */
+.popup-box:hover .news-popup-container {
+    opacity: 1;
+    pointer-events: all;
+    transform: translateY(-50%) translateX(0); /* Bring into view */
+}
+
+/* News items positioned in the container */
+.news-item {
+    position: absolute;
+    width: 100%;
+    text-align: center;
+    color: white;
+    font-size: 25px;
+    font-family: Arial, sans-serif;
+    opacity: 0;
+    transform: translateY(-100%); /* Start from the top (outside) */
+    animation: luckyDraw 10s linear infinite; /* Loop the animation */
+}
+
+/* News heading style */
+.news-heading {
+    font-size: 40px;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-weight: bold;
+    color: silver;
+    padding: 10px;
+    text-align: center;
+    margin: 0;
+    border-radius: 10px 10px 0 0; /* Rounded top corners */
+}
+
+@keyframes luckyDraw {
+    0% {
+        transform: translateY(-100%); /* Start from the top (outside) */
+        opacity: 0; /* Start invisible */
+    }
+    10% {
+        transform: translateY(50px); 
+        opacity: 1; /* Fade in */
+    }
+    20% {
+        transform: translateY(100px); 
+        opacity: 1;
+    }
+    30% {
+        transform: translateY(150px); 
+        opacity: 1;
+    }
+    40% {
+        transform: translateY(200px); 
+        opacity: 1;
+    }
+    50% {
+        transform: translateY(250px);
+        opacity: 1;
+    }
+    60% {
+        transform: translateY(300px);
+        opacity: 1;
+    }
+    70% {
+        transform: translateY(350px);
+        opacity: 1;
+    }
+    80% {
+        transform: translateY(400px);
+        opacity: 1;
+    }
+    90% {
+        transform: translateY(450px);
+        opacity: 1;
+    }
+    100% {
+        transform: translateY(500px);
+        opacity: 0;
+    }
+}
+
+.news-item:nth-child(1) {
+    animation-delay: 0s; 
+}
+
+.news-item:nth-child(2) {
+    animation-delay: 2s; 
+}
+
+.news-item:nth-child(3) {
+    animation-delay: 4s;
+}
+
+.news-item:nth-child(4) {
+    animation-delay: 6s;
+}
+
+.news-item:nth-child(5) {
+    animation-delay: 8s; 
+}
+
+.news-item:nth-child(6) {
+    animation-delay: 10s; 
+}
+
+/* Messages styling */
+.messages {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 1000;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.messages li {
+    padding: 15px 35px 15px 15px;
+    margin-bottom: 10px;
+    border-radius: 4px;
+    color: white;
+    position: relative;
+    min-width: 250px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+}
+
+.messages .error {
+    background-color: #f44336; /* Red */
+}
+
+.messages .success {
+    background-color: #4CAF50; /* Green */
+}
+
+.messages .warning {
+    background-color: #ff9800; /* Orange */
+}
+
+.messages .info {
+    background-color: #2196F3; /* Blue */
+}
+
+.close-message {
+    position: absolute;
+    top: 5px;
+    right: 10px;
+    font-size: 20px;
+    font-weight: bold;
+    cursor: pointer;
+    opacity: 0.8;
+    transition: opacity 0.3s;
+}
+
+.close-message:hover {
+    opacity: 1;
+}

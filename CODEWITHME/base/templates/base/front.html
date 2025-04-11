@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+{% load static %}
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CodeColab</title>
+    <link rel="stylesheet" href="{% static 'styles/front.css' %}">
+    <link rel="stylesheet" href="{% static 'styles/modals.css' %}">
+    <style>
+        /* Add this body style back */
+        body {
+            background-image: url("{% static 'images/devroom.png' %}");
+            background-position: center;
+            background-repeat: no-repeat;
+            background-size: cover;
+            background-attachment: fixed;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+        }
+    </style>
+</head>
+<body data-open-login="{{ open_login|yesno:'true,false' }}" data-open-signup="{{ open_signup|yesno:'true,false' }}">
+
+<header>
+    <h1>PookieCodesTogether</h1>
+</header>
+
+<main id="mainContent">
+    {% if request.user.is_authenticated %}
+        <a href="{% url 'logout' %}">
+            <button class="login-btn">Logout</button>
+        </a>
+    {% else %}
+        <button class="login-btn" onclick="toggleLogin()">Login</button>
+        <button class="signup-btn" onclick="toggleSignup()">Sign Up</button>
+    {% endif %}
+
+    <div class="button-container">
+        <a href="{% url 'team' %}">
+            <button class="btn team">
+                <h2>Teams</h2>
+                <span>Find your perfect team and unleash your potential!</span>
+            </button>
+        </a>
+        <button class="btn projects">
+            <h2>Projects</h2>
+            <span>Set goals for your project and manage efficiently!</span>
+        </button>
+        <a href="{% url 'challenges' %}">
+            <button class="btn challenges">
+                <h2>Challenges</h2>
+                <span>Challenge yourself with daily practice and leaderboard!</span>
+            </button>
+        </a>
+    </div>
+
+    <div class="popup-box">
+        <div class="news-popup-container">
+            <h2 class="news-heading">Notice Board!</h2>
+            <div class="news-item">News Item 1</div>
+            <div class="news-item">News Item 2</div>
+            <div class="news-item">News Item 3</div>
+            <div class="news-item">News Item 4</div>
+            <div class="news-item">News Item 5</div>
+            <div class="news-item">News Item 6</div>
+        </div>
+    </div>
+</main>
+
+<!-- Messages Display to display error messages and stuff -->
+{% if messages %}
+    <ul class="messages">
+        {% for message in messages %}
+            <li class="{{ message.tags }}">
+                {{ message }}
+                <span class="close-message" onclick="this.parentElement.style.display='none'">×</span>
+            </li>
+        {% endfor %}
+    </ul>
+{% endif %}
+<!-- Login Modal -->
+<div id="loginModal" class="modal">
+    <div class="login-box">
+        {% include 'base/login.html' %}
+    </div>
+</div>
+
+<!-- Signup Modal -->
+<div id="signupModal" class="modal">
+    <div class="login-box">
+        {% include 'base/signup.html' %}
+    </div>
+</div>
+
+<!-- Add this before the external script -->
+<script>
+    // Modal toggle functions
+    function toggleLogin() {
+        const loginModal = document.getElementById("loginModal");
+        const signupModal = document.getElementById("signupModal");
+        const mainContent = document.getElementById("mainContent");
+        
+        console.log("Login toggle triggered");
+        signupModal.style.display = 'none';
+        loginModal.style.display = 'flex';
+        mainContent.classList.add("blurred");
+    }
+
+    function toggleSignup() {
+        const loginModal = document.getElementById("loginModal");
+        const signupModal = document.getElementById("signupModal");
+        const mainContent = document.getElementById("mainContent");
+        
+        console.log("Signup toggle triggered");
+        loginModal.style.display = 'none';
+        signupModal.style.display = 'flex';
+        mainContent.classList.add("blurred");
+    }
+
+    // Close modals when clicking outside
+    document.addEventListener("DOMContentLoaded", function() {
+        window.addEventListener("click", function(e) {
+            const loginModal = document.getElementById("loginModal");
+            const signupModal = document.getElementById("signupModal");
+            const mainContent = document.getElementById("mainContent");
+            
+            if (e.target === loginModal || e.target === signupModal) {
+                loginModal.style.display = 'none';
+                signupModal.style.display = 'none';
+                mainContent.classList.remove("blurred");
+            }
+        });
+
+        // Prevent modal content clicks from closing the modal
+        const modalContent = document.querySelectorAll(".login-box, .signup-box");
+        modalContent.forEach(content => {
+            content.addEventListener("click", function(e) {
+                e.stopPropagation();
+            });
+        });
+    });
+</script>
+
+<script src="{% static 'js/scripts.js' %}"></script>
+
+</body>
+</html>
