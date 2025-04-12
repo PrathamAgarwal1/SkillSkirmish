@@ -1,15 +1,33 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import './Home.css';
 
 const Home = () => {
-  const [user, setUser] = useState({ username: 'Guest' }); // Set a default username
+  const [user, setUser] = useState(null);
   const navigate = useNavigate();
 
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    const fetchUser = async () => {
+      try {
+        const res = await axios.get('/api/users/profile', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setUser(res.data);
+      } catch (err) {
+        console.error('Error fetching user profile', err);
+      }
+    };
+
+    fetchUser();
+  }, []);
+
   const handleLogout = () => {
-    // If there's no login/signup, you can simply reset user state here.
+    localStorage.removeItem('token');
     setUser(null);
-    // Redirect or refresh the page
     navigate('/');
   };
 
@@ -22,12 +40,15 @@ const Home = () => {
             <>
               <span className="user-info">
                 Welcome, {user.username}
-                {/* Assuming you no longer have an admin check */}
+                {user.isAdmin && <span className="admin-tag">Admin</span>}
               </span>
               <button className="logout-btn" onClick={handleLogout}>Logout</button>
             </>
           ) : (
-            <span>Not logged in</span> // No login/signup buttons
+            <>
+              <button onClick={() => navigate('/login')}>Login</button>
+              <button onClick={() => navigate('/signup')}>Signup</button>
+            </>
           )}
         </div>
       </header>
@@ -37,8 +58,10 @@ const Home = () => {
 
         {user && (
           <div className="button-group">
-            <button onClick={() => navigate('/quiz/play')}>Play Quiz</button>
-            {/* You can remove the admin-specific button if no admin check */}
+            <button onClick={() => navigate('/challenges')}>Go to Challenges</button>
+            {user.isAdmin && (
+              <button onClick={() => navigate('/admin/quiz')}>Admin Panel</button>
+            )}
           </div>
         )}
       </div>
