@@ -10,6 +10,8 @@ from django.urls import reverse  # Add this import
 from .models import Profile,Room
 from .forms import RoomForm
 from django.shortcuts import get_object_or_404
+from django.views.generic import View
+import os
 
 @ensure_csrf_cookie
 def front(request):
@@ -103,9 +105,6 @@ def home(request):
     # Add your home view logic here
     return render(request, 'base/home.html')
 
-def challenges(request):
-    return render(request, 'base/challenges.html')
-
 def teams(request):
     return render(request, 'base/team.html')
 
@@ -177,10 +176,25 @@ def deleteRoom(request, pk):
     return render(request, 'base/delete_room.html', {'room': room})
 @login_required
 def team_rooms(request):
-    rooms = Room.objects.all().order_by('-updated_at')
-    context = {
-        'rooms': rooms,
-        'user_rooms': request.user.room_set.all(),  # Rooms where user is host
-        'participating_rooms': request.user.participants.all()  # Rooms where user is participant
-    }
-    return render(request, 'base/team.html', context)
+    try:
+        rooms = Room.objects.all().order_by('-updated_at')
+        context = {
+            'rooms': rooms,
+            'user_rooms': request.user.created_rooms.all(),
+            'participating_rooms': request.user.participants.all()
+        }
+        return render(request, 'base/team.html', context)
+    except ValueError as e:
+        messages.error(request, "Error loading rooms. Please contact administrator.")
+        return redirect('home')
+
+class FrontendAppView(View):
+    def get(self, request):
+        try:
+            with open(os.path.join('client', 'build', 'index.html')) as file:
+                return HttpResponse(file.read())
+        except:
+            return HttpResponse(
+                "index.html not found. Run `npm run build` inside client directory.",
+                status=501,
+            )

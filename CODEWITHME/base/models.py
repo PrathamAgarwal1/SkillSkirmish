@@ -24,7 +24,12 @@ class Topic(models.Model):
         return self.name
     
 class Room(models.Model):
-    host = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    host = models.ForeignKey(
+        User, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        related_name='created_rooms'  # Add this line
+    )
     name = models.CharField(max_length=200)
     description = models.TextField(null=True, blank=True)
     participants = models.ManyToManyField(User, related_name='participants', blank=True)
@@ -36,3 +41,17 @@ class Room(models.Model):
 
     def __str__(self):
         return self.name
+
+class CodeSnippet(models.Model):
+    """
+    Stores code snippets associated with a room
+    - room: The room this snippet belongs to
+    - content: The actual code content
+    - language: Programming language of the code
+    - timestamps: When created and last updated
+    """
+    room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='code_snippets')
+    content = models.TextField()
+    language = models.CharField(max_length=30, default='javascript')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)

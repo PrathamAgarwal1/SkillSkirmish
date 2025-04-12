@@ -1,0 +1,102 @@
+/* Auth Box Styles - Unified with login-box */
+.auth-box {
+    display: flex;
+    flex-direction: column;
+    background: url('/static/images/login.JPG') no-repeat center center;
+    background-size: cover;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 20px;
+    padding: 40px 30px;
+    max-width: 700px;
+    min-height: 550px;
+    margin: 50px auto;
+    z-index: 20;
+    position: relative;
+    box-shadow: 0 0 30px rgba(0, 0, 0, 0.3);
+    color: white;
+    backdrop-filter: blur(4px);
+    width: 700px;
+    overflow: hidden;
+}
+
+/* Dark overlay */
+.auth-box::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    border-radius: 20px;
+    z-index: -1;
+}
+
+/* Auth Container - Unified with login-container */
+.auth-container {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    color: #f0f0f0;
+}
+
+.auth-container h2 {
+    margin-bottom: 10px;
+    font-size: 1.6em;
+    color: #fff;
+}
+
+.auth-container p {
+    font-size: 0.85em;
+    margin-bottom: 20px;
+    text-align: center;
+    color: #cfd8dc;
+}
+
+.auth-container a {
+    color: #00f5d4;
+    text-decoration: none;
+}
+
+.auth-container a:hover {
+    text-decoration: underline;
+}
+
+/* Auth Form - Similar to login-form */
+.auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+}
+
+.auth-form input {
+    padding: 10px;
+    font-size: 14px;
+    border-radius: 10px;
+    border: 1.5px solid #90e0ef;
+    background: rgba(255, 255, 255, 0.1);
+    color: #00cfc1;
+    transition: border-color 0.3s ease, background 0.3s ease;
+}
+
+.auth-form input:focus {
+    border-color: #00f5d4;
+    background: rgba(255, 255, 255, 0.15);
+    outline: none;
+}
+
+.auth-form button {
+    padding: 10px;
+    font-size: 14px;
+    font-weight: bold;
+    background: #00f5d4;
+    color: black;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.3s, box-shadow 0.3s;
+}
+
+.auth-form button:hover {
+    background: #00cfc1;
+    color: white;
+    box-shadow: 0 0 15px #00f5d4;
+}

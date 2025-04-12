@@ -600,7 +600,7 @@
                     <div class="sidebar-icon">🏠</div>
                     <span>Dashboard</span>
                 </a>
-                <a href="{% url 'challenges' %}" class="sidebar-item">
+                <a href="{% url 'challenges-react' %}" class="sidebar-item">
                     <div class="sidebar-icon">🎯</div>
                     <span>Challenges</span>
                 </a>
@@ -639,7 +639,7 @@
 
                 <div class="rooms-box">
                     {% for room in rooms %}
-                    <div class="room-card">
+                    <div class="room-card" data-room-id="{{ room.id|stringformat:'s' }}">
                         <div class="room-thumbnail" style="--room-color: {% get_room_color forloop.counter0 %}">
                             <div class="room-topic-badge">{{ room.topic|default:"General" }}</div>
                         </div>
