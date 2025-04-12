@@ -12,6 +12,7 @@ from .forms import RoomForm
 from django.shortcuts import get_object_or_404
 from django.views.generic import View
 import os
+from django.conf import settings
 
 @ensure_csrf_cookie
 def front(request):
@@ -187,6 +188,18 @@ def team_rooms(request):
     except ValueError as e:
         messages.error(request, "Error loading rooms. Please contact administrator.")
         return redirect('home')
+
+def game_portal(request):
+    """
+    Redirect to React game portal
+    """
+    return redirect('http://localhost:3000/challenges')
+
+def challenges(request):
+    """
+    Redirect challenges to game portal
+    """
+    return redirect('game-portal')
 
 class FrontendAppView(View):
     def get(self, request):
