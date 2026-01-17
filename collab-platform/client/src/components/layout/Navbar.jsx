@@ -3,6 +3,8 @@ import React, { useContext } from 'react';
 import { Link } from 'react-router-dom';
 import AuthContext from '../../context/AuthContext';
 
+import logo from '../../assets/logo.png';
+
 const Navbar = () => {
     // Ideally, your AuthContext should also provide a 'loading' state
     const { isAuthenticated, logout, loading } = useContext(AuthContext);
@@ -32,7 +34,7 @@ const Navbar = () => {
 
     // Prevent flashing incorrect links while checking auth status
     if (loading) {
-        return <nav className="navbar"><h1>CodeCollab</h1></nav>;
+        return <nav className="navbar"><img src={logo} alt="CodeCollab" style={{ height: '40px' }} /></nav>;
     }
 
     return (
@@ -43,8 +45,9 @@ const Navbar = () => {
             height: '60px'
         }}>
             <h1 style={{ fontSize: '1.2rem', margin: 0 }}>
-                <Link to="/" style={{ color: 'var(--term-green)', textDecoration: 'none' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>user@codecolab:</span>~$
+                <Link to="/" style={{ color: 'var(--term-green)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <img src={logo} alt="CodeCollab" style={{ height: '35px' }} />
+                    <span style={{ color: 'var(--text-muted)' }}>CodeCollab</span>
                 </Link>
             </h1>
             <div className="nav-links">
