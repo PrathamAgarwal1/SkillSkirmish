@@ -1,0 +1,343 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&family=Syncopate:wght@400;700&display=swap');
+
+:root {
+    /* --- The "Clean Beast" Palette (White Monster Inspired) --- */
+
+    /* Backgrounds */
+    --bg-base: #fdfdfd;
+    --bg-surface: #ffffff;
+    --bg-texture: #f4f4f6;
+
+    /* Text */
+    --text-primary: #0a0a0a;
+    /* Sharp Black */
+    --text-secondary: #5a5a5a;
+    /* Cool Grey */
+    --text-accent: #8c8c8c;
+    /* Chrome Grey */
+
+    /* Accents - The "Can" Vibe */
+    --accent-chrome: linear-gradient(135deg, #e0e0e0 0%, #ffffff 50%, #c0c0c0 100%);
+    --accent-silver: #c4c4c4;
+    --accent-energy: #111111;
+    /* Using primarily black/silver, avoiding green unless needed for success states */
+    --accent-highlight: #d1d1d1;
+
+    /* Borders */
+    --border-crisp: 1px solid #e5e5e5;
+    --border-chrome: 1px solid #d4d4d4;
+
+    /* Shadows - Sharp & Clean */
+    --shadow-crisp: 0 4px 6px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.08);
+    --shadow-floating: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
+    --reflection: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+
+    /* Fonts */
+    --font-main: 'Outfit', sans-serif;
+    --font-display: 'Syncopate', sans-serif;
+    /* Techy/Edgy for headers */
+    --font-code: 'JetBrains Mono', monospace;
+}
+
+/* --- Global Reset & Texture --- */
+body {
+    background-color: var(--bg-base);
+    /* Subtle noise texture for that "frosted can" look */
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E");
+    color: var(--text-primary);
+    font-family: var(--font-main);
+    line-height: 1.5;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Headings - Sharp & Aggressive */
+h1,
+h2,
+h3,
+h4 {
+    font-family: var(--font-display);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+}
+
+h1 {
+    font-weight: 800;
+    /* Chrome Text Effect */
+    background: linear-gradient(to bottom, #444 0%, #000 50%, #444 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0px 2px 0px rgba(0, 0, 0, 0.1));
+}
+
+a {
+    color: var(--text-primary);
+    font-weight: 600;
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+    transition: border-color 0.2s;
+}
+
+a:hover {
+    border-bottom-color: var(--text-primary);
+}
+
+/* --- COMPONENTS: THE "PERFECT" LOOK --- */
+
+/* 1. Cards - Clean White Surfaces */
+.card,
+.dashboard-layout>div,
+.feature-card,
+.room-sidebar,
+.room-chat {
+    background: var(--bg-surface);
+    border: var(--border-crisp);
+    border-radius: 4px;
+    /* Slightly sharper corners */
+    box-shadow: var(--shadow-crisp);
+    padding: 1.5rem;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Chrome sheen on hover */
+.card::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 50%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.8), transparent);
+    transform: skewX(-25deg);
+    transition: 0.5s;
+}
+
+.card:hover::after {
+    left: 150%;
+    transition: 0.7s ease-in-out;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-floating);
+    border-color: var(--accent-silver);
+}
+
+/* 2. Buttons - Silver/Chrome Feel */
+.btn {
+    background: radial-gradient(circle at top, #fcfcfc, #eef1f5);
+    color: #000;
+    border: 1px solid #d1d5da;
+    padding: 0.8rem 2rem;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-radius: 4px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05), inset 0 1px 0 #fff;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn:hover {
+    background: #fff;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1), inset 0 1px 0 #fff;
+    border-color: #999;
+}
+
+.btn:active {
+    transform: translateY(1px);
+    background: #eef1f5;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.btn-secondary {
+    background: transparent;
+    border: 1px solid var(--text-primary);
+    color: var(--text-primary);
+    box-shadow: none;
+}
+
+.btn-secondary:hover {
+    background: var(--text-primary);
+    color: #fff;
+}
+
+/* 3. Inputs - Crisp & Clean */
+input,
+textarea,
+select {
+    background: #fcfcfc;
+    border: 1px solid #e0e0e0;
+    color: var(--text-primary);
+    padding: 0.8rem 1rem;
+    border-radius: 4px;
+    font-family: var(--font-main);
+    transition: all 0.2s;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+
+input:focus,
+textarea:focus {
+    outline: none;
+    background: #fff;
+    border-color: #000;
+    box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.05);
+}
+
+/* --- LAYOUTS --- */
+.dashboard-layout {
+    display: grid;
+    grid-template-columns: 280px 1fr 300px;
+    gap: 1.5rem;
+    padding: 2rem;
+    max-width: 1600px;
+    margin: 0 auto;
+}
+
+/* Lists - Minimalist */
+.room-list-item,
+.notification-item {
+    background: #fff;
+    border: 1px solid #eee;
+    padding: 1rem;
+    margin-bottom: 0.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-radius: 4px;
+    transition: 0.2s;
+}
+
+.room-list-item:hover {
+    border-color: #000;
+    background: #fafafa;
+}
+
+/* Status Labels - Monochrome */
+.status-label.member {
+    background: #eee;
+    color: #555;
+    font-size: 0.7rem;
+    font-weight: 800;
+    padding: 2px 6px;
+    text-transform: uppercase;
+}
+
+/* --- ROOM PAGE --- */
+.room-container {
+    display: grid;
+    grid-template-columns: 240px 1fr 340px;
+    grid-template-rows: 64px 1fr;
+    height: 100vh;
+    background: var(--bg-texture);
+}
+
+.room-header {
+    grid-column: 1 / -1;
+    background: #fff;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 2rem;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
+    z-index: 10;
+}
+
+.room-header h2 {
+    margin: 0;
+    font-size: 1.2rem;
+}
+
+.room-sidebar {
+    background: #f9f9f9;
+    border-right: 1px solid #eee;
+    box-shadow: none;
+    border-radius: 0;
+}
+
+.room-main {
+    padding: 2rem;
+    background: var(--bg-texture);
+}
+
+.room-chat {
+    background: #fff;
+    border-left: 1px solid #eee;
+    border-radius: 0;
+    box-shadow: -2px 0 10px rgba(0, 0, 0, 0.02);
+}
+
+/* Timer - "Industrial" Look */
+.focus-timer {
+    background: #fff;
+    border: 4px solid #f0f0f0;
+    border-radius: 20px;
+    padding: 2rem;
+    text-align: center;
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow-crisp);
+}
+
+.timer-display {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 6rem;
+    font-weight: 700;
+    color: #222;
+    letter-spacing: -2px;
+}
+
+/* Chat Messages */
+.message-bubble {
+    background: #f4f4f6;
+    color: #333;
+    padding: 0.8rem 1rem;
+    border-radius: 12px;
+    border-bottom-left-radius: 2px;
+    margin-bottom: 0.8rem;
+    font-size: 0.9rem;
+}
+
+.message-bubble.mine {
+    background: #111;
+    color: #fff;
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 2px;
+    text-align: right;
+}
+
+.message-bubble.mine .message-sender-name {
+    color: #888;
+}
+
+/* Navbar */
+.navbar {
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid #eee;
+    height: 70px;
+    display: flex;
+    justify-content: space-between;
+    padding: 0 2rem;
+    align-items: center;
+}
+
+.nav-link {
+    color: #666;
+    text-transform: uppercase;
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+
+.nav-link:hover {
+    color: #000;
+    border-bottom: 2px solid #000;
+}

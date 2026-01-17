@@ -76,7 +76,7 @@ const DashboardPage = () => {
 
     const handleDelete = async (roomId) => {
         if (window.confirm('Delete this room?')) {
-            try { await axios.delete(`/api/rooms/${roomId}`); fetchRooms(); } 
+            try { await axios.delete(`/api/rooms/${roomId}`); fetchRooms(); }
             catch (err) { alert('Failed to delete room.'); }
         }
     };
@@ -106,11 +106,11 @@ const DashboardPage = () => {
 
         try {
             console.log(`Attempting to join room: ${roomId}`);
-            
+
             // 1. Call Backend to add user to member list
             // We await this to ensure the user is a member BEFORE navigating
             const response = await axios.post(`/api/rooms/${roomId}/accept-invite`);
-            
+
             console.log("Join response:", response.data);
 
             if (response.data.msg === 'Joined successfully' || response.data.msg === 'Already a member') {
@@ -131,102 +131,157 @@ const DashboardPage = () => {
         }
     };
 
+    const handleApproveJoin = async (roomID, userId, notificationId) => {
+        try {
+            await axios.post(`/api/rooms/${roomID}/approve-join`, { userId, notificationId });
+            alert('User approved!');
+            fetchNotifications(); // Refresh list to remove the request
+        } catch (err) {
+            console.error("Failed to approve:", err);
+            alert("Failed to approve request.");
+        }
+    };
+
     if (loading || !user) return <div className="dashboard-layout" style={{ padding: '2rem' }}><h1>Loading...</h1></div>;
 
     return (
         <>
             {editingRoom && <EditRoomModal room={editingRoom} onClose={() => setEditingRoom(null)} onRoomUpdated={() => { setEditingRoom(null); fetchRooms(); }} />}
-            
-            <div className="dashboard-layout">
-                <div className="notifications-panel">
-                    <h2>Notifications</h2>
-                    {notifications.length > 0 ? (
-                        <ul className="notifications-list">
-                            {notifications.map(n => (
-                                <li key={n._id} className="notification-item" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '0.5rem' }}>
-                                    <div style={{ fontSize: '0.95rem' }}>{n.message}</div>
-                                    
-                                    {/* BUTTON VISIBLE ONLY IF TYPE IS INVITE AND ROOM ID EXISTS */}
-                                    {n.type === 'invite' && n.relatedId && (
-                                        <button 
-                                            className="btn" 
-                                            style={{ 
-                                                padding: '0.4rem 1rem', 
-                                                fontSize: '0.8rem', 
-                                                backgroundColor: 'var(--accent-primary)',
-                                                color: '#000',
-                                                fontWeight: 'bold',
-                                                marginTop: '5px',
-                                                cursor: 'pointer'
-                                            }}
-                                            onClick={() => handleAcceptInvite(n.relatedId)}
-                                        >
-                                            Accept & Join
-                                        </button>
-                                    )}
-                                </li>
-                            ))}
-                        </ul>
-                    ) : <p>No new notifications.</p>}
-                </div>
-                
-                <div className="main-panel">
-                    <div className="my-rooms-panel">
-                        <h2>My Rooms</h2>
-                        {myRooms.length > 0 ? (
-                            <ul className="rooms-list">
-                                {myRooms.map(room => (
-                                    <li key={room._id} className="room-list-item">
-                                        <Link to={`/rooms/${room._id}`}><strong>{room.name}</strong></Link>
-                                        {user._id === room.owner._id && (
-                                            <div className="room-actions">
-                                                <button className="btn-action btn-edit" onClick={() => setEditingRoom(room)}>Edit</button>
-                                                <button className="btn-action btn-delete" onClick={() => handleDelete(room._id)}>Delete</button>
-                                            </div>
-                                        )}
-                                    </li>
-                                ))}
-                            </ul>
-                        ) : <p>No rooms created.</p>}
-                    </div>
-                    <div className="create-room-panel">
-                        <h2>Create Room</h2>
-                        <form onSubmit={handleCreateRoom}>
-                            <input type="text" placeholder="Room Name" value={roomName} onChange={(e) => setRoomName(e.target.value)} required />
-                            <textarea placeholder="Description" value={roomDescription} onChange={(e) => setRoomDescription(e.target.value)} rows="2"></textarea>
-                            <button type="submit" className="btn">Create</button>
-                        </form>
-                    </div>
-                </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                    <div className="join-panel">
-                        <h2>Quick Match</h2>
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                            <input type="text" placeholder="Skill..." style={{ marginBottom: 0 }} />
-                            <button className="btn" style={{ padding: '0.5rem' }}>Go</button>
+            {editingRoom && <EditRoomModal room={editingRoom} onClose={() => setEditingRoom(null)} onRoomUpdated={() => { setEditingRoom(null); fetchRooms(); }} />}
+
+            <div className="dashboard-container">
+                <header className="dashboard-header">
+                    <h2>~/dashboard</h2>
+                    <div className="sys-status">
+                        <span className="status-dot online"></span> SYSTEM ONLINE
+                    </div>
+                </header>
+
+                <div className="dashboard-grid">
+                    {/* LEFT COL: Notifications & Actions */}
+                    <div className="dashboard-sidebar">
+
+                        {/* 1. Notifications */}
+                        <div className="term-card">
+                            <div className="term-header">
+                                <div className="window-dots"><div className="dot dot-red"></div><div className="dot dot-yellow"></div><div className="dot dot-green"></div></div>
+                                <span>notifications.log</span>
+                            </div>
+                            <div className="term-body" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                                {notifications.length > 0 ? (
+                                    <ul className="term-list">
+                                        {notifications.map(n => (
+                                            <li key={n._id} className="term-list-item">
+                                                <span className="timestamp">[{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}]</span> {n.message}
+                                                {n.type === 'invite' && n.relatedId && (
+                                                    <button className="btn-term-action" onClick={() => handleAcceptInvite(n.relatedId)}>
+                                                        [ACCEPT INVITE]
+                                                    </button>
+                                                )}
+                                                {n.type === 'join_request' && n.sender && (
+                                                    <button className="btn-term-action" onClick={() => handleApproveJoin(n.relatedId, n.sender, n._id)}>
+                                                        [APPROVE ACCESS]
+                                                    </button>
+                                                )}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ) : <div className="term-empty">&gt; No new system messages.</div>}
+                            </div>
                         </div>
-                        <div style={{ marginTop: '1rem' }}>
-                            <Link to="/forum" style={{ fontSize: '0.8rem', color: 'var(--accent-primary)' }}>Advanced Search &rarr;</Link>
+
+                        {/* 2. Quick Match */}
+                        <div className="term-card" style={{ marginTop: '1.5rem' }}>
+                            <div className="term-header">
+                                <span>quick_match.exe</span>
+                            </div>
+                            <div className="term-body">
+                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                    <input type="text" className="term-input" placeholder="Enter skill..." />
+                                    <button className="btn-term">GO</button>
+                                </div>
+                                <div style={{ marginTop: '0.8rem' }}>
+                                    <Link to="/forum" className="term-link">&gt; Advanced Search...</Link>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 3. Join Room */}
+                        <div className="term-card" style={{ marginTop: '1.5rem' }}>
+                            <div className="term-header">
+                                <span>connect_remote.sh</span>
+                            </div>
+                            <div className="term-body">
+                                <form onSubmit={handleSearch} style={{ display: 'flex', gap: '0.5rem' }}>
+                                    <input type="text" className="term-input" placeholder="Search rooms..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                                    <button type="submit" className="btn-term">FIND</button>
+                                </form>
+                                <ul className="term-list" style={{ marginTop: '1rem' }}>
+                                    {searchResults.map(room => (
+                                        <li key={room._id} className="term-list-item">
+                                            <span>{room.name}</span>
+                                            {room.members?.some(m => m._id === user._id) ?
+                                                <span className="status-tag">[MEMBER]</span> :
+                                                <button className="btn-term-sm" onClick={() => handleRequestJoin(room._id)}>REQ_ACCESS</button>
+                                            }
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
                         </div>
                     </div>
-                    <div className="join-panel">
-                        <h2>Join Room</h2>
-                        <form onSubmit={handleSearch}>
-                            <input type="text" placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-                            <button type="submit" className="btn">Search</button>
-                        </form>
-                        <ul className="rooms-list" style={{marginTop: '1rem'}}>
-                            {searchResults.map(room => (
-                                <li key={room._id} className="room-list-item">
-                                    <span>{room.name}</span>
-                                    {room.members?.some(m => m._id === user._id) ? 
-                                        <span className="status-label member">Member</span> : 
-                                        <button className="btn-action btn-join" onClick={() => handleRequestJoin(room._id)}>Request</button>
-                                    }
-                                </li>
-                            ))}
-                        </ul>
+
+                    {/* RIGHT COL: Main Room Management */}
+                    <div className="dashboard-main">
+
+                        {/* Create Room */}
+                        <div className="term-card mb-4">
+                            <div className="term-header">
+                                <div className="window-dots"><div className="dot dot-red"></div><div className="dot dot-yellow"></div><div className="dot dot-green"></div></div>
+                                <span>mkdir new_room</span>
+                            </div>
+                            <div className="term-body">
+                                <form onSubmit={handleCreateRoom} className="create-room-form">
+                                    <div className="form-group">
+                                        <label>&gt; Room Name:</label>
+                                        <input type="text" className="term-input" value={roomName} onChange={(e) => setRoomName(e.target.value)} required />
+                                    </div>
+                                    <div className="form-group">
+                                        <label>&gt; Description:</label>
+                                        <input type="text" className="term-input" value={roomDescription} onChange={(e) => setRoomDescription(e.target.value)} />
+                                    </div>
+                                    <button type="submit" className="btn-term-primary">EXECUTE CREATE</button>
+                                </form>
+                            </div>
+                        </div>
+
+                        {/* My Rooms List */}
+                        <div className="term-card" style={{ flexGrow: 1 }}>
+                            <div className="term-header">
+                                <div className="window-dots"><div className="dot dot-red"></div><div className="dot dot-yellow"></div><div className="dot dot-green"></div></div>
+                                <span>ls ./my_rooms</span>
+                            </div>
+                            <div className="term-body room-grid-display">
+                                {myRooms.length > 0 ? (
+                                    myRooms.map(room => (
+                                        <div key={room._id} className="room-card-mini">
+                                            <div className="room-icon">📁</div>
+                                            <div className="room-info">
+                                                <Link to={`/rooms/${room._id}`} className="room-title">{room.name}</Link>
+                                                <span className="room-desc">{room.description || 'No description'}</span>
+                                            </div>
+                                            {user._id === room.owner._id && (
+                                                <div className="room-actions">
+                                                    <button className="icon-btn" onClick={() => setEditingRoom(room)} title="Edit">✎</button>
+                                                    <button className="icon-btn danger" onClick={() => handleDelete(room._id)} title="Delete">×</button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))
+                                ) : <div className="term-empty">&gt; Directory is empty. Create a room to start.</div>}
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

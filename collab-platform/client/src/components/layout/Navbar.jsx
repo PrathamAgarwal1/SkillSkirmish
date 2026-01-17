@@ -36,12 +36,31 @@ const Navbar = () => {
     }
 
     return (
-        <nav className="navbar">
-            <h1>
-                <Link to="/">CodeCollab</Link>
+        <nav className="navbar" style={{
+            background: 'var(--bg-input)',
+            borderBottom: '1px solid var(--border-subtle)',
+            fontFamily: 'var(--font-mono)',
+            height: '60px'
+        }}>
+            <h1 style={{ fontSize: '1.2rem', margin: 0 }}>
+                <Link to="/" style={{ color: 'var(--term-green)', textDecoration: 'none' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>user@codecolab:</span>~$
+                </Link>
             </h1>
             <div className="nav-links">
-                {isAuthenticated ? authLinks : guestLinks}
+                {isAuthenticated ? (
+                    <ul style={{ display: 'flex', gap: '1.5rem', margin: 0, padding: 0, listStyle: 'none' }}>
+                        <li><Link to="/dashboard" style={{ color: 'var(--text-main)' }}>./dashboard</Link></li>
+                        <li><Link to="/forum" style={{ color: 'var(--text-main)' }}>./forum</Link></li>
+                        <li><Link to="/profile" style={{ color: 'var(--text-main)' }}>./profile</Link></li>
+                        <li><a onClick={logout} href="#!" style={{ color: 'var(--term-red)' }}>exit</a></li>
+                    </ul>
+                ) : (
+                    <ul style={{ display: 'flex', gap: '1.5rem', margin: 0, padding: 0, listStyle: 'none' }}>
+                        <li><Link to="/register" style={{ color: 'var(--text-main)' }}>./register</Link></li>
+                        <li><Link to="/login" style={{ color: 'var(--term-blue)' }}>./login</Link></li>
+                    </ul>
+                )}
             </div>
         </nav>
     );

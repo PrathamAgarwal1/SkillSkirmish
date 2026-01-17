@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useContext } from 'react';
 import { Link } from 'react-router-dom';
+import AuthContext from '../context/AuthContext';
 
 const HomePage = () => {
+    const { isAuthenticated } = useContext(AuthContext);
     return (
         <div className="homepage">
             {/* --- Hero Section --- */}
@@ -13,11 +15,11 @@ const HomePage = () => {
                 <div className="hero-content">
                     <div className="hero-logo">
                         <svg width="80" height="80" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M8 18L12 22L16 18" stroke="var(--accent-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                            <path d="M16 6L12 2L8 6" stroke="var(--accent-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                            <path d="M12 2V22" stroke="var(--accent-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.4"/>
-                            <path d="M3 10C3 10 3 12 5 12C7 12 7 10 7 10" stroke="var(--accent-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.6"/>
-                            <path d="M17 14C17 14 17 16 19 16C21 16 21 14 21 14" stroke="var(--accent-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.6"/>
+                            <path d="M8 18L12 22L16 18" stroke="var(--accent-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M16 6L12 2L8 6" stroke="var(--accent-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M12 2V22" stroke="var(--accent-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.4" />
+                            <path d="M3 10C3 10 3 12 5 12C7 12 7 10 7 10" stroke="var(--accent-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.6" />
+                            <path d="M17 14C17 14 17 16 19 16C21 16 21 14 21 14" stroke="var(--accent-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.6" />
                         </svg>
                         <h1>CodeCollab</h1>
                     </div>
@@ -29,8 +31,14 @@ const HomePage = () => {
                         Real-time IDEs, live chat, and AI skill-tracking—all in one place.
                     </p>
                     <div className="hero-cta">
-                        <Link to="/register" className="btn">Get Started for Free</Link>
-                        <Link to="/login" className="btn btn-secondary">Login</Link>
+                        {isAuthenticated ? (
+                            <Link to="/dashboard" className="btn">Go to Dashboard</Link>
+                        ) : (
+                            <>
+                                <Link to="/register" className="btn">Get Started for Free</Link>
+                                <Link to="/login" className="btn btn-secondary">Login</Link>
+                            </>
+                        )}
                     </div>
                 </div>
             </section>
@@ -39,7 +47,7 @@ const HomePage = () => {
             <section className="features-section">
                 <h2>A Unified Workflow for Modern Teams</h2>
                 <div className="feature-grid">
-                    
+
                     <div className="feature-card">
                         <h3>Real-time Collaborative IDE</h3>
                         <p>Code together in a shared, multi-file environment. See live cursors, edit simultaneously, and run your code in a cloud sandbox. It's like Google Docs, but for your entire project.</p>

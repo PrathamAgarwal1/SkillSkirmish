@@ -45,84 +45,62 @@ async function generateQuestion(skill, currentElo, requiredType, avoidList = [])
 
   for (let attempt = 0; attempt < GENERATE_RETRY_LIMIT; attempt++) {
     try {
-      const randomSeed = Math.random().toString(36).slice(2, 9);
-
+      // Use a simpler, more robust prompt
       const prompt = `
-Act as a Senior Technical Interviewer.
-Generate exactly ONE ${requiredType.toUpperCase()} question for the topic: "${skill}".
+        Task: Generate 1 unique technical interview question.
+        Topic: ${skill}
+        Difficulty: ELO ${currentElo} (Adjust accordingly)
+        Type: ${requiredType} (${requiredType === 'mcq' ? 'Multiple Choice' : 'Open Ended'})
 
-Randomness token: ${randomSeed}
-Avoid repeating any question already asked (examples provided below).
-Avoid trivial one-liners; prefer clear, unambiguous wording.
-
-Rules:
-- Difficulty adapts to candidate ELO (${currentElo})
-- Type MUST be: "${requiredType}"
-- Output MUST be valid JSON only (no markdown)
-- If MCQ, include at least 2 options (preferably 4). If subjective, options should be an empty array.
-
-Examples-of-previous-questions-to-avoid (do not reuse exact wording):
-${avoidList.map((q, i) => `${i + 1}. ${String(q).slice(0, 200)}`).join('\n')}
-
-JSON format:
-{
-  "type": "${requiredType}",
-  "question": "Question text",
-  "options": ["A", "B", "C", "D"] or [],
-  "answer": "Correct answer or reference answer",
-  "difficulty": "Easy" | "Medium" | "Hard"
-}
-`;
+        Constraints:
+        - valid JSON output only.
+        - No markdown formatting.
+        - unique from: ${JSON.stringify(avoidList.map(q => q.substring(0, 50)))}
+        
+        JSON Structure:
+        {
+          "question": "The question text",
+          "options": ["A", "B", "C", "D"], // only for mcq
+          "answer": "The correct answer string",
+          "difficulty": "Easy|Medium|Hard",
+          "type": "${requiredType}"
+        }
+      `;
 
       const aiData = await generateJSON(prompt);
 
-      // Basic validation of structure
-      if (!aiData || !aiData.question || !aiData.type) {
-        lastErr = new Error('Invalid AI response structure');
-        continue; // retry
-      }
+      // Validation
+      if (!aiData || !aiData.question) throw new Error('Invalid AI response');
 
       const qText = String(aiData.question).trim();
-      // Check duplication (strict string match)
       if (avoidList.some(prev => String(prev).trim() === qText)) {
-        lastErr = new Error('Duplicate question returned');
-        continue; // retry
+        throw new Error('Duplicate question');
       }
 
-      // Normalize type
-      const aiType = String(aiData.type || '').toLowerCase();
-      if (requiredType === 'mcq' && aiType !== 'mcq') {
-        // if LLM returned wrong type, retry
-        lastErr = new Error('LLM returned wrong type');
-        continue;
-      }
-      if (requiredType === 'subjective' && aiType !== 'subjective') {
-        lastErr = new Error('LLM returned wrong type');
-        continue;
-      }
-
-      // Ensure options presence for MCQ
-      if (requiredType === 'mcq' && (!Array.isArray(aiData.options) || aiData.options.length < 2)) {
-        lastErr = new Error('MCQ returned without enough options');
-        continue;
-      }
-
-      // Good result
+      // Return valid question
       return {
         type: requiredType,
         question: qText,
         options: Array.isArray(aiData.options) ? aiData.options : [],
-        answer: aiData.answer || '',
+        answer: aiData.answer || 'Refer to documentation',
         difficulty: aiData.difficulty || 'Medium'
       };
+
     } catch (err) {
       lastErr = err;
-      // continue to retry
+      console.log(`[Assessment] Gen attempt ${attempt} failed: ${err.message}`);
     }
   }
 
-  // If we reach here, we failed to get a good unique question
-  throw lastErr || new Error('Failed to generate a unique question after retries');
+  // FALLBACK if AI fails 4 times (Prevent crash)
+  console.warn('[Assessment] Using Fallback Question');
+  return {
+    type: requiredType,
+    question: `Explain the core concepts of ${skill}. (Fallback Question)`,
+    options: requiredType === 'mcq' ? ["Concept A", "Concept B", "Concept C", "All of the above"] : [],
+    answer: "All of the above",
+    difficulty: 'Easy'
+  };
 }
 
 // -------------------------------------------------------------

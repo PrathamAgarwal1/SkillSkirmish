@@ -33,7 +33,7 @@ const generateJSON = async (prompt) => {
 
     // --- 2. GEMINI ---
     if (genAI) {
-        const geminiModels = ["gemini-1.5-flash", "gemini-pro"];
+        const geminiModels = ["gemini-1.5-flash-latest", "gemini-1.5-pro", "gemini-pro"];
         for (const modelName of geminiModels) {
             try {
                 console.log(`🤖 AI: Switching to Gemini (${modelName})...`);

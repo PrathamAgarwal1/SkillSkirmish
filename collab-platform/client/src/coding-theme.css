@@ -1,0 +1,406 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700&family=Outfit:wght@400;600;800&display=swap');
+
+:root {
+    /* --- Cyberpunk / Glassmorphism Palette --- */
+    --bg-deep: #050507;
+    --bg-glass: rgba(22, 27, 34, 0.7);
+    --bg-glass-strong: rgba(13, 17, 23, 0.85);
+
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --text-scintillating: #58a6ff;
+
+    /* Neon Accents */
+    --neon-blue: #58a6ff;
+    --neon-purple: #bc8cff;
+    --neon-green: #3fb950;
+    --neon-pink: #ff7b72;
+
+    --border-subtle: rgba(240, 246, 252, 0.1);
+    --border-neon: rgba(88, 166, 255, 0.3);
+
+    --font-main: 'Inter', sans-serif;
+    --font-display: 'Outfit', sans-serif;
+    --font-code: 'JetBrains Mono', monospace;
+
+    --shadow-neon: 0 0 10px rgba(88, 166, 255, 0.2), 0 0 20px rgba(88, 166, 255, 0.1);
+    --shadow-glass: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+
+    --ease-elastic: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* --- Global Reset & Base --- */
+body {
+    background-color: var(--bg-deep);
+    color: var(--text-primary);
+    font-family: var(--font-main);
+    background-image:
+        radial-gradient(circle at 15% 50%, rgba(88, 166, 255, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 85% 30%, rgba(188, 140, 255, 0.08) 0%, transparent 40%);
+    background-attachment: fixed;
+    min-height: 100vh;
+    margin: 0;
+    line-height: 1.6;
+}
+
+/* Headlines */
+h1,
+h2,
+h3,
+h4,
+h5 {
+    font-family: var(--font-display);
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: -0.02em;
+}
+
+h1 {
+    background: linear-gradient(135deg, #fff 0%, #b3b3b3 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0 0 30px rgba(255, 255, 255, 0.1);
+}
+
+/* --- ANIMATIONS --- */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes pulseGlow {
+    0% {
+        box-shadow: 0 0 5px var(--neon-blue), 0 0 10px var(--neon-purple);
+    }
+
+    50% {
+        box-shadow: 0 0 20px var(--neon-blue), 0 0 30px var(--neon-purple);
+    }
+
+    100% {
+        box-shadow: 0 0 5px var(--neon-blue), 0 0 10px var(--neon-purple);
+    }
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(30px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* --- INTERACTIVE COMPONENTS --- */
+
+/* 1. Glass Cards */
+.card,
+.dashboard-layout>div,
+.room-sidebar,
+.room-chat,
+.room-header {
+    background: var(--bg-glass);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border-subtle);
+    border-radius: 16px;
+    box-shadow: var(--shadow-glass);
+    transition: transform 0.3s var(--ease-elastic), box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.card:hover {
+    transform: translateY(-4px);
+    border-color: var(--neon-blue);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5), 0 0 15px rgba(88, 166, 255, 0.15);
+}
+
+/* 2. Neon Buttons */
+.btn {
+    background: linear-gradient(90deg, var(--neon-blue) 0%, #2f81f7 100%);
+    color: #fff;
+    border: none;
+    font-family: var(--font-display);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 15px rgba(47, 129, 247, 0.3);
+    z-index: 1;
+}
+
+.btn::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(90deg, var(--neon-purple), var(--neon-blue));
+    opacity: 0;
+    z-index: -1;
+    transition: opacity 0.3s ease;
+}
+
+.btn:hover {
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: 0 8px 25px rgba(88, 166, 255, 0.4);
+}
+
+.btn:hover::before {
+    opacity: 1;
+}
+
+.btn:active {
+    transform: scale(0.98);
+}
+
+/* Secondary Button */
+.btn-secondary {
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    color: var(--text-primary);
+    box-shadow: none;
+}
+
+.btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--text-primary);
+    transform: translateY(-2px);
+}
+
+/* 3. Inputs with Animated Bottom Border */
+input,
+textarea,
+select {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    color: #fff;
+    padding: 0.8rem 1rem;
+    width: 100%;
+    transition: all 0.3s ease;
+    font-family: var(--font-main);
+}
+
+input:focus,
+textarea:focus {
+    outline: none;
+    border-color: var(--neon-blue);
+    background: rgba(0, 0, 0, 0.5);
+    box-shadow: 0 0 0 4px rgba(88, 166, 255, 0.1);
+}
+
+/* --- PAGE SPECIFIC --- */
+
+/* Dashboard Layout Overrides */
+.dashboard-layout {
+    display: grid;
+    grid-template-columns: 280px 1fr 320px;
+    gap: 2rem;
+    padding: 2rem;
+    max-width: 1600px;
+    margin: 0 auto;
+}
+
+.notifications-list,
+.rooms-list {
+    padding: 0;
+    list-style: none;
+}
+
+.notification-item,
+.room-list-item {
+    background: rgba(255, 255, 255, 0.03);
+    margin-bottom: 0.8rem;
+    padding: 1rem;
+    border-radius: 12px;
+    border-left: 3px solid transparent;
+    transition: all 0.2s ease;
+    animation: fadeIn 0.5s ease backwards;
+}
+
+/* Stagger animation for items (up to 10) */
+.room-list-item:nth-child(1) {
+    animation-delay: 0.1s;
+}
+
+.room-list-item:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.room-list-item:nth-child(3) {
+    animation-delay: 0.3s;
+}
+
+.room-list-item:nth-child(4) {
+    animation-delay: 0.4s;
+}
+
+.notification-item:hover,
+.room-list-item:hover {
+    background: rgba(255, 255, 255, 0.07);
+    border-left-color: var(--neon-blue);
+    transform: translateX(5px);
+}
+
+/* Room Page Overrides */
+.room-container {
+    display: grid;
+    grid-template-columns: 260px 1fr 380px;
+    /* Wider chat */
+    grid-template-rows: 70px 1fr;
+    height: 100vh;
+    gap: 0;
+    /* Glass panels touch or have subtle gaps */
+    background: radial-gradient(circle at 50% 50%, #161b22 0%, #0d1117 100%);
+}
+
+.room-header {
+    grid-column: 1 / -1;
+    border-radius: 0;
+    border-bottom: 1px solid var(--border-subtle);
+    background: rgba(13, 17, 23, 0.9);
+    /* More opaque */
+    z-index: 10;
+    display: flex;
+    /* Ensure flex layout applies */
+    justify-content: space-between;
+    /* Ensure content is spaced */
+    align-items: center;
+    /* Vertically center */
+    padding: 0 2rem;
+    /* Matches CSS above */
+}
+
+.room-sidebar {
+    border-radius: 0;
+    border-right: 1px solid var(--border-subtle);
+    background: rgba(13, 17, 23, 0.6);
+}
+
+.room-chat {
+    border-radius: 0;
+    border-left: 1px solid var(--border-subtle);
+    background: rgba(13, 17, 23, 0.8);
+}
+
+.room-main {
+    padding: 3rem;
+    background: transparent;
+    /* Let body gradient show through */
+}
+
+/* Timer - The Centerpiece */
+.focus-timer {
+    background: rgba(22, 27, 34, 0.4);
+    border: 1px solid var(--border-neon);
+    box-shadow: 0 0 30px rgba(88, 166, 255, 0.05);
+    position: relative;
+    overflow: hidden;
+}
+
+.focus-timer::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(88, 166, 255, 0.05) 0%, transparent 60%);
+    animation: pulseGlow 4s infinite ease-in-out;
+    pointer-events: none;
+}
+
+.timer-display {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 5rem;
+    background: linear-gradient(180deg, #fff 0%, #88c0fc 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 0 15px rgba(88, 166, 255, 0.4));
+}
+
+/* Chat Bubbles */
+.message-bubble {
+    background: rgba(30, 35, 45, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(4px);
+    border-radius: 12px;
+    border-bottom-left-radius: 2px;
+    padding: 0.8rem 1rem;
+    animation: fadeIn 0.3s ease;
+}
+
+.message-bubble.mine {
+    background: linear-gradient(135deg, rgba(88, 166, 255, 0.1) 0%, rgba(88, 166, 255, 0.2) 100%);
+    border-color: rgba(88, 166, 255, 0.3);
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 2px;
+    text-align: right;
+}
+
+/* Tasks */
+.todo-item {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    transition: background 0.2s;
+}
+
+.todo-item:hover {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.todo-item input[type="checkbox"] {
+    width: 1.2rem;
+    height: 1.2rem;
+    accent-color: var(--neon-green);
+    cursor: pointer;
+}
+
+/* Navbar */
+.navbar {
+    background: rgba(5, 5, 7, 0.8);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.nav-link {
+    position: relative;
+    color: var(--text-secondary);
+    font-weight: 500;
+    transition: color 0.3s;
+}
+
+.nav-link:hover {
+    color: var(--neon-blue);
+}
+
+.nav-link::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 0;
+    width: 0%;
+    height: 2px;
+    background: var(--neon-blue);
+    transition: width 0.3s ease;
+    box-shadow: 0 0 8px var(--neon-blue);
+}
+
+.nav-link:hover::after {
+    width: 100%;
+}
