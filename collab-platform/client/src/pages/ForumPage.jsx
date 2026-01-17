@@ -163,7 +163,6 @@ const ForumPage = () => {
                         )}
                     </ul>
                 )}
-                )}
             </div>
 
             {/* INVITE MODAL */}

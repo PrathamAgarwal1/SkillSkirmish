@@ -20,7 +20,7 @@ const VideoGrid = ({ roomId, user, onLeave }) => {
                 const roomName = roomId;
                 // Append random ID to username for multi-tab testing support
                 const participantName = `${user.username}_${Math.floor(Math.random() * 1000)}`;
-                const response = await fetch(`http://localhost:5000/api/livekit/token?roomName=${roomName}&participantName=${participantName}`);
+                const response = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:5000'}/api/livekit/token?roomName=${roomName}&participantName=${participantName}`);
                 const data = await response.json();
                 setToken(data.token);
             } catch (error) {

@@ -16,7 +16,7 @@ import axios from 'axios'; // <-- IMPORT AXIOS
 console.log("1. main.jsx is running");
 
 // Sets the base URL for all future Axios requests
-axios.defaults.baseURL = 'http://localhost:5000';
+axios.defaults.baseURL = import.meta.env.VITE_SERVER_URL || 'http://localhost:5000';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
