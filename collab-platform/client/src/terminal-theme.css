@@ -1,0 +1,173 @@
+:root {
+    /* --- Kuber / Developer-Core Palette --- */
+    --bg-deep: #050505;
+    --bg-dark: #0d1117;
+    /* GitHub Dark */
+    --bg-card: #161b22;
+    --bg-input: #010409;
+
+    --border-subtle: #30363d;
+    --border-active: #8b949e;
+
+    /* Terminal Accents */
+    --term-green: #238636;
+    /* GitHub Green */
+    --term-blue: #58a6ff;
+    --term-purple: #bc8cff;
+    --term-red: #da3633;
+    --term-gold: #d29922;
+
+    /* Text */
+    --text-main: #c9d1d9;
+    --text-muted: #8b949e;
+    --text-bright: #f0f6fc;
+
+    /* Fonts */
+    --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+    --font-sans: 'Inter', system-ui, sans-serif;
+
+    /* Effects */
+    --shadow-term: 0 0 10px rgba(0, 0, 0, 0.5);
+    --glow-text: 0 0 4px rgba(88, 166, 255, 0.4);
+
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 12px;
+}
+
+/* --- ANIMATIONS --- */
+@keyframes cursor-blink {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0;
+    }
+}
+
+@keyframes scanline {
+    0% {
+        transform: translateY(-100%);
+    }
+
+    100% {
+        transform: translateY(100%);
+    }
+}
+
+@keyframes crt-flicker {
+    0% {
+        opacity: 0.97;
+    }
+
+    5% {
+        opacity: 0.95;
+    }
+
+    10% {
+        opacity: 0.97;
+    }
+
+    15% {
+        opacity: 0.99;
+    }
+
+    20% {
+        opacity: 0.96;
+    }
+
+    25% {
+        opacity: 0.98;
+    }
+
+    30% {
+        opacity: 0.95;
+    }
+
+    35% {
+        opacity: 0.98;
+    }
+
+    40% {
+        opacity: 0.99;
+    }
+
+    100% {
+        opacity: 0.97;
+    }
+}
+
+/* --- UTILITIES --- */
+.font-mono {
+    font-family: var(--font-mono);
+}
+
+.text-glow {
+    text-shadow: var(--glow-text);
+}
+
+.term-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-term);
+    transition: all 0.2s ease;
+}
+
+.term-card:hover {
+    border-color: var(--text-muted);
+}
+
+.term-header {
+    background: var(--bg-input);
+    border-bottom: 1px solid var(--border-subtle);
+    padding: 0.5rem 1rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Traffic Lights */
+.window-dots {
+    display: flex;
+    gap: 6px;
+    margin-right: 10px;
+}
+
+.dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+.dot-red {
+    background: #ff5f56;
+}
+
+.dot-yellow {
+    background: #ffbd2e;
+}
+
+.dot-green {
+    background: #27c93f;
+}
+
+/* CRT Overlay Effect */
+.crt-overlay {
+    pointer-events: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+    background-size: 100% 2px, 3px 100%;
+    z-index: 9999;
+    opacity: 0.15;
+}

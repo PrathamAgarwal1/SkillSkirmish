@@ -1,7 +1,16 @@
 import React from 'react';
+import { Buffer } from 'buffer';
+import process from 'process';
+
+// Polyfill Node.js globals for simple-peer
+window.global = window;
+window.process = process;
+window.Buffer = Buffer;
+
 import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
 import './index.css';
+import './modern-dark.css';
 import { AuthProvider } from './context/AuthContext.jsx';
 import axios from 'axios'; // <-- IMPORT AXIOS
 console.log("1. main.jsx is running");

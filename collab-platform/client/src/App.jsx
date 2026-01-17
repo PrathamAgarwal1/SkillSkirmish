@@ -35,33 +35,34 @@ const AppContent = () => {
 
       // Listen for notifications
       const handleNewNotification = ({ message }) => {
-          toast.info(message, {
-              position: "top-right",
-              autoClose: 10000,
-              hideProgressBar: false,
-              closeOnClick: true,
-              pauseOnHover: true,
-              draggable: true,
-              progress: undefined,
-              theme: "dark",
-              onClick: () => navigate('/dashboard')
-          });
+        toast.info(message, {
+          position: "top-right",
+          autoClose: 10000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+          progress: undefined,
+          theme: "dark",
+          onClick: () => navigate('/dashboard')
+        });
       };
 
       socket.on('new-notification', handleNewNotification);
 
       return () => {
-          socket.off('new-notification', handleNewNotification);
-          socket.disconnect();
+        socket.off('new-notification', handleNewNotification);
+        socket.disconnect();
       };
     } else {
-        // Disconnect if logged out
-        socket.disconnect();
+      // Disconnect if logged out
+      socket.disconnect();
     }
   }, [isAuthenticated, user, navigate]);
 
   return (
     <>
+      <div className="crt-overlay"></div>
       <Navbar />
       <main>
         <Routes>
@@ -72,13 +73,13 @@ const AppContent = () => {
 
           {/* Private Routes */}
           <Route path="/dashboard" element={<PrivateRoute><DashboardPage /></PrivateRoute>} />
-          
+
           {/* EXISTING: My Profile */}
           <Route path="/profile" element={<PrivateRoute><ProfilePage /></PrivateRoute>} />
-          
+
           {/* NEW: View Other Profile */}
           <Route path="/profile/:userId" element={<PrivateRoute><ProfilePage /></PrivateRoute>} />
-          
+
           <Route path="/forum" element={<PrivateRoute><ForumPage /></PrivateRoute>} />
 
           {/* Room and Project Routes */}

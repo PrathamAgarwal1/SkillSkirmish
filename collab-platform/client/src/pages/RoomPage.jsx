@@ -1,266 +1,506 @@
-import React, { useState, useEffect, useContext, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useContext, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import AuthContext from '../context/AuthContext';
 import { socket } from '../socket';
+import VideoGrid from '../components/rooms/VideoGrid';
+import CreateProjectModal from '../components/projects/CreateProjectModal';
+import { VscFolder, VscFileCode, VscChevronDown, VscChevronRight, VscNewFile, VscNewFolder, VscRefresh, VscEllipsis, VscAccount, VscPlay, VscDebugRestart, VscDebugPause, VscSignOut } from "react-icons/vsc";
+import { FaTerminal } from "react-icons/fa";
 
 const RoomPage = () => {
-    const { roomId } = useParams();
-    const { user } = useContext(AuthContext);
+    const { roomId: id } = useParams();
     const navigate = useNavigate();
-    
+    const { user } = useContext(AuthContext);
     const [room, setRoom] = useState(null);
-    const [projects, setProjects] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
-    
-    const [newProjectName, setNewProjectName] = useState('');
-    const [isCreating, setIsCreating] = useState(false);
-
     const [messages, setMessages] = useState([]);
-    const [messageInput, setMessageInput] = useState('');
-    const messagesEndRef = useRef(null);
+    const [newMessage, setNewMessage] = useState('');
+    const [activeUsers, setActiveUsers] = useState([]);
 
-    // 1. Fetch Room Data & Projects
-    const fetchRoomData = useCallback(async () => {
-        try {
-            // Fetch Room Details
-            const roomRes = await axios.get(`/api/rooms/${roomId}`);
-            setRoom(roomRes.data);
+    // Projects State
+    const [projects, setProjects] = useState([]);
+    const [showCreateProject, setShowCreateProject] = useState(false);
 
-            // Fetch Projects for this Room
-            const projRes = await axios.get(`/api/projects/room/${roomId}`);
-            setProjects(projRes.data);
-            
-            // Fetch Chat History
-            const msgRes = await axios.get(`/api/rooms/${roomId}/messages`);
-            setMessages(msgRes.data);
+    // Feature state: Timer
+    const [timer, setTimer] = useState(25 * 60);
+    const [isTimerRunning, setIsTimerRunning] = useState(false);
+    const [timerMode, setTimerMode] = useState('focus'); // focus | break
 
-            setLoading(false);
-        } catch (err) {
-            console.error("Error fetching room data:", err);
-            if (err.response?.status === 404) {
-                setError('Room not found.');
-            } else if (err.response?.status === 403) {
-                setError('Access Denied: You must join this room to view it.');
-            } else {
-                setError('Failed to load room data.');
+    // Feature state: Tasks
+    const [tasks, setTasks] = useState([]);
+    const [taskInput, setTaskInput] = useState('');
+
+    // Refs
+    const chatEndRef = useRef(null);
+
+    // --- 1. Load Data ---
+    useEffect(() => {
+        const fetchRoomData = async () => {
+            try {
+                const roomRes = await axios.get(`/api/rooms/${id}`);
+                setRoom(roomRes.data);
+                // Initial members from DB, but socket will update likely
+                setActiveUsers(roomRes.data.members || []);
+
+                const msgRes = await axios.get(`/api/rooms/${id}/messages`);
+                setMessages(msgRes.data);
+
+                // Fetch Projects
+                const projRes = await axios.get(`/api/projects/room/${id}`);
+                setProjects(projRes.data);
+
+            } catch (err) {
+                console.error(err);
+                alert("Failed to load room. Check console needed.");
+                // navigate('/dashboard'); // DEBUG: Disable auto-redirect
             }
-            setLoading(false);
-        }
-    }, [roomId]);
-
-    useEffect(() => {
-        if (user) fetchRoomData();
-    }, [fetchRoomData, user]);
-
-    // 2. Socket Connection & Chat
-    useEffect(() => {
-        if (!user || !room) return;
-
-        // Join the socket room
-        console.log("Joining room:", roomId);
-        socket.emit('joinRoom', { roomId });
-
-        const handleMessage = (msg) => {
-            console.log("Received message:", msg);
-            setMessages((prev) => [...prev, msg]);
         };
-        
-        // Listen for room updates (projects added/removed)
-        const handleRoomUpdate = (data) => {
-            console.log("Room updated:", data);
-            // Re-fetch projects to ensure sync
-            axios.get(`/api/projects/room/${roomId}`)
-                .then(res => setProjects(res.data))
-                .catch(err => console.error("Failed to refresh projects", err));
+        fetchRoomData();
+    }, [id /*, navigate */]); // Remove navigate dependency for now
+
+    // --- 2. Socket Logic ---
+    useEffect(() => {
+        if (!user || !id) return;
+
+        // Join the socket room WITH user info
+        socket.emit('joinRoom', { roomId: id, user });
+
+        // Listeners
+        const handleReceiveMessage = (msg) => setMessages((prev) => [...prev, msg]);
+
+        const handleRoomUsers = (users) => {
+            const unique = [];
+            const map = new Map();
+            for (const item of users) {
+                if (!map.has(item.userId)) {
+                    map.set(item.userId, true);
+                    unique.push(item);
+                }
+            }
+            setActiveUsers(unique);
         };
 
-        socket.on('message', handleMessage);
-        socket.on('room-update', handleRoomUpdate);
+        const handleTimerUpdate = ({ timer: t, isRunning: r, mode: m }) => {
+            setTimer(t);
+            setIsTimerRunning(r);
+            setTimerMode(m);
+        };
+
+        const handleRoomUpdate = () => {
+            // Re-fetch rooms or projects if needed
+            // For now, let's re-fetch projects as they might have changed
+            const fetchProjects = async () => {
+                try {
+                    const res = await axios.get(`/api/projects/room/${id}`);
+                    setProjects(res.data);
+                } catch (e) { console.error(e); }
+            };
+            fetchProjects();
+        };
+
+        socket.on('message', handleReceiveMessage);
+        socket.on('roomUsers', handleRoomUsers);
+        socket.on('timerUpdate', handleTimerUpdate);
+        socket.on('room-update', handleRoomUpdate); // Listen for generic room updates (like new projects)
 
         return () => {
-            socket.off('message', handleMessage);
+            socket.emit('leaveRoom', { roomId: id, userId: user._id });
+            socket.off('message', handleReceiveMessage);
+            socket.off('roomUsers', handleRoomUsers);
+            socket.off('timerUpdate', handleTimerUpdate);
             socket.off('room-update', handleRoomUpdate);
-            // Optional: socket.emit('leaveRoom', { roomId });
         };
-    }, [roomId, user, room]);
+    }, [id, user]);
 
-    // Auto-scroll to bottom of chat
+    // --- 3. Auto-scroll Chat ---
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
 
-    const sendMessage = (e) => {
+    // --- 4. Timer Logic (Owner/Sync) ---
+    useEffect(() => {
+        let interval = null;
+        if (isTimerRunning && timer > 0) {
+            interval = setInterval(() => {
+                setTimer(prev => {
+                    const newVal = prev - 1;
+                    return newVal;
+                });
+            }, 1000);
+        } else if (timer === 0) {
+            setIsTimerRunning(false);
+        }
+        return () => clearInterval(interval);
+    }, [isTimerRunning, timer]);
+
+    const broadcastTimer = (newTimer, newRunning, newMode) => {
+        socket.emit('timerUpdate', { roomId: id, timer: newTimer, isRunning: newRunning, mode: newMode });
+    };
+
+    const formatTime = (seconds) => {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    };
+
+    const toggleTimer = () => {
+        const newState = !isTimerRunning;
+        setIsTimerRunning(newState);
+        broadcastTimer(timer, newState, timerMode);
+    };
+
+    const resetTimer = () => {
+        const newTime = timerMode === 'focus' ? 25 * 60 : 5 * 60;
+        setIsTimerRunning(false);
+        setTimer(newTime);
+        broadcastTimer(newTime, false, timerMode);
+    };
+
+    const switchMode = (mode) => {
+        setTimerMode(mode);
+        setIsTimerRunning(false);
+        const newTime = mode === 'focus' ? 25 * 60 : 5 * 60;
+        setTimer(newTime);
+        broadcastTimer(newTime, false, mode);
+    };
+
+    const handleCustomTime = (minutes) => {
+        const newTime = minutes * 60;
+        setTimer(newTime);
+        setIsTimerRunning(true); // Auto-start custom timer
+        broadcastTimer(newTime, true, 'custom');
+    };
+
+
+
+    // --- 5. Handlers ---
+    const handleSendMessage = async (e) => {
         e.preventDefault();
-        if (messageInput.trim()) {
-            console.log("Sending message:", messageInput);
-            socket.emit('chatMessage', {
-                roomId,
-                senderId: user._id,
-                text: messageInput
-            });
-            setMessageInput('');
-        }
+        if (!newMessage.trim()) return;
+
+        const payload = {
+            roomId: id,
+            text: newMessage,
+            senderId: user._id
+        };
+
+        socket.emit('chatMessage', payload);
+        setNewMessage('');
     };
 
-    // 3. Create Project Logic
-    const handleCreateProject = async (e) => {
+    const handleAddTask = (e) => {
         e.preventDefault();
-        if (!newProjectName.trim()) return;
-
-        try {
-            setIsCreating(true);
-            const res = await axios.post('/api/projects', {
-                name: newProjectName,
-                roomId: roomId, // Match backend expectation
-                description: `Project created by ${user.username}`
-            });
-            
-            // Optimistic update (Socket will also trigger refresh)
-            setProjects([res.data, ...projects]);
-            setNewProjectName('');
-            setIsCreating(false);
-        } catch (err) {
-            console.error("Failed to create project:", err);
-            alert("Failed to create project. Please try again.");
-            setIsCreating(false);
-        }
-    };
-    
-    // Delete Project Logic
-    const handleDeleteProject = async (projectId) => {
-        if(!window.confirm("Are you sure you want to delete this project?")) return;
-        try {
-            await axios.delete(`/api/projects/${projectId}`);
-            // Optimistic update
-            setProjects(projects.filter(p => p._id !== projectId));
-        } catch (err) {
-            console.error("Failed to delete project", err);
-            alert("Failed to delete project");
-        }
+        if (!taskInput.trim()) return;
+        setTasks([...tasks, { id: Date.now(), text: taskInput, completed: false }]);
+        setTaskInput('');
     };
 
-    // --- RENDER HELPERS ---
+    const toggleTask = (taskId) => {
+        setTasks(tasks.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t));
+    };
 
-    if (loading) return <div className="container" style={{ paddingTop: '2rem', color: '#fff' }}>Loading Room...</div>;
-    
-    if (error) return (
-        <div className="container" style={{ paddingTop: '2rem', color: '#fff', textAlign: 'center' }}>
-            <h2 style={{ color: 'var(--accent-primary)' }}>⚠️ {error}</h2>
-            <button className="btn" onClick={() => navigate('/dashboard')}>Return to Dashboard</button>
-        </div>
-    );
+    const removeTask = (taskId) => {
+        setTasks(tasks.filter(t => t.id !== taskId));
+    };
 
-    if (!room) return null;
+    // Project Created Handler
+    const handleProjectCreated = (newProject) => {
+        // Optimistically add, or just wait for socket 'room-update'
+        setProjects(prev => [newProject, ...prev]);
+        setShowCreateProject(false);
+    };
 
-    const isOwner = user._id === room.owner._id;
+    const handleLeaveRoom = () => {
+        socket.emit('leaveRoom', { roomId: id, userId: user._id });
+        navigate('/dashboard');
+    };
+
+    const [isSidebarOpen, setIsSidebarOpen] = useState(true); // Default OPEN for Tiling View
+    const [isChatOpen, setIsChatOpen] = useState(true); // Default OPEN for Tiling View
+
+    // Toggle Sidebar Key
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.ctrlKey && e.key === 'b') { // VS Code default toggle sidebar
+                e.preventDefault();
+                setIsSidebarOpen(prev => !prev);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
+
+    if (!room) return <div className="container" style={{ paddingTop: '3rem' }}>Loading Room...</div>;
 
     return (
-        <div className="room-layout" style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: '1.5rem', padding: '2rem', height: 'calc(100vh - 80px)', boxSizing: 'border-box' }}>
-            
-            {/* --- LEFT COLUMN: CHAT --- */}
-            <div className="main-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-                <div style={{ borderBottom: '1px solid #333', paddingBottom: '1rem', marginBottom: '1rem' }}>
-                    <h1 style={{ margin: 0, fontSize: '1.5rem', color: 'var(--accent-primary)' }}>{room.name}</h1>
-                    <p style={{ color: '#888', margin: '5px 0 0 0' }}>{room.description || "No description"}</p>
-                </div>
+        <div className="war-room-grid">
 
-                <div className="chat-window" style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', background: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', overflow: 'hidden' }}>
-                    <div className="messages-area" style={{ flexGrow: 1, overflowY: 'auto', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
-                        {messages.length === 0 && <div style={{ textAlign: 'center', color: '#555', marginTop: '2rem' }}>No messages yet. Start chatting!</div>}
-                        {messages.map((msg, index) => {
-                            const isMe = msg.sender._id === user._id;
-                            return (
-                                <div key={index} style={{ alignSelf: isMe ? 'flex-end' : 'flex-start', maxWidth: '70%', display: 'flex', flexDirection: 'column', alignItems: isMe ? 'flex-end' : 'flex-start' }}>
-                                    <span style={{ fontSize: '0.75rem', color: '#888', marginBottom: '2px' }}>{msg.sender.username}</span>
-                                    <div style={{ background: isMe ? 'var(--accent-primary)' : '#21262d', color: isMe ? '#000' : '#c9d1d9', padding: '0.6rem 1rem', borderRadius: '12px', borderTopRightRadius: isMe ? '2px' : '12px', borderTopLeftRadius: isMe ? '12px' : '2px', wordBreak: 'break-word' }}>{msg.text}</div>
-                                </div>
-                            );
-                        })}
-                        <div ref={messagesEndRef} />
+            {/* COLUMN 1: SIDEBAR (VS Code Style) */}
+            <aside
+                className="tiled-sidebar"
+                style={{
+                    width: isSidebarOpen ? '250px' : '0px',
+                    backgroundColor: '#252526', // Official VS Code Sidebar Color
+                    color: '#cccccc',
+                    borderRight: '1px solid #000',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    fontSize: '13px' // VS Code default font size
+                }}
+            >
+                <div style={{ padding: '0px' }}>
+
+                    {/* EXPLORER HEADER */}
+                    <div style={{
+                        padding: '10px 20px',
+                        fontSize: '11px',
+                        fontWeight: 'bold',
+                        color: '#bbbbbb',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                    }}>
+                        <span>EXPLORER</span>
+                        <VscEllipsis style={{ cursor: 'pointer' }} onClick={() => setIsSidebarOpen(false)} title="Close Sidebar" />
                     </div>
-                    <form onSubmit={sendMessage} style={{ padding: '1rem', background: '#161b22', borderTop: '1px solid #30363d', display: 'flex', gap: '10px' }}>
-                        <input 
-                            type="text" 
-                            value={messageInput} 
-                            onChange={(e) => setMessageInput(e.target.value)} 
-                            placeholder="Type a message..." 
-                            style={{ flexGrow: 1, padding: '0.8rem', borderRadius: '6px', border: '1px solid #30363d', background: '#0d1117', color: '#fff' }} 
-                        />
-                        <button type="submit" className="btn" style={{ padding: '0 1.5rem' }}>Send</button>
-                    </form>
-                </div>
-            </div>
 
-            {/* --- RIGHT COLUMN: SIDEBAR --- */}
-            <div className="sidebar" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', overflowY: 'auto' }}>
-                
-                {/* PROJECTS SECTION */}
-                <div className="main-panel" style={{ padding: '1rem' }}>
-                    <h3 style={{ fontSize: '1rem', marginTop: 0, color: '#fff', borderBottom: '1px solid #333', paddingBottom: '0.5rem' }}>PROJECTS</h3>
-                    
-                    <ul className="project-list" style={{ listStyle: 'none', padding: 0, margin: '0 0 1rem 0' }}>
-                        {projects.length > 0 ? projects.map(proj => (
-                            <li key={proj._id} style={{ padding: '0.5rem 0', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div>
-                                    <Link to={`/projects/${proj._id}`} style={{ color: 'var(--accent-primary)', textDecoration: 'none', fontWeight: 'bold', display: 'block' }}>
-                                        {proj.name} &rarr;
-                                    </Link>
-                                    <span style={{ fontSize: '0.75rem', color: '#888' }}>
-                                        {new Date(proj.updatedAt).toLocaleDateString()}
-                                    </span>
-                                </div>
-                                {/* Allow delete if Owner OR if it's the user's own project */}
-                                {(isOwner || proj.owner === user._id) && (
-                                    <button 
-                                        onClick={() => handleDeleteProject(proj._id)} 
-                                        className="btn-delete" 
-                                        style={{ padding: '2px 6px', fontSize: '0.7rem', marginLeft: '5px', background: 'transparent', border: '1px solid #d32f2f', color: '#d32f2f', borderRadius: '4px', cursor: 'pointer' }}
-                                    >
-                                        Del
-                                    </button>
-                                )}
-                            </li>
-                        )) : (
-                            <li style={{ color: '#666', padding: '0.5rem 0', fontStyle: 'italic' }}>No projects yet.</li>
-                        )}
-                    </ul>
+                    {/* SECTION: OPEN EDITORS (Fake) */}
+                    <div className="vscode-section" style={{ borderTop: 'none' }}>
+                        <div className="vscode-section-header" style={{ display: 'flex', alignItems: 'center', padding: '4px 20px', cursor: 'pointer', fontWeight: 'bold' }}>
+                            <VscChevronDown style={{ marginRight: '4px' }} />
+                            <span>OPEN EDITORS</span>
+                        </div>
+                        {/* Empty for now, or maybe show active file */}
+                    </div>
 
-                    {/* Create Project Form (Inline) */}
-                    <form onSubmit={handleCreateProject} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '1rem' }}>
-                        <input 
-                            type="text" 
-                            placeholder="New Project Name" 
-                            value={newProjectName} 
-                            onChange={(e) => setNewProjectName(e.target.value)} 
-                            style={{ padding: '0.5rem', background: '#000', border: '1px solid #333', color: '#fff', borderRadius: '4px' }} 
-                        />
-                        <button type="submit" className="btn-secondary" disabled={isCreating || !newProjectName}>
-                            {isCreating ? 'Creating...' : '+ Create Project'}
-                        </button>
-                    </form>
-                </div>
-                
-                {/* MEMBERS SECTION */}
-                <div className="main-panel" style={{ padding: '1rem', flexGrow: 1 }}>
-                    <h3 style={{ fontSize: '1rem', marginTop: 0, color: '#fff', borderBottom: '1px solid #333', paddingBottom: '0.5rem' }}>MEMBERS ({room.members.length + 1})</h3>
-                    <ul className="member-list" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                        {/* Owner */}
-                        <li style={{ padding: '0.5rem 0', borderBottom: '1px solid #333', color: 'var(--accent-primary)' }}>
-                            {room.owner.username} <span style={{ fontSize: '0.7rem', border: '1px solid var(--accent-primary)', padding: '1px 4px', borderRadius: '4px', marginLeft: '5px' }}>OWNER</span>
-                        </li>
-                        {/* Members */}
-                        {room.members.map(member => (
-                            <li key={member._id} style={{ padding: '0.5rem 0', borderBottom: '1px solid #333', color: '#c9d1d9' }}>
-                                {member.username}
+                    {/* SECTION: WORKSPACE (Projects) */}
+                    <div className="vscode-section">
+                        <div className="vscode-section-header group" style={{ display: 'flex', alignItems: 'center', padding: '4px 20px', cursor: 'pointer', fontWeight: 'bold', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center' }}>
+                                <VscChevronDown style={{ marginRight: '4px' }} />
+                                <span>{room.name.toUpperCase()}</span>
+                            </div>
+                            {/* Action Icons (Horizontal) */}
+                            <div className="action-icons" style={{ display: 'flex', gap: '5px' }}>
+                                <VscNewFile style={{ cursor: 'pointer' }} onClick={() => setShowCreateProject(true)} title="New Project" />
+                                <VscRefresh style={{ cursor: 'pointer' }} onClick={() => socket.emit('room-update')} title="Refresh" />
+                            </div>
+                        </div>
+
+                        {/* PROJECT LIST */}
+                        <ul className="vscode-file-list" style={{ marginTop: '0' }}>
+                            {projects.map(proj => (
+                                <li key={proj._id} className="vscode-file-item" onClick={() => navigate(`/projects/${proj._id}`)}
+                                    style={{
+                                        padding: '3px 20px',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        color: '#cccccc'
+                                    }}
+                                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#37373d'}
+                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                >
+                                    <VscChevronRight style={{ marginRight: '5px', fontSize: '12px' }} />
+                                    <VscFolder style={{ marginRight: '6px', color: '#dcb67a' }} />
+                                    <span>{proj.name}</span>
+                                </li>
+                            ))}
+                            <li className="vscode-file-item" onClick={() => setShowCreateProject(true)}
+                                style={{ padding: '3px 20px', cursor: 'pointer', display: 'flex', alignItems: 'center', opacity: 0.7 }}
+                            >
+                                <span style={{ marginLeft: '22px', fontStyle: 'italic' }}>+ Create Project...</span>
                             </li>
+                        </ul>
+                    </div>
+
+                    {/* SECTION: TEAM MEMBERS */}
+                    <div className="vscode-section" style={{ marginTop: '10px' }}>
+                        <div className="vscode-section-header" style={{ display: 'flex', alignItems: 'center', padding: '4px 20px', cursor: 'pointer', fontWeight: 'bold' }}>
+                            <VscChevronDown style={{ marginRight: '4px' }} />
+                            <span>TEAM MEMBERS ({activeUsers.length})</span>
+                        </div>
+                        <ul className="vscode-file-list">
+                            {activeUsers.map((u, i) => (
+                                <li key={i} className="vscode-file-item" style={{ padding: '3px 20px', display: 'flex', alignItems: 'center' }}>
+                                    <VscAccount style={{ marginRight: '8px', color: '#58a6ff' }} />
+                                    <span>{u.username}</span>
+                                </li>
+                            ))}
+                        </ul>
+                        {/* Invite Link */}
+                        <div style={{ padding: '10px 20px' }}>
+                            <button
+                                onClick={() => {
+                                    navigator.clipboard.writeText(window.location.href);
+                                    alert('Invite Link Copied!');
+                                }}
+                                style={{
+                                    background: '#0e639c',
+                                    color: 'white',
+                                    border: 'none',
+                                    width: '100%',
+                                    padding: '5px',
+                                    cursor: 'pointer',
+                                    fontSize: '11px'
+                                }}
+                            >
+                                Copy Invite Link
+                            </button>
+                        </div>
+                        {/* Leave Button */}
+                        <div style={{ padding: '0 20px 10px 20px' }}>
+                            <button
+                                onClick={handleLeaveRoom}
+                                style={{
+                                    background: '#d32f2f',
+                                    color: 'white',
+                                    border: 'none',
+                                    width: '100%',
+                                    padding: '5px',
+                                    cursor: 'pointer',
+                                    fontSize: '11px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '5px'
+                                }}
+                            >
+                                <VscSignOut /> Leave Room
+                            </button>
+                        </div>
+                    </div>
+
+                </div>
+            </aside>
+
+            {/* COLUMN 2: MAIN CONTENT (Video + Overlay Timer) */}
+            <main className="tiled-main">
+                {/* Timer Overlay */}
+                <div className="overlay-timer">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                        <span style={{ fontSize: '1.2rem', fontFamily: 'monospace' }}>{formatTime(timer)}</span>
+                        <div style={{ display: 'flex', gap: '5px' }}>
+                            <button className="icon-btn" onClick={toggleTimer} title={isTimerRunning ? "Pause" : "Start"}>
+                                {isTimerRunning ? <VscDebugPause /> : <VscPlay />}
+                            </button>
+                            <button className="icon-btn" onClick={resetTimer} title="Reset">
+                                <VscDebugRestart />
+                            </button>
+                        </div>
+                        {/* Custom Time Input */}
+                        <div className="timer-presets" style={{ display: 'flex', gap: '5px', marginLeft: '10px' }}>
+                            <button className="timer-btn" onClick={() => handleCustomTime(25)}>25m</button>
+                            <button className="timer-btn" onClick={() => handleCustomTime(5)}>5m</button>
+                            <input
+                                type="number"
+                                placeholder="Min"
+                                style={{ width: '40px', background: 'rgba(0,0,0,0.5)', border: '1px solid #555', color: 'white', fontSize: '10px', padding: '2px' }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        handleCustomTime(parseInt(e.target.value) || 25);
+                                        e.target.value = '';
+                                    }
+                                }}
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                {/* Sidebar Toggle (Visible if closed) */}
+                {!isSidebarOpen && (
+                    <button
+                        onClick={() => setIsSidebarOpen(true)}
+                        style={{ position: 'absolute', top: '20px', left: '20px', zIndex: 60, background: '#252526', border: '1px solid #333', color: '#fff', borderRadius: '4px', padding: '6px 10px', cursor: 'pointer' }}
+                    >
+                        <VscFolder />
+                    </button>
+                )}
+
+                {/* Chat Toggle (Visible if closed) */}
+                {!isChatOpen && (
+                    <button
+                        onClick={() => setIsChatOpen(true)}
+                        style={{ position: 'absolute', top: '20px', right: '20px', zIndex: 60, background: 'rgba(0,0,0,0.6)', border: '1px solid #333', color: '#fff', borderRadius: '4px', padding: '6px 10px', cursor: 'pointer' }}
+                    >
+                        <FaTerminal />
+                    </button>
+                )}
+
+                {/* Main Video Grid */}
+                <VideoGrid roomId={id} user={user} onLeave={handleLeaveRoom} />
+            </main>
+
+            {/* COLUMN 3: TERMINAL CHAT */}
+            <div className={`tiled-chat ${!isChatOpen ? 'collapsed' : ''}`}>
+                <div className="terminal-header">
+                    <span>TERMINAL LOG (~/chat)</span>
+                    <button className="icon-btn" onClick={() => setIsChatOpen(false)} title="Hide Terminal">_</button>
+                </div>
+
+                <div className="terminal-log-area">
+                    {/* Welcome / System Message */}
+                    <div className="log-entry">
+                        <span className="log-timestamp">[{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}]</span>
+                        <span className="log-system">System: Connected to {room.name}...</span>
+                    </div>
+
+                    {messages.map((m, i) => (
+                        <div key={i} className="log-entry">
+                            <span className="log-timestamp">[{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}]</span>
+                            <span className="log-user" style={{ color: m.sender?._id === user._id ? '#f0883e' : '#3fb950' }}>{m.sender?.username || 'Anon'}:</span>
+                            <span className="log-content">{m.text}</span>
+                        </div>
+                    ))}
+                    <div ref={chatEndRef} />
+                </div>
+
+                {/* Tasks / Controls Mini-Panel */}
+                <div style={{ padding: '10px', borderTop: '1px solid var(--border-subtle)', background: '#0d1117' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#8b949e', marginBottom: '5px', display: 'flex', justifyContent: 'space-between' }}>
+                        <span>GOALS ({tasks.filter(t => t.completed).length}/{tasks.length})</span>
+                    </div>
+                    <div style={{ maxHeight: '80px', overflowY: 'auto', marginBottom: '8px' }}>
+                        {tasks.map(t => (
+                            <div key={t.id} style={{ display: 'flex', alignItems: 'center', fontSize: '0.8rem', marginBottom: '2px', color: '#c9d1d9' }}>
+                                <span style={{ color: t.completed ? '#3fb950' : '#8b949e', marginRight: '6px' }}>{t.completed ? '[x]' : '[ ]'}</span>
+                                <span style={{ textDecoration: t.completed ? 'line-through' : 'none', opacity: t.completed ? 0.6 : 1, cursor: 'pointer' }} onClick={() => toggleTask(t.id)}>{t.text}</span>
+                            </div>
                         ))}
-                    </ul>
+                    </div>
+                    <form onSubmit={handleAddTask}>
+                        <input
+                            className="cmd-input"
+                            style={{ padding: '4px', fontSize: '0.75rem', border: 'none', borderBottom: '1px solid #30363d', borderRadius: 0 }}
+                            placeholder="+ Add task..."
+                            value={taskInput}
+                            onChange={(e) => setTaskInput(e.target.value)}
+                        />
+                    </form>
                 </div>
-                
-                <button className="btn-secondary" style={{ width: '100%' }} onClick={() => navigate('/dashboard')}>Leave Room</button>
+
+                <div className="terminal-input-area">
+                    <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: '0' }}>
+                        <span style={{ padding: '8px', color: '#3fb950', fontWeight: 'bold' }}>$</span>
+                        <input
+                            className="cmd-input"
+                            placeholder="echo 'Hello world...'"
+                            value={newMessage}
+                            onChange={(e) => setNewMessage(e.target.value)}
+                            autoFocus
+                        />
+                    </form>
+                </div>
             </div>
+
+            {/* Modals */}
+            {showCreateProject && (
+                <CreateProjectModal
+                    roomId={id}
+                    onClose={() => setShowCreateProject(false)}
+                    onProjectCreated={handleProjectCreated}
+                />
+            )}
         </div>
     );
 };

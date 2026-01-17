@@ -1,53 +1,100 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
-const User = require('../models/User'); // Using User model
-const { generateJSON } = require('../utils/aiHelper'); // Import the new helper
+const User = require('../models/User');
+const { generateJSON } = require('../utils/aiHelper');
 
 // @route   POST api/matchmaking/find-match
 router.post('/find-match', auth, async (req, res) => {
     try {
-        const { requiredSkills, minElo } = req.body;
+        const { requiredSkills, minElo } = req.body; // e.g., ["React", "Node"]
         const requestorId = req.user.id;
 
-        // 1. Fetch Candidates (excluding requester)
-        const candidates = await User.find({
+        // 1. Pre-filter Candidates via Database (Scalability Fix)
+        // Find users who have at least ONE of the required skills
+        // This avoids sending the entire user base to the LLM
+        const query = {
             _id: { $ne: requestorId }
-        }).select('-password');
+        };
 
-        if (candidates.length === 0) {
-            return res.status(404).json({ reason: "No other developers found in the database." });
+        if (requiredSkills && requiredSkills.length > 0) {
+            query['skills.name'] = { $in: requiredSkills.map(s => new RegExp(s, 'i')) };
         }
 
-        // 2. Prepare Data for AI
+        let candidates = await User.find(query)
+            .select('username skills projects')
+            .limit(20) // Limit to top 20 matches from DB to fit context window
+            .lean();
+
+        // If strict filtering yields no results, fallback to a broader search (recent active users)
+        if (candidates.length === 0) {
+            candidates = await User.find({ _id: { $ne: requestorId } })
+                .sort({ updatedAt: -1 })
+                .limit(10)
+                .select('username skills projects')
+                .lean();
+        }
+
+        if (candidates.length === 0) {
+            return res.status(404).json({ reason: "No developers found." });
+        }
+
+        // 2. Prepare Data for AI Ranking
         const candidateSummary = candidates.map(u => ({
-            userId: u._id,
+            id: u._id,
             name: u.username,
-            skills: u.skills ? u.skills.map(s => `${s.name} (ELO: ${s.elo || 1200})`).join(', ') : "No skills"
+            skills: u.skills ? u.skills.map(s => `${s.name} (${s.elo})`).join(', ') : "None",
+            projects: u.projects ? u.projects.length : 0
         }));
 
         const prompt = `
-            I need a developer for a project requiring: ${requiredSkills.join(', ')}.
-            Minimum ELO preference: ${minElo}.
-            
-            Analyze these candidates:
+            Act as an embedded HR Tech Matchmaker.
+            My Project Needs: ${requiredSkills.join(', ')}
+            Min ELO Preference: ${minElo || 0}
+
+            Candidate Pool:
             ${JSON.stringify(candidateSummary)}
+
+            Task:
+            Analyze the candidates and select the TOP 3 matches based on skill overlap and expertise.
             
-            Select the BEST single match.
-            Return ONLY a raw JSON object (no markdown, no backticks):
+            Return strictly a JSON object with this structure:
             {
-                "userId": "id_of_best_match",
-                "reason": "A short explanation of why they fit."
+                "matches": [
+                    {
+                        "userId": "id_here",
+                        "matchScore": 95,
+                        "reason": "Expert in React with high ELO."
+                    },
+                    ...
+                ]
             }
         `;
 
-        // 3. Call AI (Handles Groq -> Gemini fallback)
-        const result = await generateJSON(prompt);
+        // 3. Call AI with Fallback
+        let result;
+        try {
+            result = await generateJSON(prompt);
+        } catch (aiError) {
+            console.error("⚠️ AI Matchmaking Failed (Providers down). Using Fallback.", aiError.message);
+            result = null; // Trigger fallback below
+        }
+
+        if (!result || !result.matches) {
+            // Fallback if AI fails to return structure
+            const fallbackMatches = candidates.slice(0, 3).map(c => ({
+                userId: c._id,
+                matchScore: 50 + Math.floor(Math.random() * 30), // Random score 50-80
+                reason: "Matched based on database skill overlap (AI service unavailable)."
+            }));
+            return res.json({ matches: fallbackMatches });
+        }
+
         res.json(result);
 
     } catch (err) {
-        console.error("Matchmaking Error:", err.message);
-        res.status(500).send('Server Error: Unable to find match');
+        console.error("Matchmaking Critical Error:", err);
+        res.status(500).json({ msg: 'Server Error during matchmaking', matches: [] });
     }
 });
 
