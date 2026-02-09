@@ -15,7 +15,7 @@ const app = express();
 const server = http.createServer(app);
 
 const corsOptions = {
-    origin: 'http://localhost:5173',
+    origin: ['http://localhost:5173', 'https://PrathamAgarwal1.github.io'],
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true
 };
@@ -29,7 +29,7 @@ mongoose.connect(process.env.MONGO_URI)
 
 // Socket.io Setup
 const io = new Server(server, {
-    cors: { origin: "http://localhost:5173", methods: ["GET", "POST"] }
+    cors: { origin: ["http://localhost:5173", "https://PrathamAgarwal1.github.io"], methods: ["GET", "POST"] }
 });
 
 const userSocketMap = {};
