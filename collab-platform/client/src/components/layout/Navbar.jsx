@@ -34,7 +34,7 @@ const Navbar = () => {
 
     // Prevent flashing incorrect links while checking auth status
     if (loading) {
-        return <nav className="navbar"><img src={logo} alt="CodeCollab" style={{ height: '40px' }} /></nav>;
+        return <nav className="navbar"><img src={logo} alt="SkillSkirmish" style={{ height: '40px' }} /></nav>;
     }
 
     return (
@@ -46,8 +46,8 @@ const Navbar = () => {
         }}>
             <h1 style={{ fontSize: '1.2rem', margin: 0 }}>
                 <Link to="/" style={{ color: 'var(--term-green)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <img src={logo} alt="CodeCollab" style={{ height: '35px' }} />
-                    <span style={{ color: 'var(--text-muted)' }}>CodeCollab</span>
+                    <img src={logo} alt="SkillSkirmish" style={{ height: '35px' }} />
+                    <span style={{ color: 'var(--text-muted)' }}>SkillSkirmish</span>
                 </Link>
             </h1>
             <div className="nav-links">
