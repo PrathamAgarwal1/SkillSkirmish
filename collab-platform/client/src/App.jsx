@@ -1,5 +1,5 @@
 import React, { useContext, useEffect } from 'react';
-import { BrowserRouter as Router, Route, Routes, useNavigate } from 'react-router-dom';
+import { HashRouter as Router, Route, Routes, useNavigate } from 'react-router-dom';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -98,7 +98,7 @@ const AppContent = () => {
 const App = () => {
   return (
     // Note: Ensure your <AuthProvider> wraps <App /> in your index.js file
-    <Router basename="/SkillSkirmish">
+    <Router>
       <ToastContainer />
       <AppContent />
     </Router>
