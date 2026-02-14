@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext } from 'react';
 import axios from 'axios';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import AIAssessmentModal from '../components/assessment/AIAssessmentModal';
 import AuthContext from '../context/AuthContext';
 import {
@@ -68,6 +68,7 @@ const CustomTooltip = ({ active, payload, label }) => {
 const ProfilePage = () => {
     const { user: currentUser } = useContext(AuthContext);
     const { userId } = useParams();
+    const navigate = useNavigate();
 
     const [profile, setProfile] = useState(null);
     const [loading, setLoading] = useState(true);
