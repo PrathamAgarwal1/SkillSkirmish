@@ -98,7 +98,7 @@ const AppContent = () => {
 const App = () => {
   return (
     // Note: Ensure your <AuthProvider> wraps <App /> in your index.js file
-    <Router>
+    <Router basename="/SkillSkirmish">
       <ToastContainer />
       <AppContent />
     </Router>
