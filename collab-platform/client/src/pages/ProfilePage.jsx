@@ -252,7 +252,7 @@ const ProfilePage = () => {
                                 <button className="btn-term-primary"
                                     onClick={() => {
                                         const skill = document.getElementById('assessment-skill-select').value;
-                                        if (skill) window.location.href = `/assessment/${skill}`;
+                                        if (skill) navigate(`/assessment/${skill}`);
                                     }}
                                     disabled={isOnCooldown || profile.skills.length === 0}
                                     style={{ width: '100%', padding: '0.7rem' }}>
