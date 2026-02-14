@@ -15,7 +15,7 @@ const app = express();
 const server = http.createServer(app);
 
 const corsOptions = {
-    origin: ['http://localhost:5173', 'https://PrathamAgarwal1.github.io', 'https://prathamagarwal1.github.io'],
+    origin: 'http://localhost:5173',
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true
 };
@@ -29,7 +29,7 @@ mongoose.connect(process.env.MONGO_URI)
 
 // Socket.io Setup
 const io = new Server(server, {
-    cors: { origin: ["http://localhost:5173", "https://prathamagarwal1.github.io"], methods: ["GET", "POST"] }
+    cors: { origin: "http://localhost:5173", methods: ["GET", "POST"] }
 });
 
 const userSocketMap = {};
@@ -84,9 +84,38 @@ io.on('connection', (socket) => {
         io.to(data.to).emit("callAccepted", { signal: data.signal, from: socket.id });
     });
 
-    // --- TIMER SYNC ---
-    socket.on('timerUpdate', ({ roomId, timer, isRunning, mode }) => {
-        socket.to(roomId).emit('timerUpdate', { timer, isRunning, mode });
+    // --- VIDEO CALL SYNC (Multiple Calls) ---
+    socket.on('videoCallStarted', async ({ roomId, callId }) => {
+        const room = await Room.findById(roomId).populate('activeCalls.participants.userId', 'username');
+        const activeCalls = room.activeCalls.map(c => ({
+            callId: c._id,
+            startedBy: c.startedBy,
+            participants: c.participants.map(p => ({ userId: p.userId._id, username: p.userId.username })),
+            participantCount: c.participants.length
+        }));
+        socket.to(roomId).emit('multipleCallsUpdate', { activeCalls, canStartNewCall: activeCalls.length < 3 });
+    });
+
+    socket.on('videoCallJoin', async ({ roomId, callId, userId }) => {
+        const room = await Room.findById(roomId).populate('activeCalls.participants.userId', 'username');
+        const activeCalls = room.activeCalls.map(c => ({
+            callId: c._id,
+            startedBy: c.startedBy,
+            participants: c.participants.map(p => ({ userId: p.userId._id, username: p.userId.username })),
+            participantCount: c.participants.length
+        }));
+        socket.to(roomId).emit('multipleCallsUpdate', { activeCalls, canStartNewCall: activeCalls.length < 3 });
+    });
+
+    socket.on('videoCallLeave', async ({ roomId, callId, userId }) => {
+        const room = await Room.findById(roomId).populate('activeCalls.participants.userId', 'username');
+        const activeCalls = room.activeCalls.map(c => ({
+            callId: c._id,
+            startedBy: c.startedBy,
+            participants: c.participants.map(p => ({ userId: p.userId._id, username: p.userId.username })),
+            participantCount: c.participants.length
+        }));
+        socket.to(roomId).emit('multipleCallsUpdate', { activeCalls, canStartNewCall: activeCalls.length < 3 });
     });
 
     // --- CHAT ---

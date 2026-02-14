@@ -7,19 +7,21 @@ const NotificationSchema = new Schema({
         ref: 'User',
         required: true
     },
+    sender: {
+        type: Schema.Types.ObjectId,
+        ref: 'User'
+    },
     message: {
         type: String,
         required: true
     },
-    // --- ADD THESE NEW FIELDS ---
     type: { 
         type: String, 
-        default: 'info' // 'info' or 'invite'
+        default: 'info' // 'info', 'invite', 'join_request'
     },
     relatedId: {
-        type: String // Stores the Room ID or other links
+        type: Schema.Types.ObjectId // Stores the Room ID or other links
     },
-    // ----------------------------
     read: {
         type: Boolean,
         default: false

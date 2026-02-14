@@ -1,0 +1,490 @@
+/* Multi-Window IDE Styling */
+
+.ide-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    background: #1e1e1e;
+    color: #e0e0e0;
+    font-family: 'Consolas', 'Monaco', monospace;
+    overflow: hidden;
+}
+
+/* IDE Header - Project Selector & Controls */
+.ide-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 20px;
+    background: #252526;
+    border-bottom: 1px solid #3e3e42;
+    z-index: 100;
+}
+
+.ide-header h2 {
+    margin: 0;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.ide-header select {
+    padding: 6px 12px;
+    background: #3c3c3c;
+    color: #e0e0e0;
+    border: 1px solid #555;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.ide-header button {
+    padding: 6px 16px;
+    margin: 0 5px;
+    background: #007acc;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.2s;
+}
+
+.ide-header button:hover {
+    background: #005a9e;
+}
+
+.ide-header button:disabled {
+    background: #555;
+    cursor: not-allowed;
+}
+
+/* Main Window Container */
+.window-container {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    gap: 5px;
+    padding: 5px;
+    background: #1e1e1e;
+}
+
+/* Individual Window */
+.ide-window {
+    position: relative;
+    background: #252526;
+    border: 1px solid #3e3e42;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    touch-action: none;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.ide-window.dragging {
+    opacity: 0.9;
+    z-index: 1000;
+}
+
+/* Window Header (Title Bar) */
+.window-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: #2d2d30;
+    border-bottom: 1px solid #3e3e42;
+    cursor: move;
+    user-select: none;
+    border-radius: 4px 4px 0 0;
+    flex-shrink: 0;
+    height: 32px;
+    min-height: 32px;
+}
+
+.window-header h3 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: #cccccc;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.window-title-icon {
+    font-size: 14px;
+}
+
+.window-controls {
+    display: flex;
+    gap: 4px;
+}
+
+.window-btn {
+    width: 24px;
+    height: 24px;
+    background: transparent;
+    border: none;
+    color: #cccccc;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 2px;
+    font-size: 14px;
+    transition: background 0.2s;
+}
+
+.window-btn:hover {
+    background: #3e3e42;
+}
+
+.window-btn.close:hover {
+    background: #e74c3c;
+    color: white;
+}
+
+/* Window Content */
+.window-content {
+    flex: 1;
+    overflow: auto;
+    padding: 12px;
+    background: #1e1e1e;
+}
+
+/* Code Editor Specific */
+.editor-wrapper {
+    display: flex;
+    height: 100%;
+    gap: 10px;
+}
+
+.window-content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.file-tree-pane {
+    width: 250px;
+    border-right: 1px solid #3e3e42;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.editor-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.file-tabs {
+    display: flex;
+    gap: 5px;
+    padding: 8px 10px;
+    border-bottom: 1px solid #3e3e42;
+    background: #2d2d30;
+    overflow-x: auto;
+}
+
+.file-tab {
+    padding: 6px 12px;
+    background: #1e1e1e;
+    border: 1px solid #3e3e42;
+    color: #cccccc;
+    cursor: pointer;
+    border-radius: 4px 4px 0 0;
+    font-size: 12px;
+    white-space: nowrap;
+    transition: background 0.2s;
+}
+
+.file-tab.active {
+    background: #252526;
+    border-bottom: 2px solid #007acc;
+    color: #fff;
+}
+
+.file-tab:hover {
+    background: #2d2d30;
+}
+
+/* Monaco Editor Container */
+.monaco-editor-container {
+    flex: 1;
+    width: 100%;
+}
+
+/* File Tree */
+.file-tree {
+    font-size: 12px;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+}
+
+.file-tree-item {
+    padding: 4px 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 2px;
+    transition: background 0.2s;
+}
+
+.file-tree-item:hover {
+    background: #2d2d30;
+}
+
+.file-tree-item.selected {
+    background: #007acc;
+    color: white;
+}
+
+.file-tree-item-icon {
+    font-size: 14px;
+    width: 16px;
+}
+
+.file-tree-item:hover .file-tree-actions {
+    opacity: 1 !important;
+}
+
+.file-tree-actions {
+    display: flex;
+    gap: 4px;
+    margin-left: auto;
+    opacity: 0;
+    transition: opacity 0.2s ease-in-out;
+}
+
+/* Console Specific */
+.console-output {
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #e0e0e0;
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 8px 12px;
+}
+
+.console-line {
+    padding: 2px 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.console-line.error {
+    color: #f48771;
+    background: rgba(244, 135, 113, 0.1);
+}
+
+.console-line.warning {
+    color: #dcdcaa;
+}
+
+.console-line.info {
+    color: #9cdcfe;
+}
+
+.console-line.success {
+    color: #6a9955;
+}
+
+.console-controls {
+    display: flex;
+    gap: 8px;
+    padding: 8px 12px;
+    border-top: 1px solid #3e3e42;
+    background: #2d2d30;
+    flex-shrink: 0;
+    height: 32px;
+    min-height: 32px;
+}
+
+.console-controls button {
+    padding: 4px 12px;
+    background: #3c3c3c;
+    color: #e0e0e0;
+    border: 1px solid #555;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 11px;
+    transition: background 0.2s;
+}
+
+.console-controls button:hover {
+    background: #555;
+}
+
+/* Browser Preview */
+.browser-preview-wrapper {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.browser-address-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: #2d2d30;
+    border-bottom: 1px solid #3e3e42;
+    flex-shrink: 0;
+    height: 40px;
+    min-height: 40px;
+}
+
+.browser-address-bar input {
+    flex: 1;
+    padding: 6px 10px;
+    background: #3c3c3c;
+    color: #e0e0e0;
+    border: 1px solid #555;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+.browser-frame {
+    flex: 1;
+    border: none;
+    background: white;
+}
+
+/* Package Library */
+.package-search {
+    padding: 10px;
+    border-bottom: 1px solid #3e3e42;
+    flex-shrink: 0;
+    background: #2d2d30;
+}
+
+.package-search input {
+    width: 100%;
+    padding: 8px 12px;
+    background: #3c3c3c;
+    color: #e0e0e0;
+    border: 1px solid #555;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.package-list {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.package-item {
+    padding: 12px;
+    border-bottom: 1px solid #3e3e42;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.package-item:hover {
+    background: #2d2d30;
+}
+
+.package-name {
+    font-weight: 600;
+    color: #4fc3f7;
+    margin-bottom: 4px;
+}
+
+.package-version {
+    font-size: 11px;
+    color: #999;
+    margin-bottom: 6px;
+}
+
+.package-description {
+    font-size: 12px;
+    color: #aaa;
+    margin-bottom: 8px;
+}
+
+.package-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.package-btn {
+    padding: 4px 12px;
+    background: #007acc;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 11px;
+    transition: background 0.2s;
+}
+
+.package-btn:hover {
+    background: #005a9e;
+}
+
+.package-btn.installed {
+    background: #6a9955;
+}
+
+/* Responsive Layout */
+@media (max-width: 1400px) {
+    .ide-window {
+        min-width: 300px;
+    }
+
+    .file-tree-pane {
+        width: 180px;
+    }
+}
+
+@media (max-width: 1024px) {
+    .window-container {
+        flex-direction: column;
+    }
+
+    .ide-window {
+        height: 33vh;
+    }
+}
+
+/* Scrollbar Styling */
+.window-content::-webkit-scrollbar,
+.file-tree::-webkit-scrollbar,
+.console-output::-webkit-scrollbar,
+.package-list::-webkit-scrollbar {
+    width: 10px;
+}
+
+.window-content::-webkit-scrollbar-track,
+.file-tree::-webkit-scrollbar-track,
+.console-output::-webkit-scrollbar-track,
+.package-list::-webkit-scrollbar-track {
+    background: #1e1e1e;
+}
+
+.window-content::-webkit-scrollbar-thumb,
+.file-tree::-webkit-scrollbar-thumb,
+.console-output::-webkit-scrollbar-thumb,
+.package-list::-webkit-scrollbar-thumb {
+    background: #555;
+    border-radius: 5px;
+}
+
+.window-content::-webkit-scrollbar-thumb:hover,
+.file-tree::-webkit-scrollbar-thumb:hover,
+.console-output::-webkit-scrollbar-thumb:hover,
+.package-list::-webkit-scrollbar-thumb:hover {
+    background: #777;
+}

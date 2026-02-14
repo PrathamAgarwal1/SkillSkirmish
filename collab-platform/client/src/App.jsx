@@ -15,6 +15,7 @@ import DashboardPage from './pages/DashboardPage';
 import ProfilePage from './pages/ProfilePage';
 import RoomPage from './pages/RoomPage';
 import IDEPage from './pages/IDEPage';
+import AssessmentPage from './pages/AssessmentPage';
 import ForumPage from './pages/ForumPage';
 
 // Context and Socket
@@ -64,7 +65,7 @@ const AppContent = () => {
     <>
       <div className="crt-overlay"></div>
       <Navbar />
-      <main>
+      <main className="app-content">
         <Routes>
           {/* Public Routes */}
           <Route path="/" element={<HomePage />} />
@@ -73,6 +74,9 @@ const AppContent = () => {
 
           {/* Private Routes */}
           <Route path="/dashboard" element={<PrivateRoute><DashboardPage /></PrivateRoute>} />
+
+          {/* Assessment Route */}
+          <Route path="/assessment/:skill" element={<PrivateRoute><AssessmentPage /></PrivateRoute>} />
 
           {/* EXISTING: My Profile */}
           <Route path="/profile" element={<PrivateRoute><ProfilePage /></PrivateRoute>} />

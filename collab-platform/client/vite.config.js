@@ -3,7 +3,6 @@ import react from '@vitejs/plugin-react'
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  base: '/SkillSkirmish/',
   plugins: [react()],
   // --- ADD THIS SECTION ---
   // This tells Vite to replace any occurrence of 'global' with 'globalThis',

@@ -12,17 +12,17 @@ const { createProjectFiles } = require('../utils/templateManager');
 const checkRoomAccess = async (req, res, next) => {
     try {
         const roomId = req.body.roomId || req.params.roomId;
-        
+
         // If finding by Project ID (for PUT/DELETE), get room from project
         if (!roomId && req.params.id) {
             const project = await Project.findById(req.params.id);
             if (!project) return res.status(404).json({ msg: 'Project not found' });
             req.project = project; // Save project for later
-            
+
             const room = await Room.findById(project.room);
             if (!room) return res.status(404).json({ msg: 'Room not found' });
             req.room = room;
-        } 
+        }
         // If creating a project, we have roomId in body
         else if (roomId) {
             const room = await Room.findById(roomId);
@@ -61,10 +61,10 @@ router.get('/room/:roomId', auth, async (req, res) => {
 // @route   POST api/projects
 router.post('/', [auth, checkRoomAccess], async (req, res) => {
     const { name, description, projectType = 'React App', roomId } = req.body;
-    
+
     try {
-        const room = req.room; 
-        
+        const room = req.room;
+
         const newProject = new Project({
             name,
             description,
@@ -74,7 +74,7 @@ router.post('/', [auth, checkRoomAccess], async (req, res) => {
         });
 
         const project = await newProject.save();
-        
+
         // --- FIX: Use the template manager to create File documents ---
         // This creates actual File objects in the DB, not just an array in Project
         await createProjectFiles(projectType, project._id);
@@ -96,7 +96,7 @@ router.post('/', [auth, checkRoomAccess], async (req, res) => {
             for (const memberId of room.members) {
                 if (memberId.toString() !== req.user.id) {
                     const message = `${sender.username} created project "${project.name}" in "${room.name}"`;
-                    
+
                     // Save Notification
                     const notification = new Notification({ user: memberId, message, type: 'info' });
                     await notification.save();
@@ -109,7 +109,7 @@ router.post('/', [auth, checkRoomAccess], async (req, res) => {
                 }
             }
         }
-        
+
         // Notify room for real-time update
         io.to(roomId).emit('room-update');
 
@@ -136,7 +136,7 @@ router.delete('/:id', [auth, checkRoomAccess], async (req, res) => {
         }
 
         await project.deleteOne();
-        
+
         const io = req.app.get('socketio');
         io.to(room._id.toString()).emit('room-update');
 
@@ -168,7 +168,7 @@ router.put('/:id', [auth, checkRoomAccess], async (req, res) => {
 
         if (name) project.name = name;
         if (description) project.description = description;
-        
+
         await project.save();
         res.json(project);
     } catch (err) {
@@ -186,7 +186,7 @@ router.post('/:id/members', [auth, checkRoomAccess], async (req, res) => {
             { $addToSet: { members: userId } },
             { new: true }
         ).populate('members', 'username');
-        
+
         res.json(project.members);
     } catch (err) {
         console.error(err.message);
@@ -202,10 +202,31 @@ router.delete('/:id/members/:memberId', [auth, checkRoomAccess], async (req, res
             { $pull: { members: req.params.memberId } },
             { new: true }
         ).populate('members', 'username');
-        
+
         res.json(project.members);
     } catch (err) {
         console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// @route   POST api/projects/:id/restore-template
+router.post('/:id/restore-template', [auth, checkRoomAccess], async (req, res) => {
+    try {
+        const { templateName } = req.body;
+        // Use provided template name or default to project type
+        const typeToUse = templateName || req.project.projectType;
+
+        await createProjectFiles(typeToUse, req.project._id);
+
+        // Notify room of file updates
+        const io = req.app.get('socketio');
+        // We might want a specific event for file refresh, but room-update works
+        io.to(req.project.room.toString()).emit('room-update');
+
+        res.json({ msg: 'Template restored successfully' });
+    } catch (err) {
+        console.error("Restore Template Error:", err);
         res.status(500).send('Server Error');
     }
 });

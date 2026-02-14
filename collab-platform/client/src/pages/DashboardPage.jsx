@@ -16,6 +16,11 @@ const DashboardPage = () => {
     const [editingRoom, setEditingRoom] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState([]);
+    const [matchingSkill, setMatchingSkill] = useState('');
+    const [matchResults, setMatchResults] = useState([]);
+    const [matchLoading, setMatchLoading] = useState(false);
+    const [selectedMatchUser, setSelectedMatchUser] = useState(null);
+    const [inviteRoomOptions, setInviteRoomOptions] = useState([]);
 
     const fetchRooms = async () => {
         try {
@@ -89,12 +94,61 @@ const DashboardPage = () => {
         } catch (err) { console.error("Search failed:", err); }
     };
 
+    const handleQuickMatch = async (e) => {
+        e.preventDefault();
+        if (!matchingSkill.trim()) return alert('Please enter a skill');
+        try {
+            setMatchLoading(true);
+            const res = await axios.post('/api/matchmaking/find-match', {
+                requiredSkills: [matchingSkill],
+                minElo: 0
+            });
+            setMatchResults(res.data.matches || []);
+            if ((res.data.matches || []).length === 0) {
+                alert('No matching developers found for this skill.');
+            }
+        } catch (err) {
+            alert(`Failed: ${err.response?.data?.reason || 'An error occurred'}`);
+        } finally {
+            setMatchLoading(false);
+        }
+    };
+
+    const handleInviteToRoom = (matchUser) => {
+        setSelectedMatchUser(matchUser);
+        setInviteRoomOptions(myRooms);
+    };
+
+    const handleSendRoomInvite = async (roomId) => {
+        if (!selectedMatchUser) {
+            alert('No user selected');
+            return;
+        }
+        try {
+            const userId = String(selectedMatchUser.userId);
+            const inviteRoomId = String(roomId);
+            
+            // Send notification to the user inviting them to room
+            await axios.post(`/api/rooms/${inviteRoomId}/send-invite`, {
+                userId: userId
+            });
+            alert(`Invite sent to ${selectedMatchUser.username}!`);
+            setSelectedMatchUser(null);
+            setInviteRoomOptions([]);
+        } catch (err) {
+            alert(`Failed: ${err.response?.data?.msg || 'An error occurred'}`);
+        }
+    };
+
     const handleRequestJoin = async (roomId) => {
         try {
             await axios.post(`/api/rooms/${roomId}/request-join`);
             alert('Join request sent!');
             setSearchResults(prev => prev.filter(r => r._id !== roomId));
-        } catch (err) { alert('Failed to send join request.'); }
+        } catch (err) { 
+            console.error('Failed to send join request:', err);
+            alert(`Failed: ${err.response?.data?.msg || 'An error occurred'}`); 
+        }
     };
 
     // --- FIX: More Robust Accept Invite Logic ---
@@ -197,10 +251,53 @@ const DashboardPage = () => {
                                 <span>quick_match.exe</span>
                             </div>
                             <div className="term-body">
-                                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                    <input type="text" className="term-input" placeholder="Enter skill..." />
-                                    <button className="btn-term">GO</button>
-                                </div>
+                                <form onSubmit={handleQuickMatch} style={{ display: 'flex', gap: '0.5rem' }}>
+                                    <input 
+                                        type="text" 
+                                        className="term-input" 
+                                        placeholder="Enter skill (e.g., React, Python)..." 
+                                        value={matchingSkill}
+                                        onChange={(e) => setMatchingSkill(e.target.value)}
+                                    />
+                                    <button type="submit" className="btn-term" disabled={matchLoading}>
+                                        {matchLoading ? 'SEARCHING...' : 'GO'}
+                                    </button>
+                                </form>
+                                {matchResults.length > 0 && (
+                                    <ul className="term-list" style={{ marginTop: '1rem' }}>
+                                        {matchResults.map(match => {
+                                            const skillNames = match.skills && Array.isArray(match.skills) && match.skills.length > 0 
+                                                ? match.skills.map(s => typeof s === 'string' ? s : s.name).filter(Boolean).join(', ')
+                                                : null;
+                                            return (
+                                            <li key={match.userId} className="term-list-item">
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                                                    <span>
+                                                        <strong>{match.username || 'Unknown User'}</strong>
+                                                        <br />
+                                                        {skillNames ? (
+                                                            <span style={{ fontSize: '0.85em', color: '#999' }}>
+                                                                {skillNames}
+                                                            </span>
+                                                        ) : (
+                                                            <span style={{ fontSize: '0.85em', color: '#999' }}>No skills listed</span>
+                                                        )}
+                                                    </span>
+                                                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                                        <span className="status-tag">[SCORE: {match.matchScore}]</span>
+                                                        <button 
+                                                            className="btn-term-sm" 
+                                                            onClick={() => handleInviteToRoom(match)}
+                                                        >
+                                                            INVITE
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </li>
+                                            );
+                                        })}
+                                    </ul>
+                                )}
                                 <div style={{ marginTop: '0.8rem' }}>
                                     <Link to="/forum" className="term-link">&gt; Advanced Search...</Link>
                                 </div>
@@ -285,6 +382,71 @@ const DashboardPage = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Invite to Room Modal */}
+            {selectedMatchUser && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'rgba(0, 0, 0, 0.8)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1000
+                }}>
+                    <div style={{
+                        background: '#0d0d0d',
+                        border: '2px solid #00ff00',
+                        borderRadius: '4px',
+                        padding: '2rem',
+                        maxWidth: '500px',
+                        width: '90%',
+                        boxShadow: '0 0 20px rgba(0, 255, 0, 0.3)'
+                    }}>
+                        <h3 style={{ color: '#00ff00', marginBottom: '1rem' }}>
+                            Invite {selectedMatchUser.username} to Room
+                        </h3>
+                        {inviteRoomOptions.length > 0 ? (
+                            <ul style={{ listStyle: 'none', padding: 0, marginBottom: '1rem' }}>
+                                {inviteRoomOptions.map(room => (
+                                    <li key={room._id} style={{
+                                        padding: '0.8rem',
+                                        borderBottom: '1px solid #333',
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center'
+                                    }}>
+                                        <span>{room.name}</span>
+                                        <button
+                                            className="btn-term-sm"
+                                            onClick={() => handleSendRoomInvite(room._id)}
+                                        >
+                                            SEND
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : (
+                            <p style={{ color: '#999', marginBottom: '1rem' }}>
+                                You don't have any rooms to invite users to. Create one first!
+                            </p>
+                        )}
+                        <button
+                            className="btn-term"
+                            onClick={() => {
+                                setSelectedMatchUser(null);
+                                setInviteRoomOptions([]);
+                            }}
+                            style={{ width: '100%' }}
+                        >
+                            CLOSE
+                        </button>
+                    </div>
+                </div>
+            )}
         </>
     );
 };

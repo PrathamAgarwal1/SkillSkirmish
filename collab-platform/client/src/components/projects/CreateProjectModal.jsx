@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import axios from 'axios';
 
 
-const projectTypes = ['React App', 'Node.js API', 'Static HTML/CSS', 'Python Script'];
+const projectTypes = ['MERN Stack', 'React App', 'Node.js API', 'Vanilla Web', 'Express + EJS'];
 
 const CreateProjectModal = ({ roomId, onClose, onProjectCreated }) => {
     const [name, setName] = useState('');

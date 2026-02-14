@@ -6,12 +6,36 @@ const AssessmentSession = require('../models/AssessmentSession');
 const User = require('../models/User');
 const { generateJSON, evaluateSubjectiveWithAI } = require('../utils/aiHelper');
 
+// Drop stale unique index on 'user' if it exists (legacy schema had unique:true)
+(async () => {
+  try {
+    const collection = AssessmentSession.collection;
+    const indexes = await collection.indexes();
+    const userIndex = indexes.find(idx => idx.key && idx.key.user && idx.unique);
+    if (userIndex) {
+      await collection.dropIndex(userIndex.name);
+      console.log('[Assessment] Dropped stale unique index on user:', userIndex.name);
+    }
+  } catch (e) {
+    // If collection doesn't exist yet or index already gone, ignore
+    if (e.code !== 26) console.log('[Assessment] Index cleanup note:', e.message);
+  }
+})();
+
 // CONFIG
-const MAX_QUESTIONS = 10;
-const K_BASE = 20;
-const GENERATE_RETRY_LIMIT = 4; // retry if LLM returns duplicate or invalid
+const POOL_SIZE = 20;
+const K_PROVISIONAL = 40;
+const K_DEFAULT = 20;
+const K_TOP = 10;
+const GENERATE_RETRY_LIMIT = 4;
 
 // --- Helpers ---
+function getKFactor(matchesPlayed, elo) {
+  if (!elo || matchesPlayed < 30) return K_PROVISIONAL;
+  if (elo >= 2400) return K_TOP;
+  return K_DEFAULT;
+}
+
 function shuffleArray(arr) {
   return arr
     .map(v => ({ v, sort: Math.random() }))
@@ -33,43 +57,72 @@ function difficultyToElo(difficulty) {
 }
 
 /**
- * Generate a question of a requiredType while avoiding duplicates.
- * Calls generateJSON and retries a few times if the returned question text
- * appears in avoidList or the response is malformed.
- *
- * requiredType: 'mcq' | 'subjective'
- * avoidList: array of previous question texts to avoid repeating
+ * Build a randomized question plan mixing all types.
+ * 20 questions: 8 coding, 6 mcq, 6 subjective (shuffled)
  */
-async function generateQuestion(skill, currentElo, requiredType, avoidList = []) {
+function buildQuestionPlan() {
+  let plan = [];
+  plan.push(...Array(8).fill('coding'));
+  plan.push(...Array(6).fill('mcq'));
+  plan.push(...Array(6).fill('subjective'));
+  return shuffleArray(plan);
+}
+
+/**
+ * Build a difficulty plan: mix of Easy, Medium, Hard
+ * 20 questions: 6 Easy, 8 Medium, 6 Hard (shuffled)
+ */
+function buildDifficultyPlan() {
+  let plan = [];
+  plan.push(...Array(6).fill('Easy'));
+  plan.push(...Array(8).fill('Medium'));
+  plan.push(...Array(6).fill('Hard'));
+  return shuffleArray(plan);
+}
+
+/**
+ * Generate a question of a requiredType while avoiding duplicates.
+ */
+async function generateQuestion(skill, currentElo, requiredType, avoidList = [], targetDifficulty = null) {
+  const effectiveElo = currentElo || 1200;
   let lastErr = null;
+  const diffLabel = targetDifficulty || 'Medium';
+  const diffElo = difficultyToElo(diffLabel);
 
   for (let attempt = 0; attempt < GENERATE_RETRY_LIMIT; attempt++) {
     try {
-      // Use a simpler, more robust prompt
+      const typeLabel = requiredType === 'mcq' ? 'Multiple Choice' : requiredType === 'coding' ? 'Coding Challenge' : 'Open Ended Subjective';
+
       const prompt = `
         Task: Generate 1 unique technical interview question.
         Topic: ${skill}
-        Difficulty: ELO ${currentElo} (Adjust accordingly)
-        Type: ${requiredType} (${requiredType === 'mcq' ? 'Multiple Choice' : 'Open Ended'})
-
+        Difficulty: ${diffLabel} (ELO ~${diffElo})
+        Type: ${requiredType} — ${typeLabel}
+        
+        CRITICAL RULES:
+        - You MUST return type "${requiredType}" exactly.
+        ${requiredType === 'mcq' ? '- You MUST include exactly 4 options in the "options" array.\n        - The question must be answerable by selecting one option.' : ''}
+        ${requiredType === 'coding' ? '- You MUST include "codeTemplate" with ONLY an empty function skeleton / boilerplate. Do NOT write any solution logic in codeTemplate. Just the function signature and empty body with a comment like "// your code here".\n        - You MUST include "testCases" array with at least 2 test cases.\n        - You MUST include a "title" for the coding problem.\n        - The "answer" field should contain the correct solution code.\n        - Do NOT include "options".' : ''}
+        ${requiredType === 'subjective' ? '- This is an open-ended question requiring a written answer.\n        - Do NOT include "options", "codeTemplate", or "testCases".' : ''}
+        
         Constraints:
-        - valid JSON output only.
-        - No markdown formatting.
-        - unique from: ${JSON.stringify(avoidList.map(q => q.substring(0, 50)))}
+        - Valid JSON output only. No markdown, no backticks.
+        - Unique from: ${JSON.stringify(avoidList.map(q => q.substring(0, 50)))}
         
         JSON Structure:
         {
           "question": "The question text",
-          "options": ["A", "B", "C", "D"], // only for mcq
-          "answer": "The correct answer string",
+          "title": "Short Title",
+          "options": ["A", "B", "C", "D"],
+          "answer": "The correct answer",
           "difficulty": "Easy|Medium|Hard",
-          "type": "${requiredType}"
+          "type": "${requiredType}",
+          "codeTemplate": "starter code here",
+          "testCases": [{ "input": "...", "output": "..." }]
         }
       `;
 
       const aiData = await generateJSON(prompt);
-
-      // Validation
       if (!aiData || !aiData.question) throw new Error('Invalid AI response');
 
       const qText = String(aiData.question).trim();
@@ -77,35 +130,51 @@ async function generateQuestion(skill, currentElo, requiredType, avoidList = [])
         throw new Error('Duplicate question');
       }
 
-      // Return valid question
+      // Force the type to match what we asked for
       return {
         type: requiredType,
         question: qText,
-        options: Array.isArray(aiData.options) ? aiData.options : [],
+        title: aiData.title || 'Challenge',
+        options: requiredType === 'mcq' && Array.isArray(aiData.options) ? aiData.options : [],
         answer: aiData.answer || 'Refer to documentation',
-        difficulty: aiData.difficulty || 'Medium'
+        difficulty: aiData.difficulty || diffLabel,
+        codeTemplate: requiredType === 'coding' ? (aiData.codeTemplate || `// Write your ${skill} solution here\n`) : '',
+        testCases: requiredType === 'coding' && Array.isArray(aiData.testCases) ? aiData.testCases : []
       };
-
     } catch (err) {
       lastErr = err;
       console.log(`[Assessment] Gen attempt ${attempt} failed: ${err.message}`);
     }
   }
 
-  // FALLBACK if AI fails 4 times (Prevent crash)
+  // FALLBACK
   console.warn('[Assessment] Using Fallback Question');
-  return {
-    type: requiredType,
-    question: `Explain the core concepts of ${skill}. (Fallback Question)`,
-    options: requiredType === 'mcq' ? ["Concept A", "Concept B", "Concept C", "All of the above"] : [],
-    answer: "All of the above",
-    difficulty: 'Easy'
-  };
+  if (requiredType === 'mcq') {
+    return {
+      type: 'mcq', question: `Which of the following best describes ${skill}?`, title: 'Fallback MCQ',
+      options: ["Core framework", "Utility library", "Design pattern", "All of the above"],
+      answer: "All of the above", difficulty: 'Easy', codeTemplate: '', testCases: []
+    };
+  } else if (requiredType === 'coding') {
+    return {
+      type: 'coding', question: `Write a function that demonstrates a core concept of ${skill}.`,
+      title: 'Fallback Coding', options: [], answer: '// Solution code',
+      difficulty: 'Easy', codeTemplate: `// Write your ${skill} solution here\n`, testCases: [{ input: 'test', output: 'test' }]
+    };
+  } else {
+    return {
+      type: 'subjective', question: `Explain the core concepts of ${skill} and when you would use it.`,
+      title: 'Fallback Subjective', options: [], answer: 'Refer to documentation',
+      difficulty: 'Easy', codeTemplate: '', testCases: []
+    };
+  }
 }
 
-// -------------------------------------------------------------
+// =============================================================
 // POST /api/assessment/start
-// -------------------------------------------------------------
+// Accepts: { skill }
+// Creates a session with mixed question types (coding/mcq/subjective)
+// =============================================================
 router.post('/start', auth, async (req, res) => {
   try {
     const { skill } = req.body;
@@ -115,38 +184,53 @@ router.post('/start', auth, async (req, res) => {
     if (!user) return res.status(404).json({ msg: 'User not found.' });
 
     const skillData = (user.skills || []).find(s => s.name === skill);
-    const currentElo = skillData ? skillData.elo : 1200;
+    const currentRating = skillData ? skillData.elo : null;
 
-    // Create a randomized plan: exactly 5 'mcq' and 5 'subjective'
-    let plan = [];
-    plan.push(...Array(5).fill('mcq'));
-    plan.push(...Array(5).fill('subjective'));
-    plan = shuffleArray(plan);
+    // Clear old incomplete sessions FIRST (before generating, so we don't fail after cleanup)
+    await AssessmentSession.deleteMany({ user: req.user.id, completed: false });
 
-    // Generate first question according to the plan (index 0)
-    const requiredType = plan[0];
-    const aiData = await generateQuestion(skill, currentElo, requiredType, []);
+    // Build randomized plans
+    const plan = buildQuestionPlan();
+    const diffPlan = buildDifficultyPlan();
+    const firstType = plan[0];
+    const firstDifficulty = diffPlan[0];
 
-    // clear any old sessions for this user
-    await AssessmentSession.deleteMany({ user: req.user.id });
+    // Generate first question (this can fail — fallback is built into generateQuestion)
+    let aiData;
+    try {
+      aiData = await generateQuestion(skill, currentRating, firstType, [], firstDifficulty);
+    } catch (genErr) {
+      console.error('[Assessment][start] Question generation failed:', genErr.message);
+      // Use a hardcoded fallback so the session can still start
+      aiData = {
+        type: firstType, question: `Explain a core concept of ${skill}.`,
+        title: 'Getting Started', options: firstType === 'mcq' ? ['Option A', 'Option B', 'Option C', 'Option D'] : [],
+        answer: 'Refer to documentation', difficulty: 'Easy',
+        codeTemplate: firstType === 'coding' ? `// Write your ${skill} solution here\n` : '',
+        testCases: firstType === 'coding' ? [{ input: 'test', output: 'test' }] : []
+      };
+    }
 
     const newSession = new AssessmentSession({
       user: req.user.id,
       skill,
-      startElo: currentElo,
-      // questionCount tracks how many questions have been served so far (1-based)
+      assessmentMode: 'mixed',
+      startRating: currentRating,
+      poolSize: POOL_SIZE,
       questionCount: 1,
-      correctCount: 0,
-      streak: 0,
       currentQuestionText: aiData.question,
       currentOptions: aiData.options || [],
       currentAnswer: aiData.answer,
-      questionType: requiredType,
-      difficulty: aiData.difficulty || 'Medium',
-      attemptCount: 0,
-      // initialize askedQuestions with the first question so we avoid repeats
+      currentTitle: aiData.title || '',
+      currentCodeTemplate: aiData.codeTemplate || '',
+      currentTestCases: aiData.testCases || [],
+      currentDifficulty: aiData.difficulty || 'Medium',
+      currentType: firstType,
       askedQuestions: [aiData.question],
-      questionPlan: plan // store the randomized plan for the whole session
+      questionPlan: plan,
+      difficultyPlan: diffPlan,
+      questionsLog: [],
+      completed: false
     });
 
     await newSession.save();
@@ -154,10 +238,14 @@ router.post('/start', auth, async (req, res) => {
     return res.json({
       question: aiData.question,
       options: aiData.options || [],
-      type: requiredType,
+      type: firstType,
       skill,
       difficulty: aiData.difficulty || 'Medium',
-      startElo: currentElo
+      title: aiData.title || '',
+      codeTemplate: aiData.codeTemplate || '',
+      testCases: aiData.testCases || [],
+      questionNumber: 1,
+      poolSize: POOL_SIZE
     });
   } catch (err) {
     console.error('[Assessment][start] Error:', err);
@@ -165,171 +253,122 @@ router.post('/start', auth, async (req, res) => {
   }
 });
 
-// -------------------------------------------------------------
+// =============================================================
 // POST /api/assessment/submit
-// -------------------------------------------------------------
+// Grades one answer, logs it, generates next question.
+// Does NOT update user ELO.
+// =============================================================
 router.post('/submit', auth, async (req, res) => {
   try {
     const { userAnswer } = req.body;
-    const session = await AssessmentSession.findOne({ user: req.user.id });
+    const session = await AssessmentSession.findOne({ user: req.user.id, completed: false });
     if (!session) return res.status(404).json({ msg: 'No active assessment found.' });
 
-    // Track attempt
-    session.attemptCount = (session.attemptCount || 0) + 1;
+    const qType = session.currentType || 'subjective';
 
-    // Default response values
+    // --- Grade the current answer ---
     let scorePercentage = 0;
     let feedback = '';
     let correctAnswer = session.currentAnswer;
-    let rawScore = null;
 
-    // MCQ handling
-    if (session.questionType === 'mcq') {
+    if (qType === 'mcq') {
       const isCorrect = String(userAnswer || '').trim() === String(session.currentAnswer || '').trim();
       scorePercentage = isCorrect ? 100 : 0;
-      feedback = isCorrect ? 'Correct!' : `Incorrect.`;
+      feedback = isCorrect ? 'Correct!' : 'Incorrect.';
       correctAnswer = isCorrect ? null : session.currentAnswer;
-      if (isCorrect) session.correctCount = (session.correctCount || 0) + 1;
-    }
-    // Subjective handling
-    else if (session.questionType === 'subjective') {
-      // Evaluate using AI chain (Groq -> Gemini -> HF)
+    } else if (qType === 'subjective' || qType === 'coding') {
       const aiResult = await evaluateSubjectiveWithAI(
         session.currentQuestionText,
         session.currentAnswer,
         userAnswer
       );
-      // aiResult: { rawScore: 0..100, bucketScore: 0|25|50|75|100, feedback }
-      rawScore = aiResult.rawScore;
-      scorePercentage = aiResult.bucketScore;
+      scorePercentage = aiResult.bucketScore || 0;
       feedback = aiResult.feedback || '';
       correctAnswer = session.currentAnswer;
-      if (scorePercentage === 100) session.correctCount = (session.correctCount || 0) + 1;
     } else {
-      // unknown type — treat as 0
       scorePercentage = 0;
-      feedback = 'Unsupported question type.';
+      feedback = 'Unknown question type.';
     }
 
-    // Save the user answer + scoring on session
-    session.answer = userAnswer;
-    session.scorePercentage = scorePercentage;
-    session.feedback = feedback;
-    session.askedQuestions = session.askedQuestions || [];
-    // Ensure current question text is recorded (if not already present)
+    // --- Log this question (NO ELO update) ---
+    session.questionsLog.push({
+      questionText: session.currentQuestionText,
+      questionType: qType,
+      difficulty: session.currentDifficulty || 'Medium',
+      difficultyElo: difficultyToElo(session.currentDifficulty),
+      userAnswer,
+      correctAnswer: session.currentAnswer,
+      scorePercentage,
+      feedback,
+      title: session.currentTitle || '',
+      codeTemplate: session.currentCodeTemplate || '',
+      testCases: session.currentTestCases || []
+    });
+
     if (!session.askedQuestions.includes(session.currentQuestionText)) {
       session.askedQuestions.push(session.currentQuestionText);
     }
 
-    // ELO update
-    const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ msg: 'User not found' });
+    const attempted = session.questionsLog.length;
+    const correct = session.questionsLog.filter(q => q.scorePercentage === 100).length;
+    const reachedPoolLimit = attempted >= session.poolSize;
 
-    // ensure skill object exists
-    let skillObj = (user.skills || []).find(s => s.name === session.skill);
-    if (!skillObj) {
-      skillObj = { name: session.skill, elo: 1200, mastery: 0 };
-      user.skills = user.skills || [];
-      user.skills.push(skillObj);
-    }
-
-    const userElo = skillObj.elo || 1200;
-    const diffElo = difficultyToElo(session.difficulty || 'Medium');
-    const P = expectedProbability(userElo, diffElo);
-
-    const scoreFraction = (scorePercentage || 0) / 100.0;
-    const eloDelta = Math.round(K_BASE * (scoreFraction - P));
-    const eloAfter = Math.max(0, Math.round(userElo + eloDelta));
-
-    // update user's skill
-    skillObj.elo = eloAfter;
-    skillObj.mastery = Math.max(0, Math.min(100, (skillObj.mastery || 0) + Math.round(10 * scoreFraction)));
-
-    // Save eloBefore/after to session
-    session.eloBefore = userElo;
-    session.eloAfter = eloAfter;
-
-    // decide whether session is over (this was the answer to question N)
-    const sessionOver = (session.questionCount >= MAX_QUESTIONS);
-
-    // Persist user + session updates BEFORE generating next question
-    await user.save();
-    await session.save();
-
-    // If session is over, return final summary and do NOT generate next question
-    if (sessionOver) {
-      return res.json({
-        scorePercentage,
-        rawScore,
-        feedback,
-        correctAnswer,
-        eloBefore: userElo,
-        eloAfter,
-        eloDelta,
-        sessionOver: true,
-        finalScore: session.correctCount || 0
-      });
-    }
-
-    // Otherwise, prepare next question
-    // nextIndex is zero-based index of the next question in the plan
-    const nextIndex = session.questionCount; // since questionCount is number served so far (1-based), this gives next zero-based index
-    if (!Array.isArray(session.questionPlan) || nextIndex >= session.questionPlan.length) {
-      // fallback safety: if plan missing or exhausted, regenerate a balanced plan starting from remaining counts
-      let remainingMcq = 5;
-      let remainingSubj = 5;
-      // count asked from plan if available
-      if (Array.isArray(session.questionPlan)) {
-        const used = session.questionPlan.slice(0, session.questionCount);
-        remainingMcq = Math.max(0, 5 - used.filter(t => t === 'mcq').length);
-        remainingSubj = Math.max(0, 5 - used.filter(t => t === 'subjective').length);
+    // --- Generate next question ---
+    let nextQuestion = null;
+    if (!reachedPoolLimit) {
+      const nextIndex = session.questionCount; // 0-based next
+      let nextType = 'subjective';
+      if (Array.isArray(session.questionPlan) && nextIndex < session.questionPlan.length) {
+        nextType = session.questionPlan[nextIndex];
       }
-      let fallbackPlan = [];
-      fallbackPlan.push(...Array(remainingMcq).fill('mcq'));
-      fallbackPlan.push(...Array(remainingSubj).fill('subjective'));
-      fallbackPlan = shuffleArray(fallbackPlan);
-      session.questionPlan = (session.questionPlan || []).concat(fallbackPlan);
-      await session.save();
-    }
 
-    const requiredType = session.questionPlan[nextIndex];
+      // Get difficulty from plan
+      let nextDifficulty = 'Medium';
+      if (Array.isArray(session.difficultyPlan) && nextIndex < session.difficultyPlan.length) {
+        nextDifficulty = session.difficultyPlan[nextIndex];
+      }
 
-    // generate next question while avoiding duplicates (pass askedQuestions)
-    const nextAiQ = await generateQuestion(session.skill, eloAfter, requiredType, session.askedQuestions || []);
+      const effectiveRating = session.startRating || 1200;
+      const nextAiQ = await generateQuestion(session.skill, effectiveRating, nextType, session.askedQuestions || [], nextDifficulty);
 
-    // Update session to contain next question and increment questionCount
-    session.currentQuestionText = nextAiQ.question;
-    session.currentOptions = nextAiQ.options || [];
-    session.currentAnswer = nextAiQ.answer;
-    session.questionType = requiredType;
-    session.difficulty = nextAiQ.difficulty || 'Medium';
-    // increment served count (now we've set up the next question, so increment)
-    session.questionCount = nextIndex + 1;
+      session.currentQuestionText = nextAiQ.question;
+      session.currentOptions = nextAiQ.options || [];
+      session.currentAnswer = nextAiQ.answer;
+      session.currentTitle = nextAiQ.title || '';
+      session.currentCodeTemplate = nextAiQ.codeTemplate || '';
+      session.currentTestCases = nextAiQ.testCases || [];
+      session.currentDifficulty = nextAiQ.difficulty || 'Medium';
+      session.currentType = nextType;
+      session.questionCount = nextIndex + 1;
 
-    // Also add newly generated question to askedQuestions to keep avoid list accurate
-    session.askedQuestions = session.askedQuestions || [];
-    if (!session.askedQuestions.includes(nextAiQ.question)) {
-      session.askedQuestions.push(nextAiQ.question);
-    }
+      if (!session.askedQuestions.includes(nextAiQ.question)) {
+        session.askedQuestions.push(nextAiQ.question);
+      }
 
-    await session.save();
-
-    // Return response containing next question and results for the previous question
-    return res.json({
-      scorePercentage,
-      rawScore,
-      feedback,
-      correctAnswer,
-      eloBefore: userElo,
-      eloAfter,
-      eloDelta,
-      sessionOver: false,
-      nextQuestion: {
+      nextQuestion = {
         question: nextAiQ.question,
         options: nextAiQ.options || [],
-        type: requiredType,
-        difficulty: nextAiQ.difficulty || 'Medium'
-      }
+        type: nextType,
+        difficulty: nextAiQ.difficulty || 'Medium',
+        title: nextAiQ.title || '',
+        codeTemplate: nextAiQ.codeTemplate || '',
+        testCases: nextAiQ.testCases || [],
+        questionNumber: nextIndex + 1,
+        poolSize: session.poolSize
+      };
+    }
+
+    await session.save();
+
+    return res.json({
+      scorePercentage,
+      feedback,
+      correctAnswer,
+      attempted,
+      correct,
+      poolSize: session.poolSize,
+      reachedPoolLimit,
+      nextQuestion
     });
   } catch (err) {
     console.error('[Assessment] Submit Error:', err);
@@ -337,5 +376,152 @@ router.post('/submit', auth, async (req, res) => {
   }
 });
 
-// -------------------------------------------------------------
+// =============================================================
+// POST /api/assessment/skip
+// Skips the current question without answering, loads next.
+// =============================================================
+router.post('/skip', auth, async (req, res) => {
+  try {
+    const session = await AssessmentSession.findOne({ user: req.user.id, completed: false });
+    if (!session) return res.status(404).json({ msg: 'No active assessment found.' });
+
+    const attempted = session.questionsLog.length;
+    const correct = session.questionsLog.filter(q => q.scorePercentage === 100).length;
+
+    // Move to next question in the plan
+    const nextIndex = session.questionCount;
+    if (nextIndex >= session.poolSize) {
+      return res.json({ reachedPoolLimit: true, attempted, correct, poolSize: session.poolSize, nextQuestion: null });
+    }
+
+    let nextType = 'subjective';
+    if (Array.isArray(session.questionPlan) && nextIndex < session.questionPlan.length) {
+      nextType = session.questionPlan[nextIndex];
+    }
+
+    let nextDifficulty = 'Medium';
+    if (Array.isArray(session.difficultyPlan) && nextIndex < session.difficultyPlan.length) {
+      nextDifficulty = session.difficultyPlan[nextIndex];
+    }
+
+    const effectiveRating = session.startRating || 1200;
+    const nextAiQ = await generateQuestion(session.skill, effectiveRating, nextType, session.askedQuestions || [], nextDifficulty);
+
+    session.currentQuestionText = nextAiQ.question;
+    session.currentOptions = nextAiQ.options || [];
+    session.currentAnswer = nextAiQ.answer;
+    session.currentTitle = nextAiQ.title || '';
+    session.currentCodeTemplate = nextAiQ.codeTemplate || '';
+    session.currentTestCases = nextAiQ.testCases || [];
+    session.currentDifficulty = nextAiQ.difficulty || 'Medium';
+    session.currentType = nextType;
+    session.questionCount = nextIndex + 1;
+
+    if (!session.askedQuestions.includes(nextAiQ.question)) {
+      session.askedQuestions.push(nextAiQ.question);
+    }
+
+    await session.save();
+
+    return res.json({
+      skipped: true,
+      attempted,
+      correct,
+      poolSize: session.poolSize,
+      reachedPoolLimit: false,
+      nextQuestion: {
+        question: nextAiQ.question,
+        options: nextAiQ.options || [],
+        type: nextType,
+        difficulty: nextAiQ.difficulty || 'Medium',
+        title: nextAiQ.title || '',
+        codeTemplate: nextAiQ.codeTemplate || '',
+        testCases: nextAiQ.testCases || [],
+        questionNumber: nextIndex + 1,
+        poolSize: session.poolSize
+      }
+    });
+  } catch (err) {
+    console.error('[Assessment] Skip Error:', err);
+    return res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// =============================================================
+// POST /api/assessment/finish
+// Calculates ELO from all questionsLog, updates user, returns result.
+// =============================================================
+router.post('/finish', auth, async (req, res) => {
+  try {
+    const session = await AssessmentSession.findOne({ user: req.user.id, completed: false });
+    if (!session) return res.status(404).json({ msg: 'No active assessment to finish.' });
+
+    const log = session.questionsLog || [];
+    const attempted = log.length;
+
+    if (attempted === 0) {
+      await AssessmentSession.deleteOne({ _id: session._id });
+      return res.json({ msg: 'Assessment cancelled. No questions were answered.', attempted: 0 });
+    }
+
+    const correct = log.filter(q => q.scorePercentage === 100).length;
+    const accuracy = Math.round((correct / attempted) * 100);
+
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ msg: 'User not found' });
+
+    let skillObj = (user.skills || []).find(s => s.name === session.skill);
+    if (!skillObj) {
+      skillObj = { name: session.skill, elo: null, mastery: 0, matchesPlayed: 0, isProvisional: true, history: [] };
+      user.skills = user.skills || [];
+      user.skills.push(skillObj);
+    }
+    skillObj = user.skills.find(s => s.name === session.skill);
+
+    const oldRating = skillObj.elo;
+    const effectiveOldRating = oldRating !== null && oldRating !== undefined ? oldRating : 1200;
+    const matchesPlayed = skillObj.matchesPlayed || 0;
+    const kFactor = getKFactor(matchesPlayed, effectiveOldRating);
+
+    let totalExpected = 0;
+    let totalActual = 0;
+    for (const entry of log) {
+      const diffElo = entry.difficultyElo || 1200;
+      totalExpected += expectedProbability(effectiveOldRating, diffElo);
+      totalActual += (entry.scorePercentage || 0) / 100.0;
+    }
+
+    const ratingChange = Math.round(kFactor * (totalActual - totalExpected));
+    const newRating = Math.max(0, effectiveOldRating + ratingChange);
+
+    skillObj.elo = newRating;
+    skillObj.mastery = Math.max(0, Math.min(100, (skillObj.mastery || 0) + Math.round((accuracy / 100) * 10)));
+    skillObj.matchesPlayed = matchesPlayed + attempted;
+    skillObj.isProvisional = skillObj.matchesPlayed < 30;
+
+    if (!skillObj.history) skillObj.history = [];
+    skillObj.history.push({
+      date: new Date(),
+      eloChange: ratingChange,
+      newElo: newRating,
+      questionId: `assessment_${attempted}q`
+    });
+
+    await user.save();
+
+    session.completed = true;
+    session.finalResult = { attempted, correct, accuracy, oldRating, newRating, ratingChange };
+    await session.save();
+
+    return res.json({
+      attempted, correct, accuracy,
+      oldRating: oldRating !== null && oldRating !== undefined ? oldRating : 'Unrated',
+      newRating, ratingChange, sessionOver: true
+    });
+  } catch (err) {
+    console.error('[Assessment] Finish Error:', err);
+    return res.status(500).json({ msg: 'Server error' });
+  }
+});
+
 module.exports = router;

@@ -15,7 +15,7 @@ const ProjectSchema = new Schema({
     projectType: {
         type: String,
         required: true,
-        enum: ['React App', 'Node.js API', 'Static HTML/CSS', 'Python Script'] // Add more types as needed
+        enum: ['MERN Stack', 'React App', 'Node.js API', 'Vanilla Web', 'Express + EJS'] // Add more types as needed
     },
     room: {
         type: Schema.Types.ObjectId,

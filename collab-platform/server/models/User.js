@@ -5,7 +5,15 @@ const bcrypt = require('bcryptjs');
 const SkillSchema = new mongoose.Schema({
     name: { type: String, required: true },
     mastery: { type: Number, default: 0, min: 0, max: 100 },
-    elo: { type: Number, default: 1200 } 
+    elo: { type: Number, default: null },
+    matchesPlayed: { type: Number, default: 0 },
+    isProvisional: { type: Boolean, default: true },
+    history: [{
+        date: { type: Date, default: Date.now },
+        eloChange: Number,
+        newElo: Number,
+        questionId: String // or question text hash if no ID
+    }]
 });
 
 const UserSchema = new mongoose.Schema({
@@ -29,7 +37,7 @@ const UserSchema = new mongoose.Schema({
     location: { type: String, default: '' },
     company: { type: String, default: '' },
     website: { type: String, default: '' },
-    
+
     // --- ASSESSMENT FIELDS ---
     assessmentCooldownExpires: {
         type: Date
@@ -39,10 +47,10 @@ const UserSchema = new mongoose.Schema({
         skill: String,
         answeredAt: { type: Date, default: Date.now }
     }],
-    
+
     // --- SKILLS ---
     skills: [SkillSchema],
-    
+
     // --- SOCIALS ---
     socialLinks: {
         github: { type: String, default: '' },
@@ -56,7 +64,7 @@ const UserSchema = new mongoose.Schema({
     }
 }, { timestamps: true });
 
-UserSchema.pre('save', async function(next) {
+UserSchema.pre('save', async function (next) {
     if (!this.isModified('password')) {
         return next();
     }
