@@ -1,0 +1,193 @@
+// services/aiService.js
+const Groq = require('groq-sdk');
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { HfInference } = require('@huggingface/inference');
+
+// Initialize AI Clients (reusing existing env vars)
+const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
+const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
+const hf = process.env.HF_API_KEY ? new HfInference(process.env.HF_API_KEY) : null;
+
+/* ---------------------------------------------------------
+   SIMPLE IN-MEMORY CACHE (for autocomplete)
+--------------------------------------------------------- */
+const cache = new Map();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function getCached(key) {
+    const entry = cache.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.timestamp > CACHE_TTL) {
+        cache.delete(key);
+        return null;
+    }
+    return entry.value;
+}
+
+function setCache(key, value) {
+    // Limit cache size
+    if (cache.size > 500) {
+        const firstKey = cache.keys().next().value;
+        cache.delete(firstKey);
+    }
+    cache.set(key, { value, timestamp: Date.now() });
+}
+
+/* ---------------------------------------------------------
+   CORE AI CALL — Groq → Gemini → HuggingFace fallback
+--------------------------------------------------------- */
+async function callAI(messages, options = {}) {
+    const {
+        temperature = 0.7,
+        maxTokens = 2048,
+        jsonMode = false
+    } = options;
+
+    let lastError = null;
+
+    // --- 1. GROQ (fastest) ---
+    if (groq) {
+        try {
+            console.log("🤖 AI Chat: Attempting Groq...");
+            const params = {
+                messages,
+                model: 'llama-3.3-70b-versatile',
+                temperature,
+                max_tokens: maxTokens
+            };
+            if (jsonMode) params.response_format = { type: "json_object" };
+
+            const completion = await groq.chat.completions.create(params);
+            return completion.choices[0].message.content;
+        } catch (err) {
+            console.error("⚠️ Groq Failed:", err.message.substring(0, 80));
+            lastError = err;
+        }
+    }
+
+    // --- 2. GEMINI ---
+    if (genAI) {
+        const geminiModels = ["gemini-1.5-flash-latest", "gemini-1.5-pro"];
+        for (const modelName of geminiModels) {
+            try {
+                console.log(`🤖 AI Chat: Switching to Gemini (${modelName})...`);
+                const model = genAI.getGenerativeModel({ model: modelName });
+
+                // Convert chat format to Gemini format
+                const prompt = messages.map(m => `${m.role}: ${m.content}`).join('\n\n');
+                const result = await model.generateContent(prompt);
+                const response = await result.response;
+                return response.text();
+            } catch (err) {
+                console.error(`⚠️ Gemini (${modelName}) Failed:`, err.message.substring(0, 80));
+                lastError = err;
+            }
+        }
+    }
+
+    // --- 3. HUGGING FACE ---
+    if (hf) {
+        try {
+            console.log("🤖 AI Chat: Switching to HuggingFace...");
+            const completion = await hf.chatCompletion({
+                model: "microsoft/Phi-3-mini-4k-instruct",
+                messages,
+                max_tokens: maxTokens,
+                temperature
+            });
+            return completion.choices[0].message.content;
+        } catch (err) {
+            console.error("⚠️ HuggingFace Failed:", err.message.substring(0, 80));
+            lastError = err;
+        }
+    }
+
+    throw new Error(`All AI providers failed. Last error: ${lastError?.message}`);
+}
+
+/* ---------------------------------------------------------
+   1) CHAT RESPONSE
+--------------------------------------------------------- */
+async function generateChatResponse(userMessages) {
+    const systemPrompt = {
+        role: 'system',
+        content: `You are an expert AI coding assistant embedded in a developer collaboration platform. You help developers by:
+- Answering programming questions clearly and concisely
+- Explaining code with examples
+- Debugging code and identifying issues
+- Suggesting improvements and best practices
+- Generating code snippets in any language
+
+Always format your responses using Markdown. Use fenced code blocks with language identifiers for code. Be concise but thorough.`
+    };
+
+    const messages = [systemPrompt, ...userMessages];
+    return await callAI(messages, { temperature: 0.7, maxTokens: 2048 });
+}
+
+/* ---------------------------------------------------------
+   2) CODE EXPLANATION
+--------------------------------------------------------- */
+async function explainCode(code, language = 'javascript') {
+    const messages = [
+        {
+            role: 'system',
+            content: 'You are an expert code explainer. Provide clear, structured explanations with sections for: Overview, Line-by-line breakdown (for short code), Key concepts, and Potential improvements. Use Markdown formatting with code blocks.'
+        },
+        {
+            role: 'user',
+            content: `Explain this ${language} code:\n\n\`\`\`${language}\n${code}\n\`\`\``
+        }
+    ];
+
+    return await callAI(messages, { temperature: 0.3, maxTokens: 2048 });
+}
+
+/* ---------------------------------------------------------
+   3) AUTOCOMPLETE
+--------------------------------------------------------- */
+async function autocompleteCode(context, language = 'javascript', cursorPosition = 0) {
+    // Check cache first
+    const cacheKey = `${language}:${context.slice(-200)}`;
+    const cached = getCached(cacheKey);
+    if (cached) {
+        console.log("🤖 Autocomplete: Cache hit");
+        return cached;
+    }
+
+    const messages = [
+        {
+            role: 'system',
+            content: `You are a code autocomplete engine. Given a code context, predict the NEXT few lines of code the developer would write. Rules:
+- Return ONLY the completion code, no explanations or markdown
+- Do NOT repeat any of the existing code
+- Keep completions short (1-3 lines typically)
+- Match the coding style and indentation of the context
+- If you cannot predict a meaningful completion, return an empty string`
+        },
+        {
+            role: 'user',
+            content: `Language: ${language}\nComplete the code after the cursor:\n\n${context}`
+        }
+    ];
+
+    const result = await callAI(messages, { temperature: 0.2, maxTokens: 150 });
+
+    // Clean up: remove markdown code fences if AI added them
+    let completion = result.trim();
+    completion = completion.replace(/^```[\w]*\n?/gm, '').replace(/```$/gm, '').trim();
+
+    // Cache the result
+    setCache(cacheKey, completion);
+
+    return completion;
+}
+
+/* ---------------------------------------------------------
+   EXPORTS
+--------------------------------------------------------- */
+module.exports = {
+    generateChatResponse,
+    explainCode,
+    autocompleteCode
+};

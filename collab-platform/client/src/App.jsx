@@ -6,6 +6,7 @@ import 'react-toastify/dist/ReactToastify.css';
 // General Components
 import Navbar from './components/layout/Navbar';
 import PrivateRoute from './components/routing/PrivateRoute';
+import AISidebar from './components/AI/AISidebar';
 
 // Pages
 import HomePage from './pages/HomePage';
@@ -17,6 +18,7 @@ import RoomPage from './pages/RoomPage';
 import IDEPage from './pages/IDEPage';
 import AssessmentPage from './pages/AssessmentPage';
 import ForumPage from './pages/ForumPage';
+import GoogleCallbackPage from './pages/GoogleCallbackPage';
 
 // Context and Socket
 import AuthContext from './context/AuthContext';
@@ -71,6 +73,7 @@ const AppContent = () => {
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/auth/google/callback" element={<GoogleCallbackPage />} />
 
           {/* Private Routes */}
           <Route path="/dashboard" element={<PrivateRoute><DashboardPage /></PrivateRoute>} />
@@ -91,6 +94,7 @@ const AppContent = () => {
           <Route path="/projects/:projectId" element={<PrivateRoute><IDEPage /></PrivateRoute>} />
         </Routes>
       </main>
+      <AISidebar />
     </>
   );
 };

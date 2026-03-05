@@ -2,11 +2,11 @@ import React, { useState } from 'react';
 
 const FileExplorerWindow = ({ files = [], onSelectFile, selectedFile, onCreateFile, onDeleteFile, onRenameFile }) => {
     const [expandedFolders, setExpandedFolders] = useState(new Set());
-    const [newFileName, setNewFileName] = useState('');
-    const [creatingFile, setCreatingFile] = useState(false);
-    const [creatingFolder, setCreatingFolder] = useState(false);
     const [renamingPath, setRenamingPath] = useState(null);
     const [renameValue, setRenameValue] = useState('');
+    // Inline creation state: { parentPath, isFolder }
+    const [creatingIn, setCreatingIn] = useState(null);
+    const [newItemName, setNewItemName] = useState('');
 
     const toggleFolder = (folderPath) => {
         const newExpanded = new Set(expandedFolders);
@@ -35,20 +35,32 @@ const FileExplorerWindow = ({ files = [], onSelectFile, selectedFile, onCreateFi
         return '📄';
     };
 
-    const handleCreateFile = () => {
-        if (newFileName.trim()) {
-            onCreateFile(newFileName, false);
-            setNewFileName('');
-            setCreatingFile(false);
-        }
+    const handleStartCreate = (parentPath, isFolder) => {
+        // Expand the parent folder so the inline input is visible
+        const newExpanded = new Set(expandedFolders);
+        newExpanded.add(parentPath);
+        setExpandedFolders(newExpanded);
+        setCreatingIn({ parentPath, isFolder });
+        setNewItemName('');
     };
 
-    const handleCreateFolder = () => {
-        if (newFileName.trim()) {
-            onCreateFile(newFileName, true);
-            setNewFileName('');
-            setCreatingFolder(false);
+    const handleConfirmCreate = () => {
+        if (!creatingIn || !newItemName.trim()) {
+            setCreatingIn(null);
+            setNewItemName('');
+            return;
         }
+        const fullPath = creatingIn.parentPath
+            ? `${creatingIn.parentPath}/${newItemName.trim()}`
+            : newItemName.trim();
+        onCreateFile(fullPath, creatingIn.isFolder);
+        setCreatingIn(null);
+        setNewItemName('');
+    };
+
+    const handleCancelCreate = () => {
+        setCreatingIn(null);
+        setNewItemName('');
     };
 
     const handleRename = (path, currentName) => {
@@ -59,27 +71,70 @@ const FileExplorerWindow = ({ files = [], onSelectFile, selectedFile, onCreateFi
     const handleRenameSubmit = (path) => {
         if (renameValue.trim() && renameValue !== path.split('/').pop()) {
             onRenameFile(path, renameValue);
-            setRenamingPath(null);
-            setRenameValue('');
         }
+        setRenamingPath(null);
+        setRenameValue('');
     };
 
-    const renderFileTree = (items, depth = 0) => {
+    // Inline input row for creating a new file/folder inside a parent
+    const renderInlineInput = () => (
+        <div
+            className="file-tree-item"
+            style={{
+                paddingLeft: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+            }}
+        >
+            <span style={{ minWidth: '16px', fontSize: '14px' }}>
+                {creatingIn.isFolder ? '📁' : '📄'}
+            </span>
+            <input
+                type="text"
+                value={newItemName}
+                onChange={(e) => setNewItemName(e.target.value)}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleConfirmCreate();
+                    if (e.key === 'Escape') handleCancelCreate();
+                }}
+                onBlur={handleConfirmCreate}
+                autoFocus
+                placeholder={creatingIn.isFolder ? 'folder name' : 'filename.js'}
+                style={{
+                    flex: 1,
+                    padding: '2px 6px',
+                    backgroundColor: '#3c3c3c',
+                    color: '#e0e0e0',
+                    border: '1px solid #007acc',
+                    borderRadius: '2px',
+                    fontSize: '12px',
+                    outline: 'none',
+                    fontFamily: 'inherit',
+                }}
+                onClick={(e) => e.stopPropagation()}
+            />
+        </div>
+    );
+
+    const renderFileTree = (items, depth = 0, parentPath = '') => {
         return items.map((item, idx) => {
             const isFolder = item.type === 'folder';
             const isExpanded = expandedFolders.has(item.path);
             const isRenaming = renamingPath === item.path;
+            const isCreatingHere = creatingIn && creatingIn.parentPath === item.path;
 
             return (
-                <div key={idx}>
+                <div key={item.path || idx}>
                     <div
                         className={`file-tree-item ${selectedFile === item.path ? 'selected' : ''}`}
-                        style={{ 
+                        style={{
                             paddingLeft: `${depth * 16 + 8}px`,
                             display: 'flex',
                             alignItems: 'center',
                             gap: '6px',
-                            position: 'relative'
+                            position: 'relative',
+                            height: '24px',
                         }}
                         onClick={() => {
                             if (isFolder && !isRenaming) {
@@ -95,89 +150,150 @@ const FileExplorerWindow = ({ files = [], onSelectFile, selectedFile, onCreateFi
                             }
                         }}
                     >
+                        {/* Chevron for folders */}
                         {isFolder && (
-                            <span className="file-tree-item-icon" style={{ fontWeight: 'bold', minWidth: '16px' }}>
-                                {isExpanded ? '📂' : '📁'}
+                            <span style={{
+                                minWidth: '12px',
+                                fontSize: '10px',
+                                color: '#999',
+                                transition: 'transform 0.15s',
+                                transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                                display: 'inline-block',
+                            }}>
+                                ▶
                             </span>
                         )}
-                        {!isFolder && (
-                            <span className="file-tree-item-icon" style={{ minWidth: '16px' }}>
+                        {!isFolder && <span style={{ minWidth: '12px' }} />}
+
+                        {/* Icon */}
+                        {isFolder ? (
+                            <span style={{ minWidth: '16px', fontSize: '14px' }}>
+                                {isExpanded ? '📂' : '📁'}
+                            </span>
+                        ) : (
+                            <span style={{ minWidth: '16px', fontSize: '14px' }}>
                                 {getFileIcon(item.name)}
                             </span>
                         )}
+
+                        {/* Name or rename input */}
                         {isRenaming ? (
                             <input
                                 type="text"
                                 value={renameValue}
                                 onChange={(e) => setRenameValue(e.target.value)}
-                                onKeyPress={(e) => {
+                                onKeyDown={(e) => {
                                     if (e.key === 'Enter') handleRenameSubmit(item.path);
-                                    if (e.key === 'Escape') setRenamingPath(null);
+                                    if (e.key === 'Escape') {
+                                        setRenamingPath(null);
+                                        setRenameValue('');
+                                    }
                                 }}
                                 onBlur={() => handleRenameSubmit(item.path)}
                                 autoFocus
                                 style={{
                                     flex: 1,
-                                    padding: '2px 4px',
+                                    padding: '1px 4px',
                                     backgroundColor: '#3c3c3c',
                                     color: '#e0e0e0',
                                     border: '1px solid #007acc',
                                     borderRadius: '2px',
                                     fontSize: '12px',
-                                    outline: 'none'
+                                    outline: 'none',
+                                    fontFamily: 'inherit',
                                 }}
                                 onClick={(e) => e.stopPropagation()}
                             />
                         ) : (
-                            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <span style={{
+                                flex: 1,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                fontSize: '13px',
+                            }}>
                                 {item.name}
                             </span>
                         )}
+
+                        {/* Hover actions */}
                         {!isRenaming && (
-                            <div style={{ display: 'flex', gap: '4px', marginLeft: 'auto', opacity: 0, transition: 'opacity 0.2s' }} className="file-tree-actions">
+                            <div className="file-tree-actions">
+                                {isFolder && (
+                                    <>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleStartCreate(item.path, false);
+                                            }}
+                                            title="New File"
+                                            style={actionBtnStyle}
+                                        >
+                                            📄
+                                        </button>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleStartCreate(item.path, true);
+                                            }}
+                                            title="New Folder"
+                                            style={actionBtnStyle}
+                                        >
+                                            📁
+                                        </button>
+                                    </>
+                                )}
                                 <button
-                                    style={{
-                                        background: 'transparent',
-                                        border: 'none',
-                                        color: '#999',
-                                        cursor: 'pointer',
-                                        fontSize: '11px',
-                                        padding: '2px 4px'
-                                    }}
                                     onClick={(e) => {
                                         e.stopPropagation();
                                         handleRename(item.path, item.name);
                                     }}
                                     title="Rename"
+                                    style={actionBtnStyle}
                                 >
                                     ✏️
                                 </button>
                                 <button
-                                    style={{
-                                        background: 'transparent',
-                                        border: 'none',
-                                        color: '#f48771',
-                                        cursor: 'pointer',
-                                        fontSize: '11px',
-                                        padding: '2px 4px'
-                                    }}
                                     onClick={(e) => {
                                         e.stopPropagation();
                                         onDeleteFile(item.path);
                                     }}
                                     title="Delete"
+                                    style={{ ...actionBtnStyle, color: '#f48771' }}
                                 >
                                     ✕
                                 </button>
                             </div>
                         )}
                     </div>
-                    {isFolder && isExpanded && item.children && (
-                        renderFileTree(item.children, depth + 1)
+
+                    {/* Children + inline create input */}
+                    {isFolder && isExpanded && (
+                        <div>
+                            {/* Inline creation input appears at the top of the folder's children */}
+                            {isCreatingHere && (
+                                <div style={{ paddingLeft: `${(depth + 1) * 16 + 8}px` }}>
+                                    {renderInlineInput()}
+                                </div>
+                            )}
+                            {item.children && renderFileTree(item.children, depth + 1, item.path)}
+                        </div>
                     )}
                 </div>
             );
         });
+    };
+
+    const actionBtnStyle = {
+        background: 'transparent',
+        border: 'none',
+        color: '#999',
+        cursor: 'pointer',
+        fontSize: '12px',
+        padding: '0 2px',
+        lineHeight: 1,
+        display: 'flex',
+        alignItems: 'center',
     };
 
     return (
@@ -185,91 +301,35 @@ const FileExplorerWindow = ({ files = [], onSelectFile, selectedFile, onCreateFi
             <div className="window-header">
                 <h3>
                     <span className="window-title-icon">📁</span>
-                    Files
+                    Explorer
                 </h3>
+                {/* Top-level root actions: create at root */}
                 <div className="window-controls" style={{ display: 'flex', gap: '4px' }}>
                     <button
                         className="window-btn"
-                        onClick={() => setCreatingFile(true)}
-                        title="New File"
+                        onClick={() => handleStartCreate('', false)}
+                        title="New File (root)"
                     >
                         📄
                     </button>
                     <button
                         className="window-btn"
-                        onClick={() => setCreatingFolder(true)}
-                        title="New Folder"
+                        onClick={() => handleStartCreate('', true)}
+                        title="New Folder (root)"
                     >
                         📁
                     </button>
                 </div>
             </div>
             <div className="window-content" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                {(creatingFile || creatingFolder) && (
-                    <div style={{ marginBottom: '10px', padding: '8px', backgroundColor: '#2d2d30', borderRadius: '4px', flexShrink: 0 }}>
-                        <input
-                            type="text"
-                            placeholder={creatingFile ? 'filename.js' : 'folder name'}
-                            value={newFileName}
-                            onChange={(e) => setNewFileName(e.target.value)}
-                            onKeyPress={(e) => {
-                                if (e.key === 'Enter') creatingFile ? handleCreateFile() : handleCreateFolder();
-                                if (e.key === 'Escape') {
-                                    setCreatingFile(false);
-                                    setCreatingFolder(false);
-                                    setNewFileName('');
-                                }
-                            }}
-                            autoFocus
-                            style={{
-                                width: '100%',
-                                padding: '6px',
-                                backgroundColor: '#3c3c3c',
-                                color: '#e0e0e0',
-                                border: '1px solid #555',
-                                borderRadius: '3px',
-                                marginBottom: '6px',
-                                fontSize: '12px'
-                            }}
-                        />
-                        <div style={{ display: 'flex', gap: '6px', fontSize: '11px' }}>
-                            <button
-                                onClick={creatingFile ? handleCreateFile : handleCreateFolder}
-                                style={{
-                                    flex: 1,
-                                    padding: '4px',
-                                    background: '#007acc',
-                                    color: 'white',
-                                    border: 'none',
-                                    borderRadius: '3px',
-                                    cursor: 'pointer'
-                                }}
-                            >
-                                Create
-                            </button>
-                            <button
-                                onClick={() => {
-                                    setCreatingFile(false);
-                                    setCreatingFolder(false);
-                                    setNewFileName('');
-                                }}
-                                style={{
-                                    flex: 1,
-                                    padding: '4px',
-                                    background: '#3c3c3c',
-                                    color: '#e0e0e0',
-                                    border: '1px solid #555',
-                                    borderRadius: '3px',
-                                    cursor: 'pointer'
-                                }}
-                            >
-                                Cancel
-                            </button>
-                        </div>
-                    </div>
-                )}
                 <div className="file-tree" style={{ flex: 1, overflow: 'auto' }}>
-                    {files.length === 0 ? (
+                    {/* Root-level inline create */}
+                    {creatingIn && creatingIn.parentPath === '' && (
+                        <div style={{ paddingLeft: '8px' }}>
+                            {renderInlineInput()}
+                        </div>
+                    )}
+                    {files.length === 0 && !creatingIn ? (
                         <div className="file-tree-item" style={{ opacity: 0.7 }}>
                             No files yet
                         </div>

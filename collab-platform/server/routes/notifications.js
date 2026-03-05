@@ -20,13 +20,16 @@ router.get('/', auth, async (req, res) => {
 // @desc    Send a room invitation to another user
 router.post('/invite', auth, async (req, res) => {
     const { targetUserId, roomId, roomName } = req.body;
-    
+
     try {
         const sender = await User.findById(req.user.id).select('username');
-        
+
         // Notification Message
-        const message = `${sender.username} invited you to join room: ${roomName}`;
-        
+        let message = `${sender.username} invited you to join room: ${roomName}`;
+        if (req.body.message) {
+            message += `\nReason: ${req.body.message}`;
+        }
+
         // Create Notification with TYPE and RELATEDID
         const notification = new Notification({
             user: targetUserId,
@@ -34,7 +37,7 @@ router.post('/invite', auth, async (req, res) => {
             type: 'invite',    // REQUIRED for button
             relatedId: roomId  // REQUIRED for link
         });
-        
+
         await notification.save();
 
         // Send Real-time Socket Event

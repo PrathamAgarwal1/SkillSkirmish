@@ -352,18 +352,43 @@ li { padding: 10px; border-bottom: 1px solid #21262d; font-size: 1rem; }
 };
 
 /**
+ * Sync a file or folder to disk under projects/<projectId>/
+ */
+const syncToDisk = (projectId, filePath, content, isFolder = false) => {
+    const fsSync = require('fs');
+    const fullPath = path.join(process.cwd(), 'projects', projectId.toString(), filePath);
+    try {
+        if (isFolder) {
+            if (!fsSync.existsSync(fullPath)) {
+                fsSync.mkdirSync(fullPath, { recursive: true });
+            }
+        } else {
+            const dir = path.dirname(fullPath);
+            if (!fsSync.existsSync(dir)) {
+                fsSync.mkdirSync(dir, { recursive: true });
+            }
+            fsSync.writeFileSync(fullPath, content || '');
+        }
+    } catch (err) {
+        console.error('Error syncing template file to disk:', err);
+    }
+};
+
+/**
  * Create project files in the database from template definitions
  */
 const createProjectFiles = async (projectType, projectId) => {
     const template = templates[projectType];
     if (!template) {
         // Fallback for unknown project types
-        await new File({
+        const fallback = new File({
             name: 'index.js',
             path: 'index.js',
             content: '// Your code here',
             project: projectId,
-        }).save();
+        });
+        await fallback.save();
+        syncToDisk(projectId, 'index.js', '// Your code here');
         return;
     }
 
@@ -376,6 +401,8 @@ const createProjectFiles = async (projectType, projectId) => {
             project: projectId
         });
         await newFile.save();
+        // Also sync to disk so files can be executed locally
+        syncToDisk(projectId, item.path, item.content || '', item.isFolder || false);
     }
 };
 

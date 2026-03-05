@@ -168,6 +168,7 @@ io.on('connection', (socket) => {
 // --- API ROUTES ---
 // All routes are now expected to be in the 'server/routes' folder
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/auth/google', require('./routes/googleAuth'));
 app.use('/api/profile', require('./routes/profile'));
 app.use('/api/rooms', require('./routes/rooms'));
 app.use('/api/projects', require('./routes/projects'));
@@ -180,6 +181,7 @@ app.use('/api/execute', require('./routes/execute'));
 app.use('/api/matchmaking', require('./routes/matchmaking'));
 app.use('/api/assessment', require('./routes/assessment'));
 app.use('/api/livekit', require('./routes/livekit'));
+app.use('/api/ai', require('./routes/ai'));
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`Server started on port ${PORT}`));

@@ -223,28 +223,31 @@
 
 /* File Tree */
 .file-tree {
-    font-size: 12px;
+    font-size: 13px;
     display: flex;
     flex-direction: column;
     flex: 1;
 }
 
 .file-tree-item {
-    padding: 4px 8px;
+    padding: 0 8px;
     cursor: pointer;
     display: flex;
     align-items: center;
     gap: 6px;
-    border-radius: 2px;
-    transition: background 0.2s;
+    border-radius: 0;
+    transition: background 0.1s;
+    height: 24px;
+    min-height: 24px;
+    user-select: none;
 }
 
 .file-tree-item:hover {
-    background: #2d2d30;
+    background: #2a2d2e;
 }
 
 .file-tree-item.selected {
-    background: #007acc;
+    background: #094771;
     color: white;
 }
 
@@ -259,10 +262,11 @@
 
 .file-tree-actions {
     display: flex;
-    gap: 4px;
+    gap: 2px;
     margin-left: auto;
     opacity: 0;
-    transition: opacity 0.2s ease-in-out;
+    transition: opacity 0.15s ease-in-out;
+    flex-shrink: 0;
 }
 
 /* Console Specific */

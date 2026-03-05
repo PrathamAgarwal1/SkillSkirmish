@@ -67,8 +67,21 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
+    // Google Auth0 login — called by GoogleCallbackPage with the JWT from the server
+    const googleLogin = async (jwtToken) => {
+        try {
+            localStorage.setItem('token', jwtToken);
+            setToken(jwtToken);
+            setAuthToken(jwtToken);
+            await loadUser();
+        } catch (err) {
+            console.error('Google login error:', err);
+            logout();
+        }
+    };
+
     return (
-        <AuthContext.Provider value={{ token, isAuthenticated, user, loading, register, login, logout }}>
+        <AuthContext.Provider value={{ token, isAuthenticated, user, loading, register, login, googleLogin, logout }}>
             {children}
         </AuthContext.Provider>
     );

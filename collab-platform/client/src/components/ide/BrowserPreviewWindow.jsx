@@ -5,7 +5,7 @@ const BrowserPreviewWindow = ({ previewUrl, onRefresh, isLoading, onClose }) => 
     const [isDragging, setIsDragging] = useState(false);
     const [isResizing, setIsResizing] = useState(false);
     const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-    const [position, setPosition] = useState({ x: 100, y: 100 });
+    const [position, setPosition] = useState({ x: 50, y: 50 });
     const [size, setSize] = useState({ width: 700, height: 600 });
     const iframeRef = useRef(null);
     const windowRef = useRef(null);
@@ -77,6 +77,92 @@ const BrowserPreviewWindow = ({ previewUrl, onRefresh, isLoading, onClose }) => 
         }
     }, [isDragging, isResizing, dragOffset]);
 
+    // Inject console capture script into iframe
+    React.useEffect(() => {
+        if (!iframeRef.current) return;
+
+        const handleIframeLoad = () => {
+            try {
+                const iframeDoc = iframeRef.current.contentDocument || iframeRef.current.contentWindow.document;
+                if (!iframeDoc) return;
+
+                // Create a script that captures console output
+                const script = iframeDoc.createElement('script');
+                script.textContent = `
+                    (function() {
+                        const originalLog = console.log;
+                        const originalError = console.error;
+                        const originalWarn = console.warn;
+                        const originalInfo = console.info;
+
+                        function sendToParent(message, type) {
+                            window.parent.postMessage({
+                                type: 'console-output',
+                                source: 'browser-console',
+                                message: message,
+                                logType: type
+                            }, '*');
+                        }
+
+                        console.log = function(...args) {
+                            const message = args.map(arg => {
+                                if (typeof arg === 'object') {
+                                    try { return JSON.stringify(arg); } catch { return String(arg); }
+                                }
+                                return String(arg);
+                            }).join(' ');
+                            sendToParent(message, 'log');
+                            originalLog.apply(console, args);
+                        };
+
+                        console.error = function(...args) {
+                            const message = args.map(arg => {
+                                if (typeof arg === 'object') {
+                                    try { return JSON.stringify(arg); } catch { return String(arg); }
+                                }
+                                return String(arg);
+                            }).join(' ');
+                            sendToParent(message, 'error');
+                            originalError.apply(console, args);
+                        };
+
+                        console.warn = function(...args) {
+                            const message = args.map(arg => {
+                                if (typeof arg === 'object') {
+                                    try { return JSON.stringify(arg); } catch { return String(arg); }
+                                }
+                                return String(arg);
+                            }).join(' ');
+                            sendToParent(message, 'warning');
+                            originalWarn.apply(console, args);
+                        };
+
+                        console.info = function(...args) {
+                            const message = args.map(arg => {
+                                if (typeof arg === 'object') {
+                                    try { return JSON.stringify(arg); } catch { return String(arg); }
+                                }
+                                return String(arg);
+                            }).join(' ');
+                            sendToParent(message, 'info');
+                            originalInfo.apply(console, args);
+                        };
+                    })();
+                `;
+                iframeDoc.head.appendChild(script);
+            } catch (err) {
+                console.warn('Could not inject console capture script:', err);
+            }
+        };
+
+        iframeRef.current.addEventListener('load', handleIframeLoad);
+        return () => {
+            if (iframeRef.current) {
+                iframeRef.current.removeEventListener('load', handleIframeLoad);
+            }
+        };
+    }, []);
+
     return (
         <div 
             ref={windowRef}
@@ -87,14 +173,14 @@ const BrowserPreviewWindow = ({ previewUrl, onRefresh, isLoading, onClose }) => 
                 transform: `translate(${position.x}px, ${position.y}px)`,
                 cursor: isDragging ? 'grabbing' : isResizing ? 'se-resize' : 'grab',
                 transition: (isDragging || isResizing) ? 'none' : 'all 0.2s ease',
-                top: '100px',
-                right: 'auto',
                 width: `${size.width}px`,
                 height: `${size.height}px`,
-                zIndex: 1500,
+                zIndex: 9999,
                 display: 'flex',
                 flexDirection: 'column',
-                overflow: 'hidden'
+                overflow: 'hidden',
+                boxShadow: '0 10px 40px rgba(0, 0, 0, 0.6)',
+                borderRadius: '4px'
             }}
         >
             <div 

@@ -1,5 +1,6 @@
 import React, { useState, useContext } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { FcGoogle } from 'react-icons/fc';
 import AuthContext from '../context/AuthContext';
 
 const RegisterPage = () => {
@@ -14,6 +15,12 @@ const RegisterPage = () => {
         e.preventDefault();
         await register(formData);
         navigate('/');
+    };
+
+    // Redirect to backend Google auth route (full page redirect)
+    const handleGoogleLogin = () => {
+        const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+        window.location.href = `${backendUrl}/api/auth/google/login`;
     };
 
     return (
@@ -74,6 +81,41 @@ const RegisterPage = () => {
                             CREATE ACCOUNT →
                         </button>
                     </form>
+
+                    {/* Divider */}
+                    <div style={{
+                        display: 'flex', alignItems: 'center', margin: '1.5rem 0',
+                        gap: '0.8rem', fontFamily: 'var(--font-mono)'
+                    }}>
+                        <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-subtle)' }} />
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', letterSpacing: '2px' }}>OR</span>
+                        <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-subtle)' }} />
+                    </div>
+
+                    {/* Google Login Button */}
+                    <button
+                        onClick={handleGoogleLogin}
+                        style={{
+                            width: '100%', padding: '0.8rem', fontSize: '0.85rem',
+                            fontFamily: 'var(--font-mono)', letterSpacing: '0.5px',
+                            borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)',
+                            backgroundColor: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-bright)',
+                            cursor: 'pointer', display: 'flex', alignItems: 'center',
+                            justifyContent: 'center', gap: '0.6rem',
+                            transition: 'all 0.2s ease'
+                        }}
+                        onMouseEnter={e => {
+                            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+                            e.currentTarget.style.borderColor = 'var(--term-blue)';
+                        }}
+                        onMouseLeave={e => {
+                            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+                            e.currentTarget.style.borderColor = 'var(--border-subtle)';
+                        }}
+                    >
+                        <FcGoogle size={20} />
+                        Continue with Google
+                    </button>
 
                     <div style={{
                         marginTop: '1.5rem', textAlign: 'center', fontSize: '0.85rem',

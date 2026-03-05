@@ -207,14 +207,26 @@ const isProjectRunning = (projectId) => {
 /**
  * Run a single file
  */
-const runFile = async (projectId, filePath, userId, io, roomId) => {
+const runFile = async (projectId, filePath, userId, io, roomId, userSocketMap) => {
     try {
         const fullPath = path.join(process.cwd(), 'projects', projectId.toString(), filePath);
         const fileExt = path.extname(filePath);
         const fileName = path.basename(filePath);
 
         if (!fs.existsSync(fullPath)) {
-            return { success: false, message: 'File not found' };
+            // File not on disk — try to sync from MongoDB
+            const File = require('../models/File');
+            const dbFile = await File.findOne({ project: projectId, path: filePath });
+            if (!dbFile) {
+                return { success: false, message: 'File not found' };
+            }
+            // Write it to disk
+            const dir = path.dirname(fullPath);
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+            }
+            fs.writeFileSync(fullPath, dbFile.content || '');
+            console.log(`Synced file from DB to disk: ${filePath}`);
         }
 
         let command, args;
@@ -238,18 +250,22 @@ const runFile = async (projectId, filePath, userId, io, roomId) => {
         const processId = `file-${Date.now()}`; // Unique ID for this file run
         const consoleOutput = [];
 
+        // Helper: emit to room if available, otherwise directly to user's socket
+        const emitOutput = (eventName, data) => {
+            if (!io) return;
+            if (roomId) {
+                io.to(roomId).emit(eventName, data);
+            } else if (userSocketMap && userSocketMap[userId]) {
+                io.to(userSocketMap[userId]).emit(eventName, data);
+            }
+        };
+
         // Capture stdout
         childProcess.stdout.on('data', (data) => {
             const message = data.toString(); // Don't trim to preserve formatting
             if (message) {
                 consoleOutput.push({ message, type: 'info', timestamp: Date.now() });
-                if (io && roomId) {
-                    io.to(roomId).emit('terminal-output', {
-                        processId,
-                        message,
-                        type: 'info'
-                    });
-                }
+                emitOutput('terminal-output', { processId, message, type: 'info' });
             }
         });
 
@@ -258,13 +274,7 @@ const runFile = async (projectId, filePath, userId, io, roomId) => {
             const message = data.toString();
             if (message) {
                 consoleOutput.push({ message, type: 'error', timestamp: Date.now() });
-                if (io && roomId) {
-                    io.to(roomId).emit('terminal-output', {
-                        processId,
-                        message,
-                        type: 'error'
-                    });
-                }
+                emitOutput('terminal-output', { processId, message, type: 'error' });
             }
         });
 
@@ -273,14 +283,7 @@ const runFile = async (projectId, filePath, userId, io, roomId) => {
             runningProcesses.delete(processId);
             const exitMessage = `\nProcess exited with code ${code}`;
             consoleOutput.push({ message: exitMessage, type: code === 0 ? 'success' : 'error', timestamp: Date.now() });
-
-            if (io && roomId) {
-                io.to(roomId).emit('terminal-output', {
-                    processId,
-                    message: exitMessage,
-                    type: code === 0 ? 'success' : 'error'
-                });
-            }
+            emitOutput('terminal-output', { processId, message: exitMessage, type: code === 0 ? 'success' : 'error' });
         });
 
         runningProcesses.set(processId, {

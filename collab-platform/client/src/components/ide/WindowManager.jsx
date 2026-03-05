@@ -13,6 +13,7 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
     const [currentFile, setCurrentFile] = useState(null);
     const [fileContent, setFileContent] = useState('');
     const [files, setFiles] = useState([]);
+    const [isDirty, setIsDirty] = useState(false);
 
     // Console (Project Run) Logs
     const [consoleLogs, setConsoleLogs] = useState([]);
@@ -28,6 +29,7 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
     const [showBrowserWindow, setShowBrowserWindow] = useState(false);
 
     const wsRef = useRef(null);
+    const isUnmountingRef = useRef(false);
 
     const addLog = (message, type = 'info') => {
         const timestamp = new Date().toLocaleTimeString();
@@ -37,6 +39,31 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
     const addTerminalLog = (message, type = 'info') => {
         setTerminalLogs(prev => [...prev, { message, type }]);
     };
+
+    // Cleanup function to be called on unmount or stop
+    const cleanupProcess = async (processId) => {
+        if (!processId) return;
+        try {
+            await axios.post('/api/execute/stop-process', { processId, roomId });
+            setActiveFileProcessId(null);
+            addTerminalLog('Process terminated', 'info');
+        } catch (err) {
+            console.error('Error stopping process:', err);
+        }
+    };
+
+    // Cleanup on unmount
+    useEffect(() => {
+        return () => {
+            isUnmountingRef.current = true;
+            if (activeFileProcessId) {
+                cleanupProcess(activeFileProcessId);
+            }
+            if (isProjectRunning) {
+                handleStopProject();
+            }
+        };
+    }, [activeFileProcessId, isProjectRunning]);
 
     const formatFilesForTree = useCallback((fileList) => {
         // Build a proper tree structure handling folders as first-class citizens
@@ -92,7 +119,7 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
         return buildTree(root);
     }, []);
 
-    // Setup Socket Listeners
+    // Setup Socket Listeners - ALWAYS CONNECTED
     useEffect(() => {
         if (!socket) return;
 
@@ -110,22 +137,89 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
             }
         };
 
-        // Listener for Terminal (Run File) Output
-        const handleTerminalOutput = ({ processId, message, type }) => {
-            // If we are tracking this process or just generally showing output for this room to sync collaborative terminal
-            addTerminalLog(message, type);
+        // Listener for File Execution Output - Goes to Terminal
+        const handleTerminalOutput = (data) => {
+            if (!data) return;
+            const { processId, message, type } = data;
+            if (message && message.trim()) {
+                addTerminalLog(message, type || 'info');
+            }
         };
 
+        // Handle file process completion
+        const handleFileProcessEnded = ({ processId }) => {
+            if (processId === activeFileProcessId) {
+                setActiveFileProcessId(null);
+            }
+        };
+
+        // Register all listeners
         socket.on('project-console', handleProjectConsole);
         socket.on('project-stopped', handleProjectStopped);
         socket.on('terminal-output', handleTerminalOutput);
+        socket.on('file-process-ended', handleFileProcessEnded);
+
+        console.log('[IDE] Socket listeners registered for roomId:', roomId);
 
         return () => {
             socket.off('project-console', handleProjectConsole);
             socket.off('project-stopped', handleProjectStopped);
             socket.off('terminal-output', handleTerminalOutput);
+            socket.off('file-process-ended', handleFileProcessEnded);
         };
     }, [projectId]);
+
+    // Browser Console Capture Listener
+    useEffect(() => {
+        const handleBrowserConsoleMessage = (event) => {
+            // Only accept messages from same origin
+            if (event.origin !== window.location.origin) return;
+
+            if (event.data.type === 'console-output' && event.data.source === 'browser-console') {
+                const { message, logType } = event.data;
+                const typeMap = {
+                    'log': 'info',
+                    'error': 'error',
+                    'warning': 'warning',
+                    'warn': 'warning',
+                    'info': 'info'
+                };
+                // Send browser console to PROJECT CONSOLE
+                addLog(`[Browser] ${message}`, typeMap[logType] || 'info');
+            }
+        };
+
+        window.addEventListener('message', handleBrowserConsoleMessage);
+        return () => {
+            window.removeEventListener('message', handleBrowserConsoleMessage);
+        };
+    }, []);
+
+    // Keyboard Shortcuts
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            // Ctrl+S or Cmd+S: Save current file
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                if (currentFile && isDirty) {
+                    handleSaveFile(fileContent);
+                }
+            }
+            // Ctrl+B or Cmd+B: Run current file
+            if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+                e.preventDefault();
+                if (currentFile && !activeFileProcessId) {
+                    const ext = currentFile.path?.split('.').pop();
+                    if (['js', 'py'].includes(ext)) {
+                        handleRunFile();
+                    }
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [currentFile, fileContent, isDirty, activeFileProcessId]);
 
     // Load files on mount
     useEffect(() => {
@@ -144,6 +238,7 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
 
     const handleSelectFile = async (file) => {
         setCurrentFile(file);
+        setIsDirty(false);
         try {
             const response = await axios.get(`/api/files/${file._id}`);
             setFileContent(response.data.content);
@@ -155,6 +250,7 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
 
     const handleContentChange = (newContent) => {
         setFileContent(newContent);
+        setIsDirty(true);
     };
 
     const handleSaveFile = async (contentCb) => {
@@ -163,27 +259,55 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
         const contentToSave = (typeof contentCb === 'string') ? contentCb : fileContent;
 
         try {
-            await axios.put(`/api/files/${currentFile._id}`, { content: contentToSave });
+            const response = await axios.put(`/api/files/${currentFile._id}`, { content: contentToSave });
+            setIsDirty(false);
+            setFileContent(response.data.content);
             addLog(`✓ Saved: ${currentFile.name}`, 'success');
         } catch (_err) {
-            addLog(`Error saving file: ${_err.message}`, 'error');
+            addLog(`Error saving file: ${_err.response?.data?.msg || _err.message}`, 'error');
         }
     };
 
     const handleCreateFile = async (filename, isFolder = false) => {
         try {
-            // Need to handle creation relative to selected folder if possible, 
-            // but for now let's assume root or user types full path.
-            // Improved path logic: If creating 'folder/file', ensure backend handles it via 'path'
-            // The formatFilesForTree logic will handle the nesting.
+            // Extract directory from filename if it contains path
+            const filenameParts = filename.split('/');
+            const actualFileName = filenameParts[filenameParts.length - 1];
+            const directory = filenameParts.slice(0, -1).join('/');
 
+            // Create parent folders if they don't exist
+            if (directory) {
+                let currentPath = '';
+                for (const dir of filenameParts.slice(0, -1)) {
+                    currentPath = currentPath ? `${currentPath}/${dir}` : dir;
+                    // Check if folder exists, if not create it
+                    try {
+                        await axios.post('/api/files', {
+                            name: dir,
+                            path: currentPath,
+                            projectId: projectId,
+                            isFolder: true,
+                            content: ''
+                        });
+                    } catch (folderErr) {
+                        // Folder might already exist, ignore this error
+                        if (folderErr.response?.status !== 400) {
+                            console.warn('Error creating parent folder:', currentPath);
+                        }
+                    }
+                }
+            }
+
+            // Create the actual file with full path
             await axios.post('/api/files', {
-                name: filename,
+                name: actualFileName,
                 path: filename,
                 projectId: projectId,
                 isFolder: isFolder,
                 content: isFolder ? '' : '// New file'
             });
+
+            // Refresh file tree
             const response = await axios.get(`/api/files/project/${projectId}`);
             const formattedFiles = formatFilesForTree(response.data);
             setFiles(formattedFiles);
@@ -196,11 +320,15 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
     const handleDeleteFile = async (filePath) => {
         if (!window.confirm(`Delete ${filePath}?`)) return;
         try {
-            await axios.delete(`/api/files/path/${filePath}`, { data: { projectId } });
+            await axios.delete(`/api/files/by-path`, { data: { filePath, projectId } });
             const response = await axios.get(`/api/files/project/${projectId}`);
             const formattedFiles = formatFilesForTree(response.data);
             setFiles(formattedFiles);
-            setCurrentFile(null);
+            if (currentFile?.path === filePath || currentFile?.path?.startsWith(filePath + '/')) {
+                setCurrentFile(null);
+                setFileContent('');
+                setIsDirty(false);
+            }
             addLog(`✓ Deleted: ${filePath}`, 'success');
         } catch (_err) {
             addLog(`Error deleting file: ${_err.response?.data?.msg || _err.message}`, 'error');
@@ -209,7 +337,8 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
 
     const handleRenameFile = async (oldPath, newName) => {
         try {
-            const newPath = oldPath.substring(0, oldPath.lastIndexOf('/')) + '/' + newName;
+            const parentPath = oldPath.substring(0, oldPath.lastIndexOf('/'));
+            const newPath = parentPath ? parentPath + '/' + newName : newName;
 
             // Helper to find file ID from tree is hard, so we rely on backend path endpoint or rebuild flat list?
             // Actually `files` is a tree. We need the ID.
@@ -295,19 +424,21 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
     // --- Run Single File ---
     const handleRunFile = async () => {
         if (!currentFile || !currentFile.path) {
-            alert('Please select a file to run first.');
+            addTerminalLog('Please select a file to run first.', 'warning');
             return;
         }
 
         const ext = currentFile.path.split('.').pop();
         if (!['js', 'py'].includes(ext)) {
-            alert('Only .js and .py files can be executed directly.');
+            addTerminalLog(`Only .js and .py files can be executed directly. (${ext} not supported)`, 'warning');
             return;
         }
 
+        // Save before running
         await handleSaveFile(fileContent);
 
-        addTerminalLog(`$ Running ${currentFile.path}...`, 'info');
+        // Clear terminal logs and show running indicator
+        setTerminalLogs([{ message: `$ Running ${currentFile.path}...`, type: 'info' }]);
 
         try {
             const response = await axios.post('/api/execute/run-file', {
@@ -318,12 +449,18 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
 
             if (response.data.success) {
                 setActiveFileProcessId(response.data.processId);
+                addTerminalLog(`Process ID: ${response.data.processId}`, 'info');
             } else {
                 addTerminalLog(`Error: ${response.data.message}`, 'error');
             }
         } catch (err) {
             addTerminalLog(`Error launching file: ${err.message}`, 'error');
         }
+    };
+
+    const handleStopFile = async () => {
+        if (!activeFileProcessId) return;
+        await cleanupProcess(activeFileProcessId);
     };
 
     const handleTerminalInput = async (input) => {
@@ -346,6 +483,10 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
 
     const handleClearLogs = () => {
         setConsoleLogs([]);
+    };
+
+    const handleClearTerminal = () => {
+        setTerminalLogs([{ message: 'Terminal cleared', type: 'info' }]);
     };
 
     const handleRefreshPreview = () => {
@@ -389,12 +530,27 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
                     {/* Run File Control */}
                     <button
                         onClick={handleRunFile}
-                        disabled={!currentFile || (currentFile.path && !['js', 'py'].includes(currentFile.path.split('.').pop()))}
-                        style={{ background: '#d7ba7d', color: '#1e1e1e' }}
-                        title="Run currently selected file"
+                        disabled={!currentFile || (currentFile.path && !['js', 'py'].includes(currentFile.path.split('.').pop())) || !!activeFileProcessId}
+                        style={{
+                            background: !!activeFileProcessId ? '#3c3c3c' : '#d7ba7d',
+                            color: !!activeFileProcessId ? '#cccccc' : '#1e1e1e',
+                            cursor: !!activeFileProcessId ? 'wait' : 'pointer'
+                        }}
+                        title={!!activeFileProcessId ? "File is currently running..." : "Run currently selected file (Ctrl+B)"}
                     >
-                        ▶ Run File
+                        {!!activeFileProcessId ? 'Running...' : '▶ Run File'}
                     </button>
+
+                    {/* Stop File Control */}
+                    {activeFileProcessId && (
+                        <button
+                            onClick={handleStopFile}
+                            style={{ background: '#c74c3c' }}
+                            title="Stop currently running file"
+                        >
+                            ◼ Stop File
+                        </button>
+                    )}
 
                     <button
                         onClick={() => setShowBrowserWindow(!showBrowserWindow)}
@@ -444,6 +600,7 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
 
                 {/* Middle Column: Code Editor */}
                 <CodeEditorWindow
+                    key={currentFile?._id || 'empty'}
                     currentFile={currentFile}
                     fileContent={fileContent}
                     onContentChange={handleContentChange}
@@ -467,6 +624,7 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
                         <TerminalWindow
                             logs={terminalLogs}
                             onInput={handleTerminalInput}
+                            onClear={handleClearTerminal}
                             isRunning={!!activeFileProcessId}
                         />
                     </div>

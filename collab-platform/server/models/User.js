@@ -30,7 +30,21 @@ const UserSchema = new mongoose.Schema({
     },
     password: {
         type: String,
-        required: true
+        required: false
+    },
+    // --- AUTH PROVIDER FIELDS (Google Auth0) ---
+    authProvider: {
+        type: String,
+        enum: ['local', 'google'],
+        default: 'local'
+    },
+    profilePicture: {
+        type: String,
+        default: ''
+    },
+    auth0Sub: {
+        type: String,
+        default: ''
     },
     // --- PROFILE FIELDS (Added) ---
     bio: { type: String, default: '' },
@@ -65,7 +79,8 @@ const UserSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 UserSchema.pre('save', async function (next) {
-    if (!this.isModified('password')) {
+    // Only hash password if it exists and has been modified
+    if (!this.password || !this.isModified('password')) {
         return next();
     }
     const salt = await bcrypt.genSalt(10);

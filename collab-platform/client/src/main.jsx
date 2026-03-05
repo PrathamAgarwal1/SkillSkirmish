@@ -13,6 +13,13 @@ import './index.css';
 import './modern-dark.css';
 import { AuthProvider } from './context/AuthContext.jsx';
 import axios from 'axios'; // <-- IMPORT AXIOS
+
+// --- Configure Monaco Editor to load from local bundle instead of CDN ---
+import { loader } from '@monaco-editor/react';
+import * as monaco from 'monaco-editor';
+loader.config({ monaco });
+// ---
+
 console.log("1. main.jsx is running");
 
 // Sets the base URL for all future Axios requests

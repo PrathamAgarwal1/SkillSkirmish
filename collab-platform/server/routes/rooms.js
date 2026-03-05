@@ -458,13 +458,17 @@ router.post('/:id/send-invite', auth, async (req, res) => {
             return res.status(401).json({ msg: 'Only room owner can send invites' });
         }
 
+        const { message } = req.body;
+        let notifMsg = `${sender.username} invited you to join room: ${room.name}`;
+        if (message) notifMsg += `\nReason: ${message}`;
+
         // Create invitation notification
         const Notification = require('../models/Notification');
         const newNotif = new Notification({
             user: userId,
             sender: req.user.id,
             type: 'invite',
-            message: `${sender.username} invited you to join room: ${room.name}`,
+            message: notifMsg,
             relatedId: room._id
         });
         await newNotif.save();

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useContext } from 'react';
 import axios from 'axios';
 import { useParams, useNavigate } from 'react-router-dom';
 import AIAssessmentModal from '../components/assessment/AIAssessmentModal';
+import InviteModal from '../components/rooms/InviteModal';
 import AuthContext from '../context/AuthContext';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceArea
@@ -76,6 +77,10 @@ const ProfilePage = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [graphFilter, setGraphFilter] = useState('');
 
+    // Invite Logic State
+    const [myRooms, setMyRooms] = useState([]);
+    const [showInviteModal, setShowInviteModal] = useState(false);
+
     const isOwnProfile = !userId || (currentUser && currentUser._id === userId);
 
     const fetchProfile = async () => {
@@ -98,6 +103,15 @@ const ProfilePage = () => {
     useEffect(() => {
         fetchProfile();
     }, [userId]);
+
+    // Fetch my rooms for invite functionality
+    useEffect(() => {
+        if (!isOwnProfile && currentUser) {
+            axios.get('/api/rooms/myrooms')
+                .then(res => setMyRooms(res.data))
+                .catch(err => console.error("Failed to fetch rooms for invite", err));
+        }
+    }, [isOwnProfile, currentUser]);
 
     const handleModalClose = () => {
         setIsModalOpen(false);
@@ -126,6 +140,19 @@ const ProfilePage = () => {
     // Helper: is this skill actually rated?
     const isRated = (s) => s && s.elo != null && (s.matchesPlayed || 0) > 0;
     const displayElo = (s) => isRated(s) ? s.elo : null;
+
+    const handleSendInvite = async (roomId, message) => {
+        try {
+            await axios.post(`/api/rooms/${roomId}/send-invite`, {
+                userId: profile._id,
+                message
+            });
+            alert(`Invite sent to ${profile.username}!`);
+            setShowInviteModal(false);
+        } catch (err) {
+            alert(`Failed: ${err.response?.data?.msg || 'Error sending invite'}`);
+        }
+    };
 
     // --- GRAPH DATA GENERATION ---
     const getGraphData = () => {
@@ -178,11 +205,16 @@ const ProfilePage = () => {
                     </div>
                     <span>~/profile/{profile.username}</span>
                     {!isOwnProfile && (
-                        <span style={{
-                            marginLeft: 'auto', fontSize: '0.7rem', color: 'var(--term-gold)',
-                            border: '1px solid var(--term-gold)', padding: '1px 6px',
-                            borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-mono)'
-                        }}>VIEWING</span>
+                        <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px', alignItems: 'center' }}>
+                            <span style={{
+                                fontSize: '0.7rem', color: 'var(--term-gold)',
+                                border: '1px solid var(--term-gold)', padding: '1px 6px',
+                                borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-mono)'
+                            }}>VIEWING</span>
+                            <button className="btn-term-sm" style={{ borderColor: '#00ff00', color: '#00ff00' }} onClick={() => setShowInviteModal(true)}>
+                                INVITE TO ROOM
+                            </button>
+                        </div>
                     )}
                 </div>
                 <div className="term-body" style={{
@@ -352,6 +384,14 @@ const ProfilePage = () => {
                     </div>
                 </div>
             </div>
+            {showInviteModal && (
+                <InviteModal
+                    user={profile}
+                    rooms={myRooms}
+                    onSend={handleSendInvite}
+                    onClose={() => setShowInviteModal(false)}
+                />
+            )}
         </div>
     );
 };

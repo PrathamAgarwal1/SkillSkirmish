@@ -1,0 +1,1358 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SkillSkirmish | PBL Presentation 2026</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&family=JetBrains+Mono:wght@400;700&display=swap');
+
+        body {
+            background: #020617;
+            color: #f8fafc;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            scroll-behavior: smooth
+        }
+
+        .glass {
+            background: rgba(255, 255, 255, .03);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, .1)
+        }
+
+        .gradient-text {
+            background: linear-gradient(90deg, #60a5fa, #a855f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent
+        }
+
+        #timerContainer {
+            background: #fff;
+            color: #020617;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, .8);
+            border: 3px solid #3b82f6;
+            z-index: 1000
+        }
+
+        @keyframes flicker {
+
+            0%,
+            100% {
+                background: #fff
+            }
+
+            50% {
+                background: #fca5a5
+            }
+        }
+
+        .timer-warning {
+            animation: flicker 1s infinite;
+            border: 3px solid #ef4444 !important;
+            color: #b91c1c !important
+        }
+
+        .timer-stop {
+            background: #991b1b !important;
+            color: #fff !important;
+            border: 3px solid #f87171 !important;
+            animation: none
+        }
+
+        .fade-in {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all .8s ease
+        }
+
+        .fade-in.visible {
+            opacity: 1;
+            transform: translateY(0)
+        }
+
+        .fc:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px rgba(59, 130, 246, .2)
+        }
+
+        .fc {
+            transition: all .3s ease
+        }
+
+        .nav-link {
+            position: relative
+        }
+
+        .nav-link::after {
+            content: '';
+            position: absolute;
+            bottom: -4px;
+            left: 0;
+            width: 0;
+            height: 2px;
+            background: #3b82f6;
+            transition: width .3s
+        }
+
+        .nav-link:hover::after {
+            width: 100%
+        }
+
+        .mono {
+            font-family: 'JetBrains Mono', monospace
+        }
+
+        .schema-field {
+            border-left: 2px solid #334155;
+            padding-left: 12px;
+            margin-bottom: 4px
+        }
+    </style>
+</head>
+
+<body onload="startTimer();initObserver();">
+
+    <div id="timerContainer"
+        class="fixed bottom-10 right-10 px-8 py-4 rounded-3xl flex items-center gap-4 transition-all">
+        <i class="fas fa-hourglass-start text-blue-600 text-2xl" id="timerIcon"></i>
+        <span id="displayTime" class="text-4xl font-black mono tracking-tighter">00:00</span>
+    </div>
+
+    <!-- NAVBAR -->
+    <nav class="fixed w-full z-50 glass border-b border-slate-800/50 px-8 py-4 flex justify-between items-center">
+        <div class="flex items-center gap-4">
+            <div class="bg-gradient-to-br from-blue-600 to-purple-600 p-2.5 rounded-xl flex items-center justify-center shadow-lg"
+                style="height:48px;width:48px;">
+                <i class="fas fa-bolt text-white text-xl"></i>
+            </div>
+            <div class="flex flex-col text-left">
+                <span class="text-xl font-black text-white leading-none uppercase tracking-tighter">PBL <span
+                        class="text-blue-500 italic">2026</span></span>
+                <span class="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-1">Dept. of Computer
+                    Science & Engineering</span>
+            </div>
+        </div>
+        <div class="hidden md:flex gap-6 text-[11px] uppercase tracking-widest font-bold opacity-70">
+            <a href="#problem" class="nav-link hover:text-blue-400 transition">Problem</a>
+            <a href="#methodology" class="nav-link hover:text-blue-400 transition">Methodology</a>
+            <a href="#features" class="nav-link hover:text-blue-400 transition">Features</a>
+            <a href="#elo-system" class="nav-link hover:text-blue-400 transition">ELO</a>
+            <a href="#matchmaking-system" class="nav-link hover:text-blue-400 transition">Matchmaking</a>
+            <a href="#projects" class="nav-link hover:text-blue-400 transition">Collaboration</a>
+            <a href="#architecture" class="nav-link hover:text-blue-400 transition">Architecture</a>
+            <a href="#api" class="nav-link hover:text-blue-400 transition">API</a>
+            <a href="#schemas" class="nav-link hover:text-blue-400 transition">DB Schemas</a>
+            <a href="#results" class="nav-link hover:text-blue-400 transition">Results</a>
+            <a href="#team" class="nav-link hover:text-blue-400 transition">Team</a>
+        </div>
+    </nav>
+
+    <main class="max-w-6xl mx-auto px-6 pt-48 pb-32 space-y-36">
+
+        <!-- 1. HERO -->
+        <section class="text-center fade-in">
+            <div
+                class="inline-block px-5 py-2 border border-blue-500/30 rounded-full text-blue-400 text-[11px] font-bold uppercase tracking-widest mb-6">
+                Platform: SkillSkirmish</div>
+            <h1 class="text-6xl md:text-8xl font-extrabold mb-4 uppercase leading-tight"><span
+                    class="gradient-text">Skill</span><span class="text-white">Skirmish</span></h1>
+            <p class="text-slate-500 text-sm uppercase tracking-[0.3em] font-bold mb-10">Intelligent Developer
+                Matchmaking & Collaboration</p>
+            <p
+                class="text-slate-400 max-w-3xl mx-auto italic text-lg leading-relaxed border-l-2 border-blue-500/30 pl-6 text-left">
+                "The primary objective of SkillSkirmish is to solve the problem of skill-based developer matchmaking by
+                creating a system that dynamically assesses and tracks developer skills using <strong
+                    class="text-blue-300">AI-generated adaptive assessments</strong> and uses this data to enable
+                intelligent collaborator discovery and real-time collaboration."
+            </p>
+            <div class="flex justify-center gap-3 mt-8">
+                <span
+                    class="px-4 py-1 border border-slate-800 rounded-full text-slate-500 text-[10px] mono uppercase tracking-widest">23FE10CSE00541</span>
+                <span
+                    class="px-4 py-1 border border-slate-800 rounded-full text-slate-500 text-[10px] mono uppercase tracking-widest">23FE10CSE00469</span>
+            </div>
+        </section>
+
+        <!-- 2. PROBLEM STATEMENT -->
+        <section id="problem" class="grid md:grid-cols-2 gap-12 items-stretch fade-in">
+            <div class="glass p-10 rounded-[2.5rem] flex flex-col justify-center border-l-4 border-blue-600">
+                <h2 class="text-3xl font-extrabold mb-6">Problem Statement</h2>
+                <p class="text-slate-400 leading-relaxed text-justify">Developers lack an intelligent platform that
+                    helps them discover suitable collaborators, evaluate their actual skill levels, and collaborate
+                    effectively in real time. Collaboration is often inefficient due to skill mismatch, unverified
+                    abilities, and fragmented tooling.</p>
+            </div>
+            <div class="space-y-6">
+                <div class="glass p-7 rounded-3xl border-r-4 border-red-500/50 fc">
+                    <h3 class="text-red-400 font-bold text-xs uppercase tracking-widest mb-2"><i
+                            class="fas fa-users-slash mr-2"></i>Collaboration Discovery Gap</h3>
+                    <p class="text-sm text-slate-500">No reliable way to identify collaborators with matching, verified
+                        skill levels. Developers don't know who to team up with.</p>
+                </div>
+                <div class="glass p-7 rounded-3xl border-r-4 border-amber-500/50 fc">
+                    <h3 class="text-amber-400 font-bold text-xs uppercase tracking-widest mb-2"><i
+                            class="fas fa-check-circle mr-2"></i>Skill Verification Gap</h3>
+                    <p class="text-sm text-slate-500">Most platforms rely on self-claimed skills. No dynamic system to
+                        measure real ability through performance.</p>
+                </div>
+                <div class="glass p-7 rounded-3xl border-r-4 border-purple-500/50 fc">
+                    <h3 class="text-purple-400 font-bold text-xs uppercase tracking-widest mb-2"><i
+                            class="fas fa-puzzle-piece mr-2"></i>Platform Fragmentation</h3>
+                    <p class="text-sm text-slate-500">Discord/Zoom for calls, LeetCode for skills, LinkedIn for profiles
+                        — no single platform integrates assessment + matchmaking + collaboration.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. LITERATURE REVIEW -->
+        <section class="fade-in">
+            <h2 class="text-4xl font-black text-center uppercase tracking-tight mb-12">Literature Review & <span
+                    class="text-blue-500">Research Gap</span></h2>
+            <div class="grid md:grid-cols-2 gap-8">
+                <div class="glass p-8 rounded-3xl border-l-4 border-blue-500/50">
+                    <h3 class="text-blue-400 font-bold text-xs uppercase tracking-widest mb-4">Existing Platforms
+                        Analyzed</h3>
+                    <div class="space-y-4">
+                        <div class="flex items-start gap-3"><span class="text-blue-500 mt-1"><i
+                                    class="fab fa-discord"></i></span>
+                            <div>
+                                <p class="text-sm font-bold text-slate-300">Discord / Zoom</p>
+                                <p class="text-xs text-slate-500">Communication only — no skill measurement or
+                                    matchmaking</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-3"><span class="text-green-500 mt-1"><i
+                                    class="fas fa-code"></i></span>
+                            <div>
+                                <p class="text-sm font-bold text-slate-300">LeetCode / HackerRank</p>
+                                <p class="text-xs text-slate-500">Skill assessment only — no real-time collaboration
+                                    support</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-3"><span class="text-cyan-500 mt-1"><i
+                                    class="fab fa-linkedin"></i></span>
+                            <div>
+                                <p class="text-sm font-bold text-slate-300">LinkedIn / GitHub</p>
+                                <p class="text-xs text-slate-500">Profile display only — no dynamic skill verification
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="glass p-8 rounded-3xl border-l-4 border-purple-500/50">
+                    <h3 class="text-purple-400 font-bold text-xs uppercase tracking-widest mb-4">Research Gap /
+                        Innovation</h3>
+                    <p class="text-sm text-slate-400 leading-relaxed mb-4">No existing platform combines all three
+                        pillars: <strong class="text-white">verified skill assessment</strong>, <strong
+                            class="text-white">intelligent matchmaking</strong>, and <strong
+                            class="text-white">integrated collaboration</strong> into a single unified environment.</p>
+                    <p class="text-sm text-slate-400 leading-relaxed">SkillSkirmish bridges this gap by using <strong
+                            class="text-purple-300">AI-generated adaptive questions</strong> and an <strong
+                            class="text-purple-300">ELO-based rating system</strong> that dynamically tracks developer
+                        skills and powers intelligent collaborator discovery.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 4. METHODOLOGY — AI-POWERED -->
+        <section id="methodology" class="space-y-12 fade-in">
+            <h2 class="text-4xl font-black text-center uppercase tracking-tight">System <span
+                    class="text-blue-500">Methodology</span></h2>
+            <!-- AI Question Generation Highlight -->
+            <div class="glass p-8 rounded-3xl border-2 border-purple-500/30 bg-purple-500/5">
+                <h3 class="text-purple-400 font-bold text-sm uppercase tracking-widest mb-4 text-center"><i
+                        class="fas fa-robot mr-2"></i>AI-Powered Question Generation</h3>
+                <p class="text-sm text-slate-400 leading-relaxed text-center max-w-3xl mx-auto mb-6">SkillSkirmish uses
+                    an <strong class="text-white">AI-based question generation system</strong> instead of a fixed
+                    question bank. Questions are dynamically generated using AI (Groq / Google Generative AI) based on
+                    user specialization, skill level, difficulty, and assessment context.</p>
+                <div class="grid md:grid-cols-5 gap-4 text-center text-xs">
+                    <div class="bg-white/5 p-3 rounded-xl"><i class="fas fa-infinity text-purple-400 text-lg mb-2"></i>
+                        <p class="text-slate-400 font-bold">Unlimited Questions</p>
+                    </div>
+                    <div class="bg-white/5 p-3 rounded-xl"><i
+                            class="fas fa-expand-arrows-alt text-blue-400 text-lg mb-2"></i>
+                        <p class="text-slate-400 font-bold">Infinite Scalability</p>
+                    </div>
+                    <div class="bg-white/5 p-3 rounded-xl"><i class="fas fa-sliders-h text-green-400 text-lg mb-2"></i>
+                        <p class="text-slate-400 font-bold">Adaptive Difficulty</p>
+                    </div>
+                    <div class="bg-white/5 p-3 rounded-xl"><i class="fas fa-user-cog text-amber-400 text-lg mb-2"></i>
+                        <p class="text-slate-400 font-bold">Personalized</p>
+                    </div>
+                    <div class="bg-white/5 p-3 rounded-xl"><i class="fas fa-ban text-rose-400 text-lg mb-2"></i>
+                        <p class="text-slate-400 font-bold">No Repetition</p>
+                    </div>
+                </div>
+            </div>
+            <!-- AI Prompt Example -->
+            <div class="glass p-6 rounded-3xl">
+                <h3 class="text-blue-400 font-bold text-xs uppercase tracking-widest mb-3"><i
+                        class="fas fa-terminal mr-2"></i>Example AI Prompt (Actual System Prompt)</h3>
+                <pre class="bg-black/50 p-4 rounded-xl text-xs text-slate-400 mono overflow-x-auto leading-relaxed">"Task: Generate 1 unique technical interview question.
+Topic: ${skill}
+Difficulty: ${difficulty} (ELO ~${difficultyElo})
+Type: ${type} — Coding Challenge / MCQ / Subjective
+
+CRITICAL RULES:
+- Return valid JSON only
+- Unique from previously asked questions
+- Include question, options, answer, difficulty, codeTemplate, testCases
+
+JSON Structure:
+{ "question": "...", "options": [...], "answer": "...",
+  "difficulty": "Easy|Medium|Hard", "type": "coding|mcq|subjective" }"</pre>
+            </div>
+            <div class="grid md:grid-cols-3 gap-8">
+                <div class="glass p-8 rounded-3xl text-center fc">
+                    <i class="fas fa-robot text-purple-500 text-3xl mb-4"></i>
+                    <h3 class="font-bold mb-2 uppercase text-xs tracking-widest">Data / Input</h3>
+                    <p class="text-sm text-slate-500"><strong class="text-slate-300">AI-generated questions</strong> —
+                        not from a question bank. Questions are created dynamically per user's specialization and ELO
+                        rating.</p>
+                </div>
+                <div class="glass p-8 rounded-3xl text-center fc">
+                    <i class="fas fa-microchip text-blue-500 text-3xl mb-4"></i>
+                    <h3 class="font-bold mb-2 uppercase text-xs tracking-widest">Algorithm</h3>
+                    <p class="text-sm text-slate-500">ELO rating system adapted for skills. K-factor varies by
+                        experience (K=40 provisional, K=20 default, K=10 expert). Mastery + decay tracking.</p>
+                </div>
+                <div class="glass p-8 rounded-3xl text-center border-2 border-green-500/20 bg-green-500/5 fc">
+                    <i class="fas fa-rocket text-green-500 text-3xl mb-4"></i>
+                    <h3 class="font-bold mb-4 uppercase text-xs tracking-widest text-green-400">Live Execution</h3>
+                    <a href="https://prathamagarwal1.github.io/SkillSkirmish/" target="_blank"
+                        class="px-6 py-2 bg-green-600 rounded-full text-[10px] font-black hover:bg-green-500 transition shadow-lg shadow-green-900/40 inline-block">VIEW
+                        LIVE DEMO</a>
+                    <a href="https://github.com/PrathamAgarwal1/SkillSkirmish" target="_blank"
+                        class="px-6 py-2 bg-slate-700 rounded-full text-[10px] font-black hover:bg-slate-600 transition shadow-lg inline-block mt-2">SOURCE
+                        CODE</a>
+                </div>
+            </div>
+            <!-- Architecture Flow -->
+            <div class="glass p-8 rounded-3xl">
+                <h3 class="font-bold mb-6 uppercase text-xs tracking-widest text-center text-blue-400">System Flow
+                    (AI-Powered)</h3>
+                <div class="flex flex-wrap justify-center items-center gap-3 text-xs">
+                    <div class="bg-blue-600/20 border border-blue-500/30 px-4 py-3 rounded-xl font-bold text-blue-300">
+                        <i class="fas fa-user mr-1"></i>User Requests Quiz
+                    </div>
+                    <i class="fas fa-arrow-right text-slate-600"></i>
+                    <div
+                        class="bg-purple-600/20 border border-purple-500/30 px-4 py-3 rounded-xl font-bold text-purple-300">
+                        <i class="fas fa-server mr-1"></i>Backend
+                    </div>
+                    <i class="fas fa-arrow-right text-slate-600"></i>
+                    <div class="bg-rose-600/20 border border-rose-500/30 px-4 py-3 rounded-xl font-bold text-rose-300">
+                        <i class="fas fa-robot mr-1"></i>AI Prompt
+                    </div>
+                    <i class="fas fa-arrow-right text-slate-600"></i>
+                    <div
+                        class="bg-amber-600/20 border border-amber-500/30 px-4 py-3 rounded-xl font-bold text-amber-300">
+                        <i class="fas fa-brain mr-1"></i>AI Generates Q
+                    </div>
+                    <i class="fas fa-arrow-right text-slate-600"></i>
+                    <div class="bg-cyan-600/20 border border-cyan-500/30 px-4 py-3 rounded-xl font-bold text-cyan-300">
+                        <i class="fas fa-reply mr-1"></i>Return to User
+                    </div>
+                    <i class="fas fa-arrow-right text-slate-600"></i>
+                    <div
+                        class="bg-green-600/20 border border-green-500/30 px-4 py-3 rounded-xl font-bold text-green-300">
+                        <i class="fas fa-chart-line mr-1"></i>ELO Updated
+                    </div>
+                    <i class="fas fa-arrow-right text-slate-600"></i>
+                    <div class="bg-teal-600/20 border border-teal-500/30 px-4 py-3 rounded-xl font-bold text-teal-300">
+                        <i class="fas fa-handshake mr-1"></i>Matchmaking
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 5. THEORY -->
+        <section id="theory" class="space-y-12 fade-in">
+            <h2 class="text-4xl font-black text-center uppercase tracking-tight">Theory & <span
+                    class="text-blue-500">Background</span></h2>
+            <div class="grid md:grid-cols-3 gap-8">
+                <div class="glass p-8 rounded-3xl border-t-4 border-blue-500 fc">
+                    <h3 class="text-blue-400 font-bold text-xs uppercase tracking-widest mb-4">ELO Rating System</h3>
+                    <p class="text-sm text-slate-500 leading-relaxed">Adapted from chess. AI-generated question
+                        difficulty maps to ELO (Easy=1000, Medium=1200, Hard=1400). Rating adjusts via expected
+                        probability formula with variable K-factor.</p>
+                </div>
+                <div class="glass p-8 rounded-3xl border-t-4 border-amber-500 fc">
+                    <h3 class="text-amber-400 font-bold text-xs uppercase tracking-widest mb-4">Skill Decay Model</h3>
+                    <p class="text-sm text-slate-500 leading-relaxed">Skills decay at 2pts/week of inactivity. Ensures
+                        ratings reflect current ability. Users receive notifications encouraging re-assessment to
+                        maintain their ELO.</p>
+                </div>
+                <div class="glass p-8 rounded-3xl border-t-4 border-green-500 fc">
+                    <h3 class="text-green-400 font-bold text-xs uppercase tracking-widest mb-4">AI-Powered Assessment
+                    </h3>
+                    <p class="text-sm text-slate-500 leading-relaxed">Questions are generated by AI (Groq/Google
+                        Generative AI) in real-time. Mixed format: 8 coding, 6 MCQ, 6 subjective per session. Subjective
+                        answers also graded by AI.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 6. FEATURES -->
+        <section id="features" class="space-y-12 fade-in">
+            <h2 class="text-4xl font-black text-center uppercase tracking-tight">Core <span
+                    class="text-blue-500">Features</span></h2>
+            <div class="grid md:grid-cols-3 gap-8">
+                <div class="glass p-8 rounded-3xl text-center fc">
+                    <div
+                        class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center">
+                        <i class="fas fa-brain text-white text-2xl"></i>
+                    </div>
+                    <h3 class="font-bold mb-2 text-lg">AI Adaptive Assessment</h3>
+                    <p class="text-sm text-slate-500">AI-generated quizzes per specialization. Mixed
+                        coding/MCQ/subjective. ELO-rated difficulty. No fixed question bank.</p>
+                </div>
+                <div class="glass p-8 rounded-3xl text-center fc">
+                    <div
+                        class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-purple-600 to-purple-800 flex items-center justify-center">
+                        <i class="fas fa-users text-white text-2xl"></i>
+                    </div>
+                    <h3 class="font-bold mb-2 text-lg">Smart Matchmaking</h3>
+                    <p class="text-sm text-slate-500">Find collaborators by verified skill & ELO range. Match scores
+                        rank compatibility. Invite & collaborate instantly.</p>
+                </div>
+                <div class="glass p-8 rounded-3xl text-center fc">
+                    <div
+                        class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-green-600 to-green-800 flex items-center justify-center">
+                        <i class="fas fa-door-open text-white text-2xl"></i>
+                    </div>
+                    <h3 class="font-bold mb-2 text-lg">Developer Rooms</h3>
+                    <p class="text-sm text-slate-500">VS Code-like workspace with projects, voice channels, team
+                        members, task management & real-time chat.</p>
+                </div>
+                <div class="glass p-8 rounded-3xl text-center fc">
+                    <div
+                        class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-cyan-600 to-cyan-800 flex items-center justify-center">
+                        <i class="fas fa-video text-white text-2xl"></i>
+                    </div>
+                    <h3 class="font-bold mb-2 text-lg">Video Calling</h3>
+                    <p class="text-sm text-slate-500">LiveKit-powered video/audio calls. Multiple concurrent channels
+                        per room. Join, leave, create on the fly.</p>
+                </div>
+                <div class="glass p-8 rounded-3xl text-center fc">
+                    <div
+                        class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-amber-600 to-amber-800 flex items-center justify-center">
+                        <i class="fas fa-terminal text-white text-2xl"></i>
+                    </div>
+                    <h3 class="font-bold mb-2 text-lg">Collaborative IDE</h3>
+                    <p class="text-sm text-slate-500">Shared code editor with Yjs real-time sync. File management, code
+                        execution, multi-project workspaces.</p>
+                </div>
+                <div class="glass p-8 rounded-3xl text-center fc">
+                    <div
+                        class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-rose-600 to-rose-800 flex items-center justify-center">
+                        <i class="fas fa-comments text-white text-2xl"></i>
+                    </div>
+                    <h3 class="font-bold mb-2 text-lg">Forum & Community</h3>
+                    <p class="text-sm text-slate-500">Developer forum for discussions, collaboration requests, room
+                        invitations, and integrated notification system.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 15. ELO ASSIGNMENT SYSTEM -->
+        <section id="elo-system" class="space-y-12 fade-in">
+            <h2 class="text-4xl font-black text-center uppercase tracking-tight">ELO <span
+                    class="text-blue-500">Assignment System</span></h2>
+
+            <!-- What is ELO -->
+            <div class="glass p-8 rounded-3xl border-l-4 border-blue-600">
+                <h3 class="text-blue-400 font-bold text-xs uppercase tracking-widest mb-4"><i
+                        class="fas fa-chart-line mr-2"></i>What is ELO Rating?</h3>
+                <p class="text-sm text-slate-400 leading-relaxed mb-4">ELO is a numerical representation of a user's
+                    <strong class="text-white">skill level</strong>. It was originally developed for chess and has been
+                    adapted for SkillSkirmish to rate developers across different skills. In our platform, users
+                    <strong class="text-blue-300">compete against AI-generated questions</strong> — each question has
+                    a difficulty ELO, and the user's rating changes based on whether they answer correctly or not.
+                </p>
+                <div class="grid md:grid-cols-3 gap-4 text-center text-xs mt-6">
+                    <div class="bg-white/5 p-4 rounded-xl border border-white/10">
+                        <i class="fas fa-play-circle text-green-400 text-lg mb-2"></i>
+                        <p class="text-slate-300 font-bold">Base Rating</p>
+                        <p class="text-slate-500 mt-1">Every user starts at <span
+                                class="mono text-blue-400 font-bold">1000</span></p>
+                    </div>
+                    <div class="bg-white/5 p-4 rounded-xl border border-white/10">
+                        <i class="fas fa-arrow-up text-emerald-400 text-lg mb-2"></i>
+                        <p class="text-slate-300 font-bold">Win → Rating Up</p>
+                        <p class="text-slate-500 mt-1">Correct answers increase your ELO</p>
+                    </div>
+                    <div class="bg-white/5 p-4 rounded-xl border border-white/10">
+                        <i class="fas fa-arrow-down text-red-400 text-lg mb-2"></i>
+                        <p class="text-slate-300 font-bold">Loss → Rating Down</p>
+                        <p class="text-slate-500 mt-1">Incorrect answers decrease your ELO</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dynamic Difficulty Scaling -->
+            <div class="glass p-8 rounded-3xl border-2 border-amber-500/30 bg-amber-500/5">
+                <h3 class="text-amber-400 font-bold text-sm uppercase tracking-widest mb-6 text-center"><i
+                        class="fas fa-layer-group mr-2"></i>Dynamic Difficulty Scaling</h3>
+                <p class="text-sm text-slate-400 leading-relaxed text-center max-w-3xl mx-auto mb-6">Question difficulty
+                    is
+                    <strong class="text-white">fully dynamic</strong>. The system matches your exact skill level with
+                    custom-tailored problems.
+                    See how difficulty scales adaptively:
+                </p>
+                <div class="grid md:grid-cols-3 gap-6 text-center">
+                    <div class="bg-black/40 p-6 rounded-2xl border border-green-500/30">
+                        <h4 class="font-bold text-xs uppercase tracking-widest text-green-400 mb-4">Novice Scenario</h4>
+                        <div class="flex justify-between items-center mb-2 px-2">
+                            <span class="text-xs text-slate-500">User</span>
+                            <span class="mono text-white font-bold">1000</span>
+                        </div>
+                        <div class="flex justify-between items-center px-2">
+                            <span class="text-xs text-slate-500">Question</span>
+                            <span class="mono text-green-400 font-bold">1005</span>
+                        </div>
+                        <p class="text-[10px] text-slate-600 mt-3 italic">Matches beginner level precisely</p>
+                    </div>
+                    <div class="bg-black/40 p-6 rounded-2xl border border-blue-500/30">
+                        <h4 class="font-bold text-xs uppercase tracking-widest text-blue-400 mb-4">Intermediate Scenario
+                        </h4>
+                        <div class="flex justify-between items-center mb-2 px-2">
+                            <span class="text-xs text-slate-500">User</span>
+                            <span class="mono text-white font-bold">1450</span>
+                        </div>
+                        <div class="flex justify-between items-center px-2">
+                            <span class="text-xs text-slate-500">Question</span>
+                            <span class="mono text-blue-400 font-bold">1462</span>
+                        </div>
+                        <p class="text-[10px] text-slate-600 mt-3 italic">Slightly harder to push growth</p>
+                    </div>
+                    <div class="bg-black/40 p-6 rounded-2xl border border-purple-500/30">
+                        <h4 class="font-bold text-xs uppercase tracking-widest text-purple-400 mb-4">Expert Scenario
+                        </h4>
+                        <div class="flex justify-between items-center mb-2 px-2">
+                            <span class="text-xs text-slate-500">User</span>
+                            <span class="mono text-white font-bold">2200</span>
+                        </div>
+                        <div class="flex justify-between items-center px-2">
+                            <span class="text-xs text-slate-500">Question</span>
+                            <span class="mono text-purple-400 font-bold">2245</span>
+                        </div>
+                        <p class="text-[10px] text-slate-600 mt-3 italic">High-level challenge for experts</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ELO Formula -->
+            <div class="glass p-8 rounded-3xl border-2 border-purple-500/30 bg-purple-500/5">
+                <h3 class="text-purple-400 font-bold text-sm uppercase tracking-widest mb-6 text-center"><i
+                        class="fas fa-square-root-alt mr-2"></i>ELO Rating Formula</h3>
+                <div class="grid md:grid-cols-2 gap-8">
+                    <div class="bg-black/40 p-6 rounded-2xl border border-white/10">
+                        <p class="text-xs text-slate-500 uppercase tracking-widest font-bold mb-3">Step 1: Expected
+                            Score</p>
+                        <div class="bg-black/60 p-4 rounded-xl text-center">
+                            <p class="mono text-lg text-blue-300 font-bold">E<sub>A</sub> = 1 / (1 +
+                                10<sup>(R<sub>Q</sub> − R<sub>A</sub>) / 400</sup>)</p>
+                        </div>
+                    </div>
+                    <div class="bg-black/40 p-6 rounded-2xl border border-white/10">
+                        <p class="text-xs text-slate-500 uppercase tracking-widest font-bold mb-3">Step 2: New Rating
+                        </p>
+                        <div class="bg-black/60 p-4 rounded-xl text-center">
+                            <p class="mono text-lg text-green-300 font-bold">R′<sub>A</sub> = R<sub>A</sub> + K ×
+                                (S<sub>A</sub> − E<sub>A</sub>)</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-6 grid md:grid-cols-2 gap-4 text-xs">
+                    <div class="bg-white/5 p-4 rounded-xl">
+                        <p class="text-slate-300 font-bold mb-2">Variable Definitions</p>
+                        <div class="space-y-1 text-slate-500">
+                            <div class="schema-field"><span class="mono text-slate-300">R<sub>A</sub></span> — Current
+                                ELO rating of the user</div>
+                            <div class="schema-field"><span class="mono text-slate-300">R<sub>Q</sub></span> — Dynamic
+                                Difficulty ELO of the generated question</div>
+                            <div class="schema-field"><span class="mono text-slate-300">E<sub>A</sub></span> — Expected
+                                score (probability of answering correctly)</div>
+                        </div>
+                    </div>
+                    <div class="bg-white/5 p-4 rounded-xl">
+                        <p class="text-slate-300 font-bold mb-2">Outcome Values</p>
+                        <div class="space-y-1 text-slate-500">
+                            <div class="schema-field"><span class="mono text-slate-300">S<sub>A</sub></span> — Actual
+                                result: <span class="text-green-400 font-bold">1</span> (correct) or <span
+                                    class="text-red-400 font-bold">0</span> (incorrect)</div>
+                            <div class="schema-field"><span class="mono text-slate-300">K</span> — Adjustment constant
+                                (e.g. <span class="text-blue-400 font-bold">32</span>)</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step-by-Step Example -->
+            <div class="glass p-8 rounded-3xl">
+                <h3 class="text-amber-400 font-bold text-xs uppercase tracking-widest mb-6"><i
+                        class="fas fa-calculator mr-2"></i>Step-by-Step Example</h3>
+                <div class="grid md:grid-cols-2 gap-6 mb-6">
+                    <div class="bg-white/5 p-4 rounded-xl border border-white/10 text-center">
+                        <p class="text-xs text-slate-500 uppercase tracking-widest font-bold mb-2"><i
+                                class="fas fa-user mr-1"></i>Your ELO</p>
+                        <p class="mono text-3xl font-black text-blue-400">1000</p>
+                        <p class="text-xs text-slate-500 mt-1">Current User Rating</p>
+                    </div>
+                    <div class="bg-white/5 p-4 rounded-xl border border-red-500/30 text-center">
+                        <p class="text-xs text-slate-500 uppercase tracking-widest font-bold mb-2"><i
+                                class="fas fa-robot mr-1"></i>Question Difficulty</p>
+                        <p class="mono text-3xl font-black text-red-400">1385</p>
+                        <p class="text-xs text-slate-500 mt-1">Dynamic Question ELO</p>
+                    </div>
+                </div>
+                <div class="space-y-4">
+                    <div class="bg-black/40 p-5 rounded-2xl border border-white/10">
+                        <p class="text-xs text-blue-400 font-bold uppercase tracking-widest mb-2">Step 1 — Calculate
+                            Expected Score</p>
+                        <p class="mono text-sm text-slate-400">E<sub>A</sub> = 1 / (1 + 10<sup>(1385 − 1000) /
+                                400</sup>)</p>
+                        <p class="mono text-sm text-slate-400 mt-1">E<sub>A</sub> = 1 / (1 + 10<sup>0.96</sup>) ≈ 1 / (1
+                            + 9.17)</p>
+                        <p class="mono text-sm text-white mt-1 font-bold">E<sub>A</sub> ≈ 0.10 <span
+                                class="text-slate-500 font-normal">(10% expected — Hard question relative to
+                                user)</span></p>
+                    </div>
+                    <div class="bg-black/40 p-5 rounded-2xl border border-white/10">
+                        <p class="text-xs text-green-400 font-bold uppercase tracking-widest mb-2">Step 2 — If User
+                            Answers Correctly ✓</p>
+                        <p class="mono text-sm text-slate-400">R′<sub>A</sub> = 1000 + 32 × (1 − 0.10)</p>
+                        <p class="mono text-sm text-slate-400 mt-1">R′<sub>A</sub> = 1000 + 32 × 0.90</p>
+                        <p class="mono text-sm text-white mt-1 font-bold">R′<sub>A</sub> = 1000 + 28.8 ≈ <span
+                                class="text-green-400">1029</span> <span class="text-slate-500 font-normal">(+29 big
+                                boost! Beating a dynamically harder question)</span></p>
+                    </div>
+                    <div class="bg-black/40 p-5 rounded-2xl border border-white/10">
+                        <p class="text-xs text-red-400 font-bold uppercase tracking-widest mb-2">Step 2b — If User
+                            Answers Incorrectly ✗</p>
+                        <p class="mono text-sm text-slate-400">R′<sub>A</sub> = 1000 + 32 × (0 − 0.10)</p>
+                        <p class="mono text-sm text-white mt-1 font-bold">R′<sub>A</sub> = 1000 − 3.2 ≈ <span
+                                class="text-red-400">997</span> <span class="text-slate-500 font-normal">(−3 small
+                                loss — expected to fail)</span></p>
+                    </div>
+                </div>
+                <div class="bg-white/5 p-5 rounded-2xl border border-blue-500/20 mt-6">
+                    <h4 class="text-blue-400 font-bold text-xs uppercase tracking-widest mb-3"><i
+                            class="fas fa-info-circle mr-2"></i>Key Insight</h4>
+                    <ul class="text-sm text-slate-500 space-y-2 list-disc list-inside">
+                        <li><strong class="text-slate-300">Hard question correct →</strong> Big ELO gain (you beat a
+                            tough challenge)</li>
+                        <li><strong class="text-slate-300">Hard question incorrect →</strong> Small ELO loss (it was
+                            expected)</li>
+                        <li><strong class="text-slate-300">Easy question correct →</strong> Small ELO gain (it was
+                            expected)</li>
+                        <li><strong class="text-slate-300">Easy question incorrect →</strong> Big ELO loss (you should
+                            have gotten it right)</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Effect of Number of Users -->
+            <div class="grid md:grid-cols-2 gap-8">
+                <div class="glass p-8 rounded-3xl border-t-4 border-cyan-500 fc">
+                    <h3 class="text-cyan-400 font-bold text-xs uppercase tracking-widest mb-4"><i
+                            class="fas fa-users mr-2"></i>Effect of User Count</h3>
+                    <ul class="text-sm text-slate-500 space-y-3 list-disc list-inside">
+                        <li><strong class="text-slate-300">More users →</strong> More accurate and meaningful ratings
+                        </li>
+                        <li><strong class="text-slate-300">More matches →</strong> Rating stabilizes and converges to
+                            true skill</li>
+                        <li><strong class="text-slate-300">Fewer matches →</strong> Rating fluctuates more (higher
+                            uncertainty)</li>
+                        <li><strong class="text-slate-300">Over time →</strong> System converges to reflect real skill
+                            level</li>
+                    </ul>
+                </div>
+                <div class="glass p-8 rounded-3xl border-t-4 border-amber-500 fc">
+                    <h3 class="text-amber-400 font-bold text-xs uppercase tracking-widest mb-4"><i
+                            class="fas fa-sliders-h mr-2"></i>K-Factor Strategy</h3>
+                    <ul class="text-sm text-slate-500 space-y-3 list-disc list-inside">
+                        <li><strong class="text-slate-300">K = 40</strong> — Provisional users (&lt;30 questions).
+                            Ratings adjust quickly</li>
+                        <li><strong class="text-slate-300">K = 20</strong> — Default for regular users. Balanced
+                            adjustments</li>
+                        <li><strong class="text-slate-300">K = 10</strong> — Expert users (&gt;2000 ELO). Small, precise
+                            adjustments</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 16. MATCHMAKING SYSTEM -->
+        <section id="matchmaking-system" class="space-y-12 fade-in">
+            <h2 class="text-4xl font-black text-center uppercase tracking-tight">Matchmaking <span
+                    class="text-blue-500">System</span></h2>
+
+            <!-- Purpose -->
+            <div class="glass p-8 rounded-3xl border-l-4 border-green-600">
+                <h3 class="text-green-400 font-bold text-xs uppercase tracking-widest mb-4"><i
+                        class="fas fa-bullseye mr-2"></i>Purpose</h3>
+                <p class="text-sm text-slate-400 leading-relaxed">Match users with <strong class="text-white">similar
+                        ELO rating</strong> for fair competition and meaningful collaboration.
+                    The matchmaking system ensures that users are paired with peers of comparable skill level, leading
+                    to
+                    productive interactions and balanced challenges.</p>
+            </div>
+
+            <!-- Matchmaking Journey -->
+            <div class="glass p-8 rounded-3xl border-2 border-blue-500/30 bg-blue-500/5">
+                <h3 class="text-blue-400 font-bold text-sm uppercase tracking-widest mb-8 text-center"><i
+                        class="fas fa-route mr-2"></i>Matchmaking Journey</h3>
+
+                <div class="relative max-w-4xl mx-auto">
+                    <!-- Vertical Line (Mobile) / Horizontal Line (Desktop) -->
+                    <div class="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-1 bg-white/10 hidden md:block">
+                    </div>
+
+                    <!-- Step 1 -->
+                    <div class="relative flex flex-col md:flex-row items-center justify-between mb-12">
+                        <div class="md:w-5/12 text-center md:text-right order-2 md:order-1">
+                            <h4 class="font-bold text-lg text-white mb-2">Initiate Search</h4>
+                            <p class="text-sm text-slate-400">You click "Find Match". The system instantly analyzes your
+                                current ELO and activity status.</p>
+                        </div>
+                        <div
+                            class="z-10 bg-blue-600 border-4 border-slate-900 w-10 h-10 rounded-full flex items-center justify-center order-1 md:order-2 mb-4 md:mb-0">
+                            <i class="fas fa-search text-white text-xs"></i>
+                        </div>
+                        <div class="md:w-5/12 order-3"></div>
+                    </div>
+
+                    <!-- Step 2 -->
+                    <div class="relative flex flex-col md:flex-row items-center justify-between mb-12">
+                        <div class="md:w-5/12 order-3 md:order-1"></div>
+                        <div
+                            class="z-10 bg-purple-600 border-4 border-slate-900 w-10 h-10 rounded-full flex items-center justify-center order-1 md:order-2 mb-4 md:mb-0">
+                            <i class="fas fa-brain text-white text-xs"></i>
+                        </div>
+                        <div class="md:w-5/12 text-center md:text-left order-2 md:order-3">
+                            <h4 class="font-bold text-lg text-white mb-2">Smart Matching</h4>
+                            <p class="text-sm text-slate-400">Algorithm prioritizes users within <span
+                                    class="text-purple-400 font-bold">±50 ELO</span>. If needed, it expands the range
+                                gradually to ensure a distinct match.</p>
+                        </div>
+                    </div>
+
+                    <!-- Step 3 -->
+                    <div class="relative flex flex-col md:flex-row items-center justify-between">
+                        <div class="md:w-5/12 text-center md:text-right order-2 md:order-1">
+                            <h4 class="font-bold text-lg text-white mb-2">Connect & Collaborate</h4>
+                            <p class="text-sm text-slate-400">Match found! You can now <strong
+                                    class="text-green-400">view their profile</strong> to check skills and <strong
+                                    class="text-green-400">invite them</strong> directly to your room.</p>
+                        </div>
+                        <div
+                            class="z-10 bg-green-600 border-4 border-slate-900 w-10 h-10 rounded-full flex items-center justify-center order-1 md:order-2 mb-4 md:mb-0">
+                            <i class="fas fa-handshake text-white text-xs"></i>
+                        </div>
+                        <div class="md:w-5/12 order-3"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Backend Flow -->
+            <div class="glass p-8 rounded-3xl">
+                <h3 class="font-bold mb-6 uppercase text-xs tracking-widest text-center text-green-400"><i
+                        class="fas fa-project-diagram mr-2"></i>Backend Flow</h3>
+                <div class="flex flex-wrap justify-center items-center gap-3 text-xs">
+                    <div class="bg-blue-600/20 border border-blue-500/30 px-4 py-3 rounded-xl font-bold text-blue-300">
+                        <i class="fas fa-desktop mr-1"></i>Frontend
+                    </div>
+                    <i class="fas fa-arrow-right text-slate-600"></i>
+                    <div
+                        class="bg-purple-600/20 border border-purple-500/30 px-4 py-3 rounded-xl font-bold text-purple-300">
+                        <i class="fas fa-paper-plane mr-1"></i>Send Request
+                    </div>
+                    <i class="fas fa-arrow-right text-slate-600"></i>
+                    <div
+                        class="bg-green-600/20 border border-green-500/30 px-4 py-3 rounded-xl font-bold text-green-300">
+                        <i class="fas fa-server mr-1"></i>Backend
+                    </div>
+                    <i class="fas fa-arrow-right text-slate-600"></i>
+                    <div
+                        class="bg-amber-600/20 border border-amber-500/30 px-4 py-3 rounded-xl font-bold text-amber-300">
+                        <i class="fas fa-search mr-1"></i>Find Closest ELO
+                    </div>
+                    <i class="fas fa-arrow-right text-slate-600"></i>
+                    <div class="bg-cyan-600/20 border border-cyan-500/30 px-4 py-3 rounded-xl font-bold text-cyan-300">
+                        <i class="fas fa-handshake mr-1"></i>Create Match
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 17. COLLABORATION & PROJECTS -->
+        <section id="projects" class="space-y-12 fade-in">
+            <h2 class="text-4xl font-black text-center uppercase tracking-tight">Collaboration & <span
+                    class="text-blue-500">Project Workflow</span></h2>
+
+            <!-- Invite Flow -->
+            <div class="glass p-8 rounded-3xl border-l-4 border-purple-500">
+                <h3 class="text-purple-400 font-bold text-xs uppercase tracking-widest mb-6"><i
+                        class="fas fa-paper-plane mr-2"></i>From Match to Room</h3>
+                <div class="grid md:grid-cols-4 gap-4 text-center text-xs">
+                    <div class="bg-white/5 p-4 rounded-xl">
+                        <i class="fas fa-search text-blue-400 text-lg mb-2"></i>
+                        <p class="font-bold text-slate-300">1. Find Match</p>
+                    </div>
+                    <div class="bg-white/5 p-4 rounded-xl">
+                        <i class="fas fa-user-circle text-purple-400 text-lg mb-2"></i>
+                        <p class="font-bold text-slate-300">2. View Profile</p>
+                    </div>
+                    <div class="bg-white/5 p-4 rounded-xl">
+                        <i class="fas fa-envelope-open-text text-green-400 text-lg mb-2"></i>
+                        <p class="font-bold text-slate-300">3. Send Invite</p>
+                    </div>
+                    <div class="bg-white/5 p-4 rounded-xl">
+                        <i class="fas fa-door-open text-amber-400 text-lg mb-2"></i>
+                        <p class="font-bold text-slate-300">4. Enter Room</p>
+                    </div>
+                </div>
+                <p class="text-sm text-slate-500 mt-6 text-center">Users receive real-time notifications for room
+                    invites. Accepting an invite instantly navigates them to the shared workspace.</p>
+            </div>
+
+            <!-- Project Creation -->
+            <div class="grid md:grid-cols-2 gap-8">
+                <div class="glass p-8 rounded-3xl">
+                    <h3 class="text-blue-400 font-bold text-xs uppercase tracking-widest mb-4"><i
+                            class="fas fa-folder-plus mr-2"></i>Project Creation</h3>
+                    <p class="text-sm text-slate-500 leading-relaxed mb-4">Inside the room, any member can <strong
+                            class="text-white">create a project</strong>. The system initializes a virtual file system
+                        and synchronizes it with all connected users.</p>
+                    <ul class="text-xs text-slate-400 space-y-2">
+                        <li><i class="fas fa-check text-green-500 mr-2"></i>Multiple language support (Python, JS, Java,
+                            C++)</li>
+                        <li><i class="fas fa-check text-green-500 mr-2"></i>File & Folder management</li>
+                        <li><i class="fas fa-check text-green-500 mr-2"></i>Persistent storage</li>
+                    </ul>
+                </div>
+                <div class="glass p-8 rounded-3xl">
+                    <h3 class="text-amber-400 font-bold text-xs uppercase tracking-widest mb-4"><i
+                            class="fas fa-code-branch mr-2"></i>Real-Time Collaboration</h3>
+                    <p class="text-sm text-slate-500 leading-relaxed mb-4">Experience seamless teamwork with <strong
+                            class="text-white">live code syncing</strong>. See your partner's cursor and edits in
+                        real-time, powered by Yjs.</p>
+                    <div class="flex gap-2">
+                        <span class="px-3 py-1 bg-blue-500/20 text-blue-300 text-[10px] rounded-full font-bold">Monaco
+                            Editor</span>
+                        <span class="px-3 py-1 bg-purple-500/20 text-purple-300 text-[10px] rounded-full font-bold">Yjs
+                            Sync</span>
+                        <span class="px-3 py-1 bg-red-500/20 text-red-300 text-[10px] rounded-full font-bold">LiveKit
+                            Video</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Code Execution -->
+            <div class="glass p-8 rounded-3xl border-t-4 border-green-500">
+                <div class="flex items-center justify-between mb-6">
+                    <h3 class="text-green-400 font-bold text-xs uppercase tracking-widest"><i
+                            class="fas fa-terminal mr-2"></i>Integrated Execution</h3>
+                    <span class="text-[10px] bg-green-900/50 text-green-400 px-2 py-1 rounded mono">v1.2.0</span>
+                </div>
+                <p class="text-sm text-slate-400 leading-relaxed">Execute code directly within the browser. The output
+                    is streamed back instantly to all users in the room, enabling collaborative debugging and pair
+                    programming.</p>
+            </div>
+        </section>
+
+        <!-- 7. ARCHITECTURE -->
+        <section id="architecture" class="space-y-12 fade-in">
+            <h2 class="text-4xl font-black text-center uppercase tracking-tight">System <span
+                    class="text-blue-500">Architecture</span></h2>
+            <div class="grid md:grid-cols-2 gap-8">
+                <div class="glass p-8 rounded-3xl">
+                    <h3 class="text-blue-400 font-bold text-xs uppercase tracking-widest mb-4"><i
+                            class="fas fa-desktop mr-2"></i>Client Layer</h3>
+                    <p class="text-sm text-slate-400 mb-4">React 18 + Vite SPA with HashRouter. Deployed on GitHub
+                        Pages.</p>
+                    <div class="space-y-2 text-xs">
+                        <div class="flex items-center gap-2 text-slate-500"><i
+                                class="fab fa-react text-cyan-400"></i><strong class="text-slate-300">React 18</strong>
+                            — Component-based UI, Context API</div>
+                        <div class="flex items-center gap-2 text-slate-500"><i
+                                class="fas fa-bolt text-amber-400"></i><strong class="text-slate-300">Vite</strong> —
+                            Fast build & dev server</div>
+                        <div class="flex items-center gap-2 text-slate-500"><i
+                                class="fas fa-plug text-green-400"></i><strong class="text-slate-300">Socket.io
+                                Client</strong> — Real-time events</div>
+                        <div class="flex items-center gap-2 text-slate-500"><i
+                                class="fas fa-video text-purple-400"></i><strong class="text-slate-300">LiveKit
+                                SDK</strong> — Video/audio calls</div>
+                        <div class="flex items-center gap-2 text-slate-500"><i
+                                class="fas fa-code text-blue-400"></i><strong class="text-slate-300">Yjs</strong> —
+                            Real-time collaborative editing</div>
+                    </div>
+                </div>
+                <div class="glass p-8 rounded-3xl">
+                    <h3 class="text-purple-400 font-bold text-xs uppercase tracking-widest mb-4"><i
+                            class="fas fa-server mr-2"></i>Service Layer</h3>
+                    <p class="text-sm text-slate-400 mb-4">Node.js / Express API with Socket.io. Deployed on Render.</p>
+                    <div class="space-y-2 text-xs">
+                        <div class="flex items-center gap-2 text-slate-500"><i
+                                class="fab fa-node-js text-green-400"></i><strong
+                                class="text-slate-300">Express.js</strong> — REST API with JWT auth</div>
+                        <div class="flex items-center gap-2 text-slate-500"><i
+                                class="fas fa-database text-green-400"></i><strong class="text-slate-300">MongoDB +
+                                Mongoose</strong> — Data persistence</div>
+                        <div class="flex items-center gap-2 text-slate-500"><i
+                                class="fas fa-robot text-rose-400"></i><strong class="text-slate-300">Groq / Google
+                                AI</strong> — Question generation & grading</div>
+                        <div class="flex items-center gap-2 text-slate-500"><i
+                                class="fas fa-plug text-amber-400"></i><strong class="text-slate-300">Socket.io
+                                Server</strong> — Rooms, chat, signaling</div>
+                        <div class="flex items-center gap-2 text-slate-500"><i
+                                class="fas fa-clock text-cyan-400"></i><strong class="text-slate-300">Skill Decay
+                                Worker</strong> — Weekly ELO decay cron</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 8. API ENDPOINTS (EXPANDED) -->
+        <section id="api" class="space-y-12 fade-in">
+            <h2 class="text-4xl font-black text-center uppercase tracking-tight">API <span
+                    class="text-blue-500">Endpoints</span></h2>
+            <div class="space-y-4">
+                <!-- Assessment APIs -->
+                <div class="glass p-6 rounded-2xl">
+                    <h3 class="text-purple-400 font-bold text-xs uppercase tracking-widest mb-4"><i
+                            class="fas fa-brain mr-2"></i>Assessment API — AI-Powered</h3>
+                    <div class="space-y-4">
+                        <div class="bg-white/5 p-4 rounded-xl">
+                            <div class="flex items-center gap-2 mb-2"><span
+                                    class="bg-green-600/30 text-green-400 text-[10px] font-black px-2 py-0.5 rounded mono">POST</span><span
+                                    class="mono text-sm text-slate-300">/api/assessment/start</span></div>
+                            <p class="text-xs text-slate-500 mb-2"><strong class="text-slate-400">Purpose:</strong>
+                                Start a new assessment session. Generates the first AI question.</p>
+                            <p class="text-xs text-slate-500"><strong class="text-slate-400">Input:</strong> <code
+                                    class="mono text-blue-400">{ skill }</code> · <strong
+                                    class="text-slate-400">Output:</strong> <code
+                                    class="mono text-blue-400">{ question, options, type, difficulty, codeTemplate, testCases }</code>
+                            </p>
+                            <p class="text-xs text-slate-500 mt-1"><strong class="text-slate-400">Internal:</strong>
+                                Builds question plan (8 coding, 6 MCQ, 6 subjective), calls AI model to generate first
+                                question, creates AssessmentSession in DB.</p>
+                        </div>
+                        <div class="bg-white/5 p-4 rounded-xl">
+                            <div class="flex items-center gap-2 mb-2"><span
+                                    class="bg-green-600/30 text-green-400 text-[10px] font-black px-2 py-0.5 rounded mono">POST</span><span
+                                    class="mono text-sm text-slate-300">/api/assessment/submit</span></div>
+                            <p class="text-xs text-slate-500 mb-2"><strong class="text-slate-400">Purpose:</strong>
+                                Grade user answer and generate next AI question.</p>
+                            <p class="text-xs text-slate-500"><strong class="text-slate-400">Input:</strong> <code
+                                    class="mono text-blue-400">{ userAnswer }</code> · <strong
+                                    class="text-slate-400">Output:</strong> <code
+                                    class="mono text-blue-400">{ scorePercentage, feedback, correctAnswer, nextQuestion }</code>
+                            </p>
+                            <p class="text-xs text-slate-500 mt-1"><strong class="text-slate-400">Internal:</strong>
+                                MCQ: exact match. Subjective/Coding: AI evaluation via <code
+                                    class="mono">evaluateSubjectiveWithAI()</code>. Logs result, generates next question
+                                from AI.</p>
+                        </div>
+                        <div class="bg-white/5 p-4 rounded-xl">
+                            <div class="flex items-center gap-2 mb-2"><span
+                                    class="bg-green-600/30 text-green-400 text-[10px] font-black px-2 py-0.5 rounded mono">POST</span><span
+                                    class="mono text-sm text-slate-300">/api/assessment/finish</span></div>
+                            <p class="text-xs text-slate-500 mb-2"><strong class="text-slate-400">Purpose:</strong>
+                                Calculate final ELO from all answers and update user skill rating.</p>
+                            <p class="text-xs text-slate-500"><strong class="text-slate-400">Input:</strong> None (uses
+                                session) · <strong class="text-slate-400">Output:</strong> <code
+                                    class="mono text-blue-400">{ accuracy, oldRating, newRating, ratingChange }</code>
+                            </p>
+                            <p class="text-xs text-slate-500 mt-1"><strong class="text-slate-400">Internal:</strong>
+                                Calculates ELO change using expected probability formula, updates User.skills in
+                                MongoDB.</p>
+                        </div>
+                        <div class="bg-white/5 p-4 rounded-xl">
+                            <div class="flex items-center gap-2 mb-2"><span
+                                    class="bg-green-600/30 text-green-400 text-[10px] font-black px-2 py-0.5 rounded mono">POST</span><span
+                                    class="mono text-sm text-slate-300">/api/assessment/skip</span></div>
+                            <p class="text-xs text-slate-500"><strong class="text-slate-400">Purpose:</strong> Skip
+                                current question, generate next AI question without grading.</p>
+                        </div>
+                    </div>
+                </div>
+                <!-- Other APIs -->
+                <div class="grid md:grid-cols-2 gap-4">
+                    <div class="glass p-6 rounded-2xl">
+                        <h3 class="text-green-400 font-bold text-xs uppercase tracking-widest mb-3"><i
+                                class="fas fa-search mr-2"></i>Matchmaking</h3>
+                        <div class="bg-white/5 p-4 rounded-xl">
+                            <div class="flex items-center gap-2 mb-2"><span
+                                    class="bg-green-600/30 text-green-400 text-[10px] font-black px-2 py-0.5 rounded mono">POST</span><span
+                                    class="mono text-xs text-slate-300">/api/matchmaking/find-match</span></div>
+                            <p class="text-xs text-slate-500"><strong class="text-slate-400">Input:</strong> <code
+                                    class="mono text-blue-400">{ requiredSkills, minElo }</code></p>
+                            <p class="text-xs text-slate-500"><strong class="text-slate-400">Internal:</strong> Queries
+                                MongoDB for users with matching skills & ELO range, returns top 10 matches with scores.
+                            </p>
+                        </div>
+                    </div>
+                    <div class="glass p-6 rounded-2xl">
+                        <h3 class="text-blue-400 font-bold text-xs uppercase tracking-widest mb-3"><i
+                                class="fas fa-key mr-2"></i>Authentication</h3>
+                        <div class="bg-white/5 p-4 rounded-xl space-y-2">
+                            <div class="flex items-center gap-2"><span
+                                    class="bg-green-600/30 text-green-400 text-[10px] font-black px-2 py-0.5 rounded mono">POST</span><span
+                                    class="mono text-xs text-slate-300">/api/auth/register</span><span
+                                    class="text-xs text-slate-500">— Create account, hash password (bcrypt)</span></div>
+                            <div class="flex items-center gap-2"><span
+                                    class="bg-green-600/30 text-green-400 text-[10px] font-black px-2 py-0.5 rounded mono">POST</span><span
+                                    class="mono text-xs text-slate-300">/api/auth/login</span><span
+                                    class="text-xs text-slate-500">— Returns JWT token</span></div>
+                            <div class="flex items-center gap-2"><span
+                                    class="bg-cyan-600/30 text-cyan-400 text-[10px] font-black px-2 py-0.5 rounded mono">GET</span><span
+                                    class="mono text-xs text-slate-300">/api/auth/user</span><span
+                                    class="text-xs text-slate-500">— Get authenticated user</span></div>
+                        </div>
+                    </div>
+                    <div class="glass p-6 rounded-2xl">
+                        <h3 class="text-amber-400 font-bold text-xs uppercase tracking-widest mb-3"><i
+                                class="fas fa-door-open mr-2"></i>Rooms</h3>
+                        <div class="bg-white/5 p-4 rounded-xl text-xs text-slate-500 space-y-1">
+                            <p>CRUD operations for collaboration rooms. Manages members, video calls
+                                (start/join/leave/delete), and room access requests. Socket.io handles real-time room
+                                state.</p>
+                        </div>
+                    </div>
+                    <div class="glass p-6 rounded-2xl">
+                        <h3 class="text-cyan-400 font-bold text-xs uppercase tracking-widest mb-3"><i
+                                class="fas fa-folder mr-2"></i>Projects & Files</h3>
+                        <div class="bg-white/5 p-4 rounded-xl text-xs text-slate-500 space-y-1">
+                            <p>Project CRUD within rooms. File management (create/read/update/delete) for collaborative
+                                IDE. Code execution via sandboxed runner.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 9. DATABASE SCHEMAS -->
+        <section id="schemas" class="space-y-12 fade-in">
+            <h2 class="text-4xl font-black text-center uppercase tracking-tight">Database <span
+                    class="text-blue-500">Schemas</span></h2>
+            <div class="grid md:grid-cols-2 gap-6">
+                <div class="glass p-6 rounded-2xl">
+                    <h3 class="text-blue-400 font-bold text-sm mb-1 flex items-center gap-2"><i
+                            class="fas fa-user"></i>User Schema</h3>
+                    <p class="text-xs text-slate-500 mb-3">Stores user accounts, profile info, skills with ELO,
+                        assessment history, and social links.</p>
+                    <div class="text-xs space-y-1">
+                        <div class="schema-field"><span class="text-slate-300 mono">username</span> <span
+                                class="text-slate-600">String, unique</span></div>
+                        <div class="schema-field"><span class="text-slate-300 mono">email, password</span> <span
+                                class="text-slate-600">String (bcrypt hashed)</span></div>
+                        <div class="schema-field"><span class="text-slate-300 mono">skills[]</span> <span
+                                class="text-slate-600">{ name, mastery, elo, matchesPlayed, isProvisional, history[]
+                                }</span></div>
+                        <div class="schema-field"><span class="text-slate-300 mono">assessmentHistory[]</span> <span
+                                class="text-slate-600">{ questionText, skill, answeredAt }</span></div>
+                        <div class="schema-field"><span class="text-slate-300 mono">socialLinks</span> <span
+                                class="text-slate-600">{ github, linkedin, portfolio, twitter }</span></div>
+                    </div>
+                </div>
+                <div class="glass p-6 rounded-2xl">
+                    <h3 class="text-purple-400 font-bold text-sm mb-1 flex items-center gap-2"><i
+                            class="fas fa-brain"></i>AssessmentSession Schema</h3>
+                    <p class="text-xs text-slate-500 mb-3">Tracks active quiz sessions: AI-generated questions, answers,
+                        plans, and final ELO result.</p>
+                    <div class="text-xs space-y-1">
+                        <div class="schema-field"><span class="text-slate-300 mono">user, skill</span> <span
+                                class="text-slate-600">ObjectId ref, String</span></div>
+                        <div class="schema-field"><span class="text-slate-300 mono">questionPlan[]</span> <span
+                                class="text-slate-600">['coding','mcq','subjective'...] (20 items)</span></div>
+                        <div class="schema-field"><span class="text-slate-300 mono">difficultyPlan[]</span> <span
+                                class="text-slate-600">['Easy','Medium','Hard'...] (20 items)</span></div>
+                        <div class="schema-field"><span class="text-slate-300 mono">questionsLog[]</span> <span
+                                class="text-slate-600">{ questionText, type, difficulty, userAnswer, scorePercentage,
+                                feedback }</span></div>
+                        <div class="schema-field"><span class="text-slate-300 mono">finalResult</span> <span
+                                class="text-slate-600">{ attempted, correct, accuracy, oldRating, newRating,
+                                ratingChange }</span></div>
+                    </div>
+                </div>
+                <div class="glass p-6 rounded-2xl">
+                    <h3 class="text-green-400 font-bold text-sm mb-1 flex items-center gap-2"><i
+                            class="fas fa-door-open"></i>Room Schema</h3>
+                    <p class="text-xs text-slate-500 mb-3">Stores collaboration rooms with members, video call channels,
+                        and room settings.</p>
+                    <div class="text-xs space-y-1">
+                        <div class="schema-field"><span class="text-slate-300 mono">name, description</span> <span
+                                class="text-slate-600">String</span></div>
+                        <div class="schema-field"><span class="text-slate-300 mono">owner, members[]</span> <span
+                                class="text-slate-600">ObjectId refs to User</span></div>
+                        <div class="schema-field"><span class="text-slate-300 mono">activeCalls[]</span> <span
+                                class="text-slate-600">{ callName, startedBy, maxSlots, participants[] }</span></div>
+                        <div class="schema-field"><span class="text-slate-300 mono">isPrivate, language</span> <span
+                                class="text-slate-600">Boolean, String</span></div>
+                    </div>
+                </div>
+                <div class="glass p-6 rounded-2xl">
+                    <h3 class="text-amber-400 font-bold text-sm mb-1 flex items-center gap-2"><i
+                            class="fas fa-folder"></i>Project & File Schemas</h3>
+                    <p class="text-xs text-slate-500 mb-3">Projects belong to rooms. Files store code content for the
+                        collaborative IDE.</p>
+                    <div class="text-xs space-y-1">
+                        <div class="schema-field"><span class="text-slate-300 mono">Project:</span> <span
+                                class="text-slate-600">name, description, projectType, room, members[]</span></div>
+                        <div class="schema-field"><span class="text-slate-300 mono">File:</span> <span
+                                class="text-slate-600">name, path, content, isFolder, project (unique:
+                                project+path)</span></div>
+                    </div>
+                </div>
+                <div class="glass p-6 rounded-2xl">
+                    <h3 class="text-cyan-400 font-bold text-sm mb-1 flex items-center gap-2"><i
+                            class="fas fa-comment"></i>Message Schema</h3>
+                    <p class="text-xs text-slate-500 mb-3">Chat messages within rooms, stored with sender reference and
+                        timestamps.</p>
+                    <div class="text-xs space-y-1">
+                        <div class="schema-field"><span class="text-slate-300 mono">room, sender</span> <span
+                                class="text-slate-600">ObjectId refs</span></div>
+                        <div class="schema-field"><span class="text-slate-300 mono">text</span> <span
+                                class="text-slate-600">String</span></div>
+                    </div>
+                </div>
+                <div class="glass p-6 rounded-2xl">
+                    <h3 class="text-rose-400 font-bold text-sm mb-1 flex items-center gap-2"><i
+                            class="fas fa-bell"></i>Notification Schema</h3>
+                    <p class="text-xs text-slate-500 mb-3">System and user notifications for invites, join requests,
+                        skill decay alerts.</p>
+                    <div class="text-xs space-y-1">
+                        <div class="schema-field"><span class="text-slate-300 mono">user, sender</span> <span
+                                class="text-slate-600">ObjectId refs</span></div>
+                        <div class="schema-field"><span class="text-slate-300 mono">message, type</span> <span
+                                class="text-slate-600">String ('info', 'invite', 'join_request')</span></div>
+                        <div class="schema-field"><span class="text-slate-300 mono">relatedId, read</span> <span
+                                class="text-slate-600">ObjectId, Boolean</span></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 10. RESULTS -->
+        <section id="results" class="glass p-12 rounded-[3.5rem] border-t-4 border-blue-500 fade-in">
+            <h2 class="text-3xl font-black mb-12 text-center uppercase tracking-tight">Results & <span
+                    class="text-blue-500">Achievements</span></h2>
+            <div class="grid md:grid-cols-2 gap-8">
+                <!-- Card 1 -->
+                <div class="glass p-8 rounded-3xl border-l-4 border-blue-500">
+                    <h3 class="text-blue-400 font-bold text-xs uppercase tracking-widest mb-4"><i
+                            class="fas fa-brain mr-2"></i>AI Assessment Engine</h3>
+                    <p class="text-sm text-slate-400">Successfully integrated Generative AI to create unique, dynamic
+                        questions on the fly. Eliminated the need for static question banks.</p>
+                </div>
+                <!-- Card 2 -->
+                <div class="glass p-8 rounded-3xl border-l-4 border-purple-500">
+                    <h3 class="text-purple-400 font-bold text-xs uppercase tracking-widest mb-4"><i
+                            class="fas fa-users mr-2"></i>Collaborative Dev</h3>
+                    <p class="text-sm text-slate-400">Developers can now find peers and collaborators with verified
+                        skills to work together on projects in real-time.</p>
+                </div>
+                <!-- Card 3 -->
+                <div class="glass p-8 rounded-3xl border-l-4 border-green-500">
+                    <h3 class="text-green-400 font-bold text-xs uppercase tracking-widest mb-4"><i
+                            class="fas fa-terminal mr-2"></i>Real-Time Execution</h3>
+                    <p class="text-sm text-slate-400">Implemented a secure, sandboxed code execution environment
+                        allowing users to run and test code instantly.</p>
+                </div>
+                <!-- Card 4 -->
+                <div class="glass p-8 rounded-3xl border-l-4 border-amber-500">
+                    <h3 class="text-amber-400 font-bold text-xs uppercase tracking-widest mb-4"><i
+                            class="fas fa-video mr-2"></i>Live Communication</h3>
+                    <p class="text-sm text-slate-400">Integrated low-latency video and audio conferencing using LiveKit
+                        for seamless peer-to-peer interaction.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 11. EVALUATION -->
+        <section class="grid md:grid-cols-2 gap-8 fade-in">
+            <div class="glass p-8 rounded-3xl border-l-4 border-blue-500">
+                <h3 class="text-blue-400 font-bold text-xs uppercase tracking-widest mb-4">Validation Strategy</h3>
+                <ul class="text-sm text-slate-500 space-y-2 list-disc list-inside">
+                    <li>Compare self-reported skill accuracy vs. AI-assessed ELO accuracy</li>
+                    <li>Measure collaboration satisfaction pre/post matchmaking</li>
+                    <li>Track ELO distribution stability across user base</li>
+                    <li>A/B test: random matching vs. skill-based matching outcomes</li>
+                </ul>
+            </div>
+            <div class="glass p-8 rounded-3xl border-l-4 border-amber-500">
+                <h3 class="text-amber-400 font-bold text-xs uppercase tracking-widest mb-4">Risk & Mitigation</h3>
+                <ul class="text-sm text-slate-500 space-y-2 list-disc list-inside">
+                    <li><strong class="text-slate-300">Cold start:</strong> Provisional rating (K=40) until 30+
+                        questions answered</li>
+                    <li><strong class="text-slate-300">AI failures:</strong> Built-in fallback questions if AI
+                        generation fails</li>
+                    <li><strong class="text-slate-300">Gaming:</strong> Duplicate avoidance + AI-graded subjective
+                        answers prevent exploitation</li>
+                    <li><strong class="text-slate-300">Inactivity:</strong> Weekly skill decay (2pts) ensures current
+                        ability reflection</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- 12. DEPLOYMENT -->
+        <section id="deployment" class="space-y-12 fade-in">
+            <h2 class="text-4xl font-black text-center uppercase tracking-tight">Deployment & <span
+                    class="text-blue-500">Operations</span></h2>
+            <div class="grid md:grid-cols-3 gap-8">
+                <div class="glass p-8 rounded-3xl text-center fc"><i class="fab fa-github text-white text-3xl mb-4"></i>
+                    <h3 class="font-bold mb-2 uppercase text-xs tracking-widest">Frontend</h3>
+                    <p class="text-sm text-slate-500">GitHub Pages with HashRouter. Vite build pipeline. Auto CI/CD on
+                        push.</p>
+                </div>
+                <div class="glass p-8 rounded-3xl text-center fc"><i
+                        class="fas fa-cloud text-blue-500 text-3xl mb-4"></i>
+                    <h3 class="font-bold mb-2 uppercase text-xs tracking-widest">Backend</h3>
+                    <p class="text-sm text-slate-500">Render private service. MongoDB Atlas persistence. Environment
+                        variables for secrets.</p>
+                </div>
+                <div class="glass p-8 rounded-3xl text-center fc"><i
+                        class="fas fa-shield-alt text-green-500 text-3xl mb-4"></i>
+                    <h3 class="font-bold mb-2 uppercase text-xs tracking-widest">Security</h3>
+                    <p class="text-sm text-slate-500">JWT auth, bcrypt hashing, CORS whitelist, .env secrets management.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 13. FUTURE SCOPE -->
+        <section class="space-y-12 fade-in">
+            <h2 class="text-4xl font-black text-center uppercase tracking-tight">Future <span
+                    class="text-blue-500">Scope</span></h2>
+            <div class="grid md:grid-cols-2 gap-6">
+                <div class="glass p-6 rounded-2xl fc border-l-4 border-blue-500/50">
+                    <h3 class="font-bold text-sm text-blue-300 mb-2"><i class="fas fa-language mr-2"></i>Multi-Language
+                        Support</h3>
+                    <p class="text-xs text-slate-500">Enable assessment and collaboration in Python, Java, C++,
+                        JavaScript, and more.</p>
+                </div>
+                <div class="glass p-6 rounded-2xl fc border-l-4 border-purple-500/50">
+                    <h3 class="font-bold text-sm text-purple-300 mb-2"><i class="fas fa-laptop-code mr-2"></i>Full Dev
+                        Environments</h3>
+                    <p class="text-xs text-slate-500">Ready-to-use environments for Web Development, Machine Learning,
+                        and Competitive Programming projects.</p>
+                </div>
+                <div class="glass p-6 rounded-2xl fc border-l-4 border-green-500/50">
+                    <h3 class="font-bold text-sm text-green-300 mb-2"><i class="fas fa-robot mr-2"></i>AI Helper in
+                        Editor</h3>
+                    <p class="text-xs text-slate-500">Integrated AI assistant inside the code editor for debugging help,
+                        suggestions, and explanations.</p>
+                </div>
+                <div class="glass p-6 rounded-2xl fc border-l-4 border-amber-500/50">
+                    <h3 class="font-bold text-sm text-amber-300 mb-2"><i
+                            class="fas fa-comment-dots mr-2"></i>Interactive AI Chatbot</h3>
+                    <p class="text-xs text-slate-500">AI chatbot to assist users with coding, collaboration, and
+                        platform navigation.</p>
+                </div>
+                <div class="glass p-6 rounded-2xl fc border-l-4 border-cyan-500/50">
+                    <h3 class="font-bold text-sm text-cyan-300 mb-2"><i class="fas fa-magic mr-2"></i>AI Code
+                        Autocompletion</h3>
+                    <p class="text-xs text-slate-500">Real-time intelligent code suggestions and autocompletion powered
+                        by AI models.</p>
+                </div>
+                <div class="glass p-6 rounded-2xl fc border-l-4 border-rose-500/50">
+                    <h3 class="font-bold text-sm text-rose-300 mb-2"><i class="fas fa-trophy mr-2"></i>Gamification</h3>
+                    <p class="text-xs text-slate-500">Leaderboards, streaks, badges, and team formation for hackathons
+                        with balanced skill composition.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 14. LIMITATIONS -->
+        <section class="fade-in">
+            <h2 class="text-4xl font-black text-center uppercase tracking-tight mb-12">Limitations & <span
+                    class="text-blue-500">Current Scope</span></h2>
+            <div class="grid md:grid-cols-2 gap-8">
+                <div class="glass p-8 rounded-3xl border-l-4 border-red-500/50">
+                    <h3 class="text-red-400 font-bold text-xs uppercase tracking-widest mb-4">Current Limitations</h3>
+                    <ul class="text-sm text-slate-500 space-y-2 list-disc list-inside">
+                        <li>AI question generation depends on external API availability (Groq/Google AI)</li>
+                        <li>ELO calibration requires minimum user base for statistical accuracy</li>
+                        <li>Video calls depend on LiveKit cloud service availability</li>
+                        <li>No offline mode — requires persistent internet connection</li>
+                    </ul>
+                </div>
+                <div class="glass p-8 rounded-3xl border-l-4 border-green-500/50">
+                    <h3 class="text-green-400 font-bold text-xs uppercase tracking-widest mb-4">Planned Enhancements
+                    </h3>
+                    <ul class="text-sm text-slate-500 space-y-2 list-disc list-inside">
+                        <li>Expand AI prompts to cover ML, DevOps, mobile development</li>
+                        <li>Add project-based assessment alongside AI quizzes</li>
+                        <li>Implement screen sharing in collaboration rooms</li>
+                        <li>Analytics dashboard for skill growth trends</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 17. TEAM -->
+        <section id="team" class="text-center pt-10 border-t border-slate-900 fade-in">
+            <h2 class="text-[10px] font-black text-slate-600 uppercase tracking-[0.5em] mb-12">Academic Credits</h2>
+            <div class="flex flex-wrap justify-center gap-10">
+                <div class="glass px-12 py-8 rounded-[2rem] border-b-4 border-blue-600 fc">
+                    <p class="text-[9px] font-bold text-blue-500 mb-2 uppercase tracking-widest">Project Guide</p>
+                    <p class="font-black text-xl text-slate-100">Dr. Ajay Kumar</p>
+                    <p class="text-[10px] text-slate-500 mt-1">Department of CSE</p>
+                </div>
+                <div class="glass px-12 py-8 rounded-[2rem] border-b-4 border-slate-700 fc">
+                    <p class="text-[9px] font-bold text-slate-400 mb-2 uppercase tracking-widest">Team Member</p>
+                    <p class="font-black text-xl text-slate-100">Pratham Agarwal</p>
+                    <p class="text-[10px] text-slate-500 mt-1">23FE10CSE00541</p>
+                </div>
+                <div class="glass px-12 py-8 rounded-[2rem] border-b-4 border-slate-700 fc">
+                    <p class="text-[9px] font-bold text-slate-400 mb-2 uppercase tracking-widest">Team Member</p>
+                    <p class="font-black text-xl text-slate-100">Rudra Pratap Singh</p>
+                    <p class="text-[10px] text-slate-500 mt-1">23FE10CSE00469</p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="py-12 text-center bg-black/40 border-t border-slate-900">
+        <p class="text-slate-600 text-[10px] font-bold tracking-[0.3em] uppercase mb-2">Manipal University Jaipur</p>
+        <p class="text-slate-500 text-[9px] font-medium tracking-[0.2em] uppercase opacity-50">Department of Computer
+            Science & Engineering • 2026</p>
+    </footer>
+
+    <script>
+        let sec = 0, timer = null;
+        function startTimer() { timer = setInterval(() => { sec++; let m = Math.floor(sec / 60), s = sec % 60; document.getElementById('displayTime').innerText = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`; if (sec >= 480 && sec < 600) { document.getElementById('timerContainer').classList.add('timer-warning'); document.getElementById('timerIcon').classList.replace('fa-hourglass-start', 'fa-hourglass-half') } else if (sec >= 600) { clearInterval(timer); document.getElementById('timerContainer').classList.replace('timer-warning', 'timer-stop'); document.getElementById('displayTime').innerText = "10:00"; document.getElementById('timerIcon').classList.replace('fa-hourglass-half', 'fa-hourglass-end') } }, 1000) }
+        function initObserver() { const obs = new IntersectionObserver(e => { e.forEach(el => { if (el.isIntersecting) el.target.classList.add('visible') }) }, { threshold: .1 }); document.querySelectorAll('.fade-in').forEach(el => obs.observe(el)) }
+
+        function initScroll() {
+            window.addEventListener('scroll', () => {
+                const sections = document.querySelectorAll("section");
+                const navLinks = document.querySelectorAll(".nav-link");
+                let current = "";
+                sections.forEach((section) => { if (window.scrollY >= (section.offsetTop - 300)) current = section.getAttribute("id"); });
+
+                navLinks.forEach((link) => {
+                    link.classList.remove("text-blue-400", "scale-105", "opacity-100", "font-bold");
+                    link.classList.add("opacity-60");
+                    if (link.getAttribute("href") === "#" + current) {
+                        link.classList.add("text-blue-400", "scale-105", "opacity-100", "font-bold");
+                        link.classList.remove("opacity-60");
+                    }
+                });
+            });
+        }
+        // Chart.js initialization removed
+    </script>
+</body>
+
+</html>

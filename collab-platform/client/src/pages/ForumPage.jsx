@@ -15,6 +15,11 @@ const ForumPage = () => {
     const [selectedUserToInvite, setSelectedUserToInvite] = useState(null);
     const [selectedRoomId, setSelectedRoomId] = useState('new');
 
+    // Filter State
+    const [filterSkill, setFilterSkill] = useState('');
+    const [filterMinElo, setFilterMinElo] = useState('');
+    const [filterMaxElo, setFilterMaxElo] = useState('');
+
     useEffect(() => {
         async function fetchData() {
             try {
@@ -181,30 +186,78 @@ const ForumPage = () => {
             )}
 
             {activeTab === 'browse' && (
-                <div className="room-grid-display">
-                    {developers.length > 0 ? developers.map(dev => (
-                        <div key={dev._id} className="room-card-mini" style={{ flexDirection: 'column', gap: '0.8rem' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                <div>
-                                    <div className="room-title">{dev.user?.username || 'Unknown User'}</div>
-                                    <div style={{
-                                        fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.3rem',
-                                        fontFamily: 'var(--font-mono)'
-                                    }}>
-                                        {dev.skills && dev.skills.slice(0, 5).map(s => s.name).join(' • ')}
+                <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+                    {/* Filter Bar */}
+                    <div className="term-card" style={{ marginBottom: '1.5rem', padding: '1.2rem', display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                        <div style={{ flex: 2, minWidth: '200px' }}>
+                            <label style={{ fontSize: '0.7rem', color: 'var(--term-blue)', display: 'block', marginBottom: '0.4rem', fontFamily: 'var(--font-mono)' }}>FILTER SKILL</label>
+                            <input
+                                type="text" className="term-input"
+                                placeholder="Search by skill (e.g. React)..."
+                                value={filterSkill} onChange={e => setFilterSkill(e.target.value)}
+                            />
+                        </div>
+                        <div style={{ flex: 1, minWidth: '100px' }}>
+                            <label style={{ fontSize: '0.7rem', color: 'var(--term-blue)', display: 'block', marginBottom: '0.4rem', fontFamily: 'var(--font-mono)' }}>MIN RATING</label>
+                            <input
+                                type="number" className="term-input"
+                                placeholder="0"
+                                value={filterMinElo} onChange={e => setFilterMinElo(e.target.value)}
+                            />
+                        </div>
+                        <div style={{ flex: 1, minWidth: '100px' }}>
+                            <label style={{ fontSize: '0.7rem', color: 'var(--term-blue)', display: 'block', marginBottom: '0.4rem', fontFamily: 'var(--font-mono)' }}>MAX RATING</label>
+                            <input
+                                type="number" className="term-input"
+                                placeholder="3000"
+                                value={filterMaxElo} onChange={e => setFilterMaxElo(e.target.value)}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="room-grid-display">
+                        {developers.filter(dev => {
+                            const skills = dev.skills || [];
+                            const hasSkill = !filterSkill || skills.some(s => s.name.toLowerCase().includes(filterSkill.toLowerCase()));
+
+                            const maxRating = skills.length > 0 ? Math.max(...skills.map(s => s.elo || 0)) : 0;
+                            const minRating = filterMinElo ? parseInt(filterMinElo) : 0;
+                            const maxRatingLimit = filterMaxElo ? parseInt(filterMaxElo) : 10000;
+
+                            return hasSkill && maxRating >= minRating && maxRating <= maxRatingLimit;
+                        }).length > 0 ? developers.filter(dev => {
+                            const skills = dev.skills || [];
+                            const hasSkill = !filterSkill || skills.some(s => s.name.toLowerCase().includes(filterSkill.toLowerCase()));
+
+                            const maxRating = skills.length > 0 ? Math.max(...skills.map(s => s.elo || 0)) : 0;
+                            const minRating = filterMinElo ? parseInt(filterMinElo) : 0;
+                            const maxRatingLimit = filterMaxElo ? parseInt(filterMaxElo) : 10000;
+
+                            return hasSkill && maxRating >= minRating && maxRating <= maxRatingLimit;
+                        }).map(dev => (
+                            <div key={dev._id} className="room-card-mini" style={{ flexDirection: 'column', gap: '0.8rem' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                    <div>
+                                        <div className="room-title">{dev.user?.username || 'Unknown User'}</div>
+                                        <div style={{
+                                            fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.3rem',
+                                            fontFamily: 'var(--font-mono)'
+                                        }}>
+                                            {dev.skills && dev.skills.slice(0, 5).map(s => s.name).join(' • ')}
+                                        </div>
                                     </div>
                                 </div>
+                                <div style={{ display: 'flex', gap: '0.5rem', marginTop: 'auto' }}>
+                                    <Link to={`/profile/${dev.user?._id}`} className="btn-term-sm"
+                                        style={{ textDecoration: 'none' }}>VIEW</Link>
+                                    <button onClick={() => clickInvite(dev.user?._id)} className="btn-term-sm"
+                                        style={{ color: 'var(--term-green)', borderColor: 'var(--term-green)' }}>INVITE</button>
+                                </div>
                             </div>
-                            <div style={{ display: 'flex', gap: '0.5rem', marginTop: 'auto' }}>
-                                <Link to={`/profile/${dev.user?._id}`} className="btn-term-sm"
-                                    style={{ textDecoration: 'none' }}>VIEW</Link>
-                                <button onClick={() => clickInvite(dev.user?._id)} className="btn-term-sm"
-                                    style={{ color: 'var(--term-green)', borderColor: 'var(--term-green)' }}>INVITE</button>
-                            </div>
-                        </div>
-                    )) : (
-                        <div className="term-empty">No developers found.</div>
-                    )}
+                        )) : (
+                            <div className="term-empty">No developers found.</div>
+                        )}
+                    </div>
                 </div>
             )}
 

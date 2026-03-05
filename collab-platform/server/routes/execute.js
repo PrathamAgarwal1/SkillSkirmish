@@ -105,8 +105,9 @@ router.post('/run-file', auth, async (req, res) => {
     try {
         const { projectId, filePath, roomId } = req.body;
         const io = req.app.get('socketio');
+        const userSocketMap = req.app.get('userSocketMap');
 
-        const result = await runFile(projectId, filePath, req.user.id, io, roomId);
+        const result = await runFile(projectId, filePath, req.user.id, io, roomId, userSocketMap);
         res.json(result);
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
@@ -128,7 +129,10 @@ router.post('/write-terminal', auth, (req, res) => {
 router.post('/stop-process', auth, (req, res) => {
     try {
         const { processId } = req.body;
-        const result = stopProcess(processId);
+        const io = req.app.get('socketio');
+        // Extract roomId from the request body or headers
+        const roomId = req.body.roomId || null;
+        const result = stopProcess(processId, io, roomId);
         res.json(result);
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
