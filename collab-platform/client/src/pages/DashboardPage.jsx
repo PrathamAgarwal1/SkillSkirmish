@@ -14,6 +14,14 @@ const DashboardPage = () => {
     const [roomName, setRoomName] = useState('');
     const [roomDescription, setRoomDescription] = useState('');
     const [loading, setLoading] = useState(true);
+    // Discovery fields
+    const [roomSkills, setRoomSkills] = useState('');
+    const [roomMinRating, setRoomMinRating] = useState('');
+    const [roomCapacity, setRoomCapacity] = useState('');
+    const [roomTags, setRoomTags] = useState('');
+    const [roomDiscoverable, setRoomDiscoverable] = useState(false);
+    const [roomProjectDesc, setRoomProjectDesc] = useState('');
+    const [showAdvanced, setShowAdvanced] = useState(false);
     const [editingRoom, setEditingRoom] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState([]);
@@ -78,8 +86,35 @@ const DashboardPage = () => {
         e.preventDefault();
         if (!roomName) return alert('Please enter a room name');
         try {
-            await axios.post('/api/rooms', { name: roomName, description: roomDescription });
-            setRoomName(''); setRoomDescription('');
+            const payload = { name: roomName, description: roomDescription };
+
+            // Add discovery fields if toggled on
+            if (roomDiscoverable) {
+                payload.isDiscoverable = true;
+                if (roomProjectDesc) payload.projectDescription = roomProjectDesc;
+                if (roomSkills.trim()) {
+                    payload.requiredSkills = roomSkills.split(',').map(s => {
+                        const trimmed = s.trim();
+                        // Support "React:5" syntax for weights
+                        const parts = trimmed.split(':');
+                        return {
+                            name: parts[0].trim(),
+                            weight: parts[1] ? Math.min(5, Math.max(1, parseInt(parts[1]))) || 1 : 1
+                        };
+                    }).filter(s => s.name);
+                }
+                if (roomMinRating) payload.minRating = parseInt(roomMinRating) || 0;
+                if (roomCapacity) payload.capacity = parseInt(roomCapacity) || 10;
+                if (roomTags.trim()) {
+                    payload.tags = roomTags.split(',').map(t => t.trim()).filter(Boolean);
+                }
+            }
+
+            await axios.post('/api/rooms', payload);
+            setRoomName(''); setRoomDescription(''); setRoomSkills('');
+            setRoomMinRating(''); setRoomCapacity(''); setRoomTags('');
+            setRoomDiscoverable(false); setRoomProjectDesc('');
+            setShowAdvanced(false);
             fetchRooms();
         } catch (err) {
             console.error("Failed to create room:", err);
@@ -359,6 +394,78 @@ const DashboardPage = () => {
                                         <label>&gt; Description:</label>
                                         <input type="text" className="term-input" value={roomDescription} onChange={(e) => setRoomDescription(e.target.value)} />
                                     </div>
+
+                                    {/* Discoverable Toggle */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', margin: '0.8rem 0' }}>
+                                        <label style={{
+                                            display: 'flex', alignItems: 'center', gap: '0.5rem',
+                                            cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: '0.8rem',
+                                            color: roomDiscoverable ? 'var(--term-green)' : 'var(--text-muted)'
+                                        }}>
+                                            <input type="checkbox" checked={roomDiscoverable}
+                                                onChange={(e) => { setRoomDiscoverable(e.target.checked); setShowAdvanced(e.target.checked); }}
+                                                style={{ accentColor: 'var(--term-green)' }} />
+                                            🔍 Make Discoverable
+                                        </label>
+                                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                            (appears in room recommendations)
+                                        </span>
+                                    </div>
+
+                                    {/* Advanced Discovery Fields */}
+                                    {showAdvanced && (
+                                        <div style={{
+                                            background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius-sm)',
+                                            padding: '1rem', marginBottom: '1rem',
+                                            border: '1px solid var(--border-subtle)'
+                                        }}>
+                                            <div style={{ fontSize: '0.7rem', color: 'var(--term-blue)', fontFamily: 'var(--font-mono)', marginBottom: '0.8rem' }}>
+                                                PROJECT_DISCOVERY_CONFIG
+                                            </div>
+
+                                            <div className="form-group">
+                                                <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                                                    &gt; Project Description:
+                                                </label>
+                                                <input type="text" className="term-input" placeholder="What is this project about?"
+                                                    value={roomProjectDesc} onChange={(e) => setRoomProjectDesc(e.target.value)} />
+                                            </div>
+
+                                            <div className="form-group">
+                                                <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                                                    &gt; Required Skills <span style={{ color: 'var(--term-gold)' }}>(comma-separated, use Skill:Weight for weights)</span>:
+                                                </label>
+                                                <input type="text" className="term-input" placeholder="e.g. React:5, Node.js:3, MongoDB"
+                                                    value={roomSkills} onChange={(e) => setRoomSkills(e.target.value)} />
+                                            </div>
+
+                                            <div style={{ display: 'flex', gap: '0.8rem' }}>
+                                                <div className="form-group" style={{ flex: 1 }}>
+                                                    <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                                                        &gt; Min Rating:
+                                                    </label>
+                                                    <input type="number" className="term-input" placeholder="0"
+                                                        value={roomMinRating} onChange={(e) => setRoomMinRating(e.target.value)} />
+                                                </div>
+                                                <div className="form-group" style={{ flex: 1 }}>
+                                                    <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                                                        &gt; Capacity:
+                                                    </label>
+                                                    <input type="number" className="term-input" placeholder="10"
+                                                        value={roomCapacity} onChange={(e) => setRoomCapacity(e.target.value)} />
+                                                </div>
+                                            </div>
+
+                                            <div className="form-group">
+                                                <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                                                    &gt; Tags <span style={{ color: 'var(--term-gold)' }}>(comma-separated)</span>:
+                                                </label>
+                                                <input type="text" className="term-input" placeholder="e.g. frontend, react, open-source"
+                                                    value={roomTags} onChange={(e) => setRoomTags(e.target.value)} />
+                                            </div>
+                                        </div>
+                                    )}
+
                                     <button type="submit" className="btn-term-primary">EXECUTE CREATE</button>
                                 </form>
                             </div>

@@ -4,6 +4,7 @@ const auth = require('../middleware/auth');
 const Room = require('../models/Room');
 const User = require('../models/User');
 const Message = require('../models/Message'); // Import Message Model
+const { ROOM_WEIGHTS, computeRoomScore } = require('../utils/matchmaking');
 
 // @route   GET api/rooms/myrooms
 router.get('/myrooms', auth, async (req, res) => {
@@ -30,6 +31,71 @@ router.get('/search', auth, async (req, res) => {
         res.json(rooms);
     } catch (err) {
         res.status(500).send('Server Error');
+    }
+});
+
+// @route   GET api/rooms/recommend
+// Personalized room recommendations based on user skills, rating, and growth potential.
+router.get('/recommend', auth, async (req, res) => {
+    try {
+        // 1. Fetch the authenticated user's skills
+        const user = await User.findById(req.user.id).select('skills');
+        const userSkills = user ? user.skills : [];
+
+        // 2. Query only discoverable rooms the user hasn't joined, with capacity remaining
+        const rooms = await Room.find({
+            isDiscoverable: true,
+            owner: { $ne: req.user.id },
+            members: { $ne: req.user.id },
+            'requiredSkills.0': { $exists: true } // must have at least one required skill
+        })
+            .select('name description requiredSkills minRating capacity members tags projectDescription owner')
+            .populate('owner', 'username')
+            .lean();
+
+        // 3. Filter rooms that are already full
+        const availableRooms = rooms.filter(r => (r.members || []).length < (r.capacity || 10));
+
+        // 4. Score each room
+        const scoredRooms = availableRooms.map(room => {
+            const memberCount = (room.members || []).length;
+            const { score, reasoning } = computeRoomScore({
+                userSkills,
+                roomRequiredSkills: room.requiredSkills || [],
+                roomMinRating: room.minRating || 0,
+                memberCount,
+                capacity: room.capacity || 10
+            });
+
+            return {
+                roomId: room._id.toString(),
+                name: room.name,
+                description: room.projectDescription || room.description || '',
+                owner: room.owner ? { _id: room.owner._id, username: room.owner.username } : null,
+                matchScore: score,
+                reason: reasoning.length > 0 ? reasoning.join(' + ') : 'Discoverable Room',
+                requiredSkills: (room.requiredSkills || []).map(s => ({ name: s.name, weight: s.weight })),
+                memberCount,
+                capacity: room.capacity || 10,
+                tags: room.tags || []
+            };
+        });
+
+        // 5. Sort by score descending
+        scoredRooms.sort((a, b) => b.matchScore - a.matchScore);
+
+        // 6. Apply minimum threshold but guarantee at least 3 results
+        let filtered = scoredRooms.filter(r => r.matchScore >= ROOM_WEIGHTS.MIN_ROOM_SCORE);
+        if (filtered.length < 3) {
+            filtered = scoredRooms.slice(0, Math.max(3, filtered.length));
+        }
+
+        // 7. Return top 10
+        res.json({ recommendations: filtered.slice(0, 10) });
+
+    } catch (err) {
+        console.error('Room Recommendation Error:', err);
+        res.status(500).json({ msg: 'Server Error', reason: err.message });
     }
 });
 
@@ -304,11 +370,25 @@ router.get('/:id', auth, async (req, res) => {
 // @route   POST api/rooms
 router.post('/', auth, async (req, res) => {
     try {
+        const {
+            name, description, isPrivate, language,
+            requiredSkills, minRating, capacity,
+            projectDescription, isDiscoverable, tags
+        } = req.body;
+
         const newRoom = new Room({
-            name: req.body.name,
-            description: req.body.description,
+            name,
+            description,
             owner: req.user.id,
-            members: []
+            members: [],
+            ...(isPrivate !== undefined && { isPrivate }),
+            ...(language && { language }),
+            ...(requiredSkills && { requiredSkills }),
+            ...(minRating !== undefined && { minRating }),
+            ...(capacity !== undefined && { capacity }),
+            ...(projectDescription && { projectDescription }),
+            ...(isDiscoverable !== undefined && { isDiscoverable }),
+            ...(tags && { tags })
         });
         const room = await newRoom.save();
         res.json(room);

@@ -63,6 +63,28 @@ const RoomSchema = new Schema({
         type: String,
         default: 'javascript'
     },
+    // --- PROJECT / DISCOVERY FIELDS ---
+    requiredSkills: [{
+        name:   { type: String, required: true },
+        weight: { type: Number, default: 1, min: 0, max: 5 }
+    }],
+    minRating: {
+        type: Number,
+        default: 0
+    },
+    capacity: {
+        type: Number,
+        default: 10
+    },
+    projectDescription: {
+        type: String,
+        default: ''
+    },
+    isDiscoverable: {
+        type: Boolean,
+        default: false
+    },
+    tags: [{ type: String }],
     // Video call management - support up to 3 concurrent calls
     activeCalls: [VideoCallSchema],
     maxConcurrentCalls: {

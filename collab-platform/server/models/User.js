@@ -7,6 +7,7 @@ const SkillSchema = new mongoose.Schema({
     mastery: { type: Number, default: 0, min: 0, max: 100 },
     elo: { type: Number, default: null },
     matchesPlayed: { type: Number, default: 0 },
+    ratingDeviation: { type: Number, default: 350 },
     isProvisional: { type: Boolean, default: true },
     history: [{
         date: { type: Date, default: Date.now },

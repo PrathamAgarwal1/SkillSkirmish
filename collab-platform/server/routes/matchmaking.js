@@ -2,103 +2,81 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
 const User = require('../models/User');
+const {
+    WEIGHTS,
+    buildSkillVector,
+    computeMatchScore
+} = require('../utils/matchmaking');
 
 // @route   POST api/matchmaking/find-match
 router.post('/find-match', auth, async (req, res) => {
     try {
-        const { requiredSkills, minElo } = req.body;
+        const { requiredSkills, minElo, queueStartTime, recentOpponents } = req.body;
         const requestorId = req.user.id;
 
-        // 1. Fetch Requestor Profile to get their ELO per skill
+        // 1. Fetch Requestor Profile
         const requestor = await User.findById(requestorId).select('skills');
         const requestorSkills = requestor ? requestor.skills : [];
 
-        // Helper to get ELO for a specific skill
-        const getSkillElo = (skills, skillName) => {
-            const s = skills.find(sk => sk.name.toLowerCase() === skillName.toLowerCase());
-            return s ? s.elo || 1200 : 1200; // Default to 1200 if unrated
-        };
-
-        const getSkillMatchesPlayed = (skills, skillName) => {
-            const s = skills.find(sk => sk.name.toLowerCase() === skillName.toLowerCase());
-            return s ? s.matchesPlayed || 0 : 0;
-        };
-
         // 2. Fetch Potential Candidates
-        // We fetch everyone (optimizable later with geospatial/pagination)
         let candidates = await User.find({
             _id: { $ne: requestorId }
         }).select('username skills bio location').lean();
 
-        // 3. Score Each Candidate
+        // 3. Collect the union of all skill names (for consistent vector space)
+        const allSkillNamesSet = new Set();
+        for (const s of requestorSkills) allSkillNamesSet.add(s.name.toLowerCase());
+        for (const c of candidates) {
+            for (const s of (c.skills || [])) allSkillNamesSet.add(s.name.toLowerCase());
+        }
+        const allSkillNames = Array.from(allSkillNamesSet);
+
+        // 4. Build requestor's skill vector once
+        const requestorVector = buildSkillVector(requestorSkills, allSkillNames);
+
+        // Compute queue wait time
+        const waitTimeMs = queueStartTime
+            ? Math.max(0, Date.now() - new Date(queueStartTime).getTime())
+            : 0;
+
+        // 5. Score Each Candidate using the new composite scoring
         const scoredMatches = candidates.map(candidate => {
-            let score = 0;
-            let reasoningParts = [];
             const candidateSkills = candidate.skills || [];
+            const candidateVector = buildSkillVector(candidateSkills, allSkillNames);
 
-            // A. Skill Match Score (Max 80)
-            let matchedSkillsCount = 0;
-            if (requiredSkills && requiredSkills.length > 0) {
-                requiredSkills.forEach(reqSkill => {
-                    const hasSkill = candidateSkills.some(cs => cs.name.toLowerCase().includes(reqSkill.toLowerCase()));
-                    if (hasSkill) {
-                        score += 40; // High reward for required skill
-                        matchedSkillsCount++;
-
-                        // B. ELO Proximity Bonus (Max 20 per skill)
-                        const myElo = getSkillElo(requestorSkills, reqSkill);
-                        const theirElo = getSkillElo(candidateSkills, reqSkill);
-                        const diff = Math.abs(myElo - theirElo);
-
-                        // Formula: Closer ELO = Higher Score. 
-                        // If diff is 0, bonus is 20. If diff is 1000, bonus is 0.
-                        const eloBonus = 20 * Math.max(0, (1 - diff / 1000));
-                        score += eloBonus;
-
-                        // C. Reliability Bonus (Prioritize active players)
-                        const matchesPlayed = getSkillMatchesPlayed(candidateSkills, reqSkill);
-                        const reliabilityBonus = Math.min(10, matchesPlayed); // Cap at 10 pts
-                        score += reliabilityBonus;
-
-                        // Reasoning Logic
-                        if (eloBonus > 18) {
-                            reasoningParts.push(`Perfect Fit! ${reqSkill} ELO: ${theirElo} (Very close to yours)`);
-                        } else if (eloBonus > 14) {
-                            reasoningParts.push(`Great Match! ${reqSkill} ELO: ${theirElo}`);
-                        } else if (eloBonus > 10) {
-                            reasoningParts.push(`Good Match. ${reqSkill} ELO: ${theirElo}`);
-                        } else {
-                            reasoningParts.push(`${reqSkill} User (ELO: ${theirElo})`);
-                        }
-
-
-                    }
-                });
-
-
-            } else {
-                // General Browse Mode - Score based on total skill count variance?
-                // For now, just active skills
-                score += Math.min(50, candidateSkills.length * 10);
-            }
-
-            // Cap Score at 100 (soft cap, can go higher with bonuses)
-            // score = Math.min(100, score);
+            const { score, reasoning } = computeMatchScore({
+                requestorVector,
+                candidateVector,
+                requestorSkills,
+                candidateSkills,
+                requiredSkills,
+                waitTimeMs,
+                candidateId: candidate._id.toString(),
+                recentOpponents: recentOpponents || []
+            });
 
             return {
                 userId: candidate._id.toString(),
                 username: candidate.username,
-                matchScore: Math.round(score),
-                reason: reasoningParts.length > 0 ? reasoningParts.join(' + ') : 'Active Developer',
+                matchScore: score,
+                reason: reasoning.length > 0 ? reasoning.join(' + ') : 'Active Developer',
                 skills: candidateSkills.map(s => ({ name: s.name, elo: s.elo }))
             };
         });
 
-        // 4. Sort by Score Descending
+        // 6. Sort by Score Descending
         scoredMatches.sort((a, b) => b.matchScore - a.matchScore);
 
-        // 5. Return Top 10
-        res.json({ matches: scoredMatches.slice(0, 10) });
+        // 7. Apply Minimum Match Quality Threshold
+        let filtered = scoredMatches.filter(m => m.matchScore >= WEIGHTS.MIN_MATCH_SCORE);
+
+        // Always guarantee at least MIN_GUARANTEED_RESULTS matches
+        if (filtered.length < WEIGHTS.MIN_GUARANTEED_RESULTS) {
+            filtered = scoredMatches.slice(0, WEIGHTS.MIN_GUARANTEED_RESULTS);
+        }
+
+        // 8. Return Top 10
+        res.json({ matches: filtered.slice(0, 10) });
 
     } catch (err) {
         console.error("Matchmaking Error:", err);

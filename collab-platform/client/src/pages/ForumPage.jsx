@@ -20,6 +20,11 @@ const ForumPage = () => {
     const [filterMinElo, setFilterMinElo] = useState('');
     const [filterMaxElo, setFilterMaxElo] = useState('');
 
+    // Discover Rooms State
+    const [recommendedRooms, setRecommendedRooms] = useState([]);
+    const [discoverLoading, setDiscoverLoading] = useState(false);
+    const [discoverLoaded, setDiscoverLoaded] = useState(false);
+
     useEffect(() => {
         async function fetchData() {
             try {
@@ -27,6 +32,18 @@ const ForumPage = () => {
                     const res = await axios.get('/api/profile');
                     const validDevs = res.data.filter(dev => dev.user && dev.user._id);
                     setDevelopers(validDevs);
+                }
+                if (activeTab === 'discover' && !discoverLoaded) {
+                    setDiscoverLoading(true);
+                    try {
+                        const res = await axios.get('/api/rooms/recommend');
+                        setRecommendedRooms(res.data.recommendations || []);
+                        setDiscoverLoaded(true);
+                    } catch (err) {
+                        console.error('Failed to load recommendations:', err);
+                    } finally {
+                        setDiscoverLoading(false);
+                    }
                 }
                 const roomRes = await axios.get('/api/rooms/myrooms');
                 setMyRooms(roomRes.data);
@@ -96,6 +113,22 @@ const ForumPage = () => {
         }
     };
 
+    const handleRequestJoinRoom = async (roomId) => {
+        try {
+            await axios.post(`/api/rooms/${roomId}/request-join`);
+            alert('Join request sent to owner!');
+            setRecommendedRooms(prev => prev.filter(r => r.roomId !== roomId));
+        } catch (err) {
+            alert(err.response?.data?.msg || 'Failed to send join request.');
+        }
+    };
+
+    const getScoreColor = (score) => {
+        if (score >= 60) return 'var(--term-green)';
+        if (score >= 35) return 'var(--term-gold)';
+        return 'var(--term-red, #e94560)';
+    };
+
     return (
         <div className="dashboard-container">
             <header className="dashboard-header">
@@ -110,7 +143,7 @@ const ForumPage = () => {
                 display: 'flex', gap: '0.5rem', marginBottom: '2rem',
                 borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.5rem'
             }}>
-                {['matchmake', 'browse'].map(tab => (
+                {['matchmake', 'browse', 'discover'].map(tab => (
                     <button key={tab} onClick={() => setActiveTab(tab)} style={{
                         background: activeTab === tab ? 'var(--term-green)' : 'transparent',
                         color: activeTab === tab ? '#fff' : 'var(--text-muted)',
@@ -119,7 +152,7 @@ const ForumPage = () => {
                         fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 'bold',
                         textTransform: 'uppercase', letterSpacing: '1px', transition: 'all 0.2s'
                     }}>
-                        {tab === 'matchmake' ? '⚡ AI Matchmaking' : '👥 Browse Developers'}
+                        {tab === 'matchmake' ? '⚡ AI Matchmaking' : tab === 'browse' ? '👥 Browse Developers' : '🔍 Discover Rooms'}
                     </button>
                 ))}
             </div>
@@ -219,20 +252,16 @@ const ForumPage = () => {
                         {developers.filter(dev => {
                             const skills = dev.skills || [];
                             const hasSkill = !filterSkill || skills.some(s => s.name.toLowerCase().includes(filterSkill.toLowerCase()));
-
                             const maxRating = skills.length > 0 ? Math.max(...skills.map(s => s.elo || 0)) : 0;
                             const minRating = filterMinElo ? parseInt(filterMinElo) : 0;
                             const maxRatingLimit = filterMaxElo ? parseInt(filterMaxElo) : 10000;
-
                             return hasSkill && maxRating >= minRating && maxRating <= maxRatingLimit;
                         }).length > 0 ? developers.filter(dev => {
                             const skills = dev.skills || [];
                             const hasSkill = !filterSkill || skills.some(s => s.name.toLowerCase().includes(filterSkill.toLowerCase()));
-
                             const maxRating = skills.length > 0 ? Math.max(...skills.map(s => s.elo || 0)) : 0;
                             const minRating = filterMinElo ? parseInt(filterMinElo) : 0;
                             const maxRatingLimit = filterMaxElo ? parseInt(filterMaxElo) : 10000;
-
                             return hasSkill && maxRating >= minRating && maxRating <= maxRatingLimit;
                         }).map(dev => (
                             <div key={dev._id} className="room-card-mini" style={{ flexDirection: 'column', gap: '0.8rem' }}>
@@ -257,6 +286,151 @@ const ForumPage = () => {
                         )) : (
                             <div className="term-empty">No developers found.</div>
                         )}
+                    </div>
+                </div>
+            )}
+
+            {/* ─── DISCOVER ROOMS TAB ─── */}
+            {activeTab === 'discover' && (
+                <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+                    <div className="term-card" style={{ marginBottom: '1.5rem' }}>
+                        <div className="term-header">
+                            <div className="window-dots">
+                                <div className="dot dot-red"></div>
+                                <div className="dot dot-yellow"></div>
+                                <div className="dot dot-green"></div>
+                            </div>
+                            <span>room_discovery.exe</span>
+                        </div>
+                        <div className="term-body" style={{ padding: '1.5rem' }}>
+                            <h3 style={{ color: 'var(--text-bright)', marginBottom: '0.5rem', fontFamily: 'var(--font-mono)' }}>
+                                🔍 Discover Project Rooms
+                            </h3>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                Rooms ranked by your skill profile, rating, and growth potential.
+                            </p>
+                        </div>
+                    </div>
+
+                    {discoverLoading && (
+                        <div className="term-card" style={{ padding: '2rem', textAlign: 'center' }}>
+                            <span style={{ color: 'var(--term-green)', fontFamily: 'var(--font-mono)' }}>
+                                SCANNING ROOMS... ▓▓▓░░░░░░
+                            </span>
+                        </div>
+                    )}
+
+                    {!discoverLoading && recommendedRooms.length === 0 && discoverLoaded && (
+                        <div className="term-card" style={{ padding: '2rem' }}>
+                            <div className="term-empty" style={{ textAlign: 'center' }}>
+                                <p style={{ color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+                                    &gt; No discoverable rooms found.
+                                </p>
+                                <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                                    Rooms need to be created with <code style={{ color: 'var(--term-green)' }}>isDiscoverable: true</code> and <code style={{ color: 'var(--term-green)' }}>requiredSkills</code> to appear here.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="room-grid-display">
+                        {recommendedRooms.map((room, idx) => (
+                            <div key={room.roomId} className="term-card" style={{ marginBottom: '1rem' }}>
+                                <div className="term-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span style={{ color: 'var(--term-green)', fontFamily: 'var(--font-mono)' }}>
+                                        room_{idx + 1}
+                                    </span>
+                                    <span style={{
+                                        color: getScoreColor(room.matchScore),
+                                        fontFamily: 'var(--font-mono)',
+                                        fontWeight: 'bold',
+                                        fontSize: '0.85rem'
+                                    }}>
+                                        MATCH: {room.matchScore}/100
+                                    </span>
+                                </div>
+                                <div className="term-body" style={{ padding: '1.2rem' }}>
+                                    {/* Room Name & Owner */}
+                                    <div style={{ marginBottom: '0.8rem' }}>
+                                        <h4 style={{ color: 'var(--text-bright)', margin: 0, fontFamily: 'var(--font-mono)', fontSize: '1rem' }}>
+                                            {room.name}
+                                        </h4>
+                                        {room.owner && (
+                                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                                by {room.owner.username}
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {/* Description */}
+                                    {room.description && (
+                                        <p style={{ color: 'var(--text-main)', fontSize: '0.85rem', marginBottom: '0.8rem', lineHeight: '1.4' }}>
+                                            {room.description}
+                                        </p>
+                                    )}
+
+                                    {/* Required Skills */}
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.8rem' }}>
+                                        {room.requiredSkills.map(skill => (
+                                            <span key={skill.name} style={{
+                                                background: 'rgba(57, 134, 250, 0.15)',
+                                                color: 'var(--term-blue)',
+                                                padding: '0.2rem 0.6rem',
+                                                borderRadius: 'var(--radius-sm)',
+                                                fontSize: '0.7rem',
+                                                fontFamily: 'var(--font-mono)',
+                                                border: '1px solid rgba(57, 134, 250, 0.3)'
+                                            }}>
+                                                {skill.name} {skill.weight > 1 ? `×${skill.weight}` : ''}
+                                            </span>
+                                        ))}
+                                        {room.tags && room.tags.map(tag => (
+                                            <span key={tag} style={{
+                                                background: 'rgba(255, 255, 255, 0.05)',
+                                                color: 'var(--text-muted)',
+                                                padding: '0.2rem 0.6rem',
+                                                borderRadius: 'var(--radius-sm)',
+                                                fontSize: '0.7rem',
+                                                fontFamily: 'var(--font-mono)',
+                                                border: '1px solid var(--border-subtle)'
+                                            }}>
+                                                #{tag}
+                                            </span>
+                                        ))}
+                                    </div>
+
+                                    {/* Reasoning */}
+                                    <div style={{
+                                        background: 'rgba(0,0,0,0.2)',
+                                        padding: '0.5rem 0.8rem',
+                                        borderRadius: 'var(--radius-sm)',
+                                        marginBottom: '1rem',
+                                        fontSize: '0.75rem',
+                                        fontFamily: 'var(--font-mono)',
+                                        color: 'var(--text-muted)'
+                                    }}>
+                                        <span style={{ color: 'var(--term-blue)' }}>ANALYSIS:</span> {room.reason}
+                                    </div>
+
+                                    {/* Footer: Members + Join Button */}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <span style={{
+                                            fontSize: '0.75rem', color: 'var(--text-muted)',
+                                            fontFamily: 'var(--font-mono)'
+                                        }}>
+                                            👥 {room.memberCount}/{room.capacity} members
+                                        </span>
+                                        <button
+                                            className="btn-term-primary"
+                                            onClick={() => handleRequestJoinRoom(room.roomId)}
+                                            style={{ fontSize: '0.75rem', padding: '0.4rem 1rem' }}
+                                        >
+                                            REQUEST ACCESS
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 </div>
             )}
