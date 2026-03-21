@@ -22,8 +22,9 @@ loader.config({ monaco });
 
 console.log("1. main.jsx is running");
 
-// Sets the base URL for all future Axios requests
-axios.defaults.baseURL = import.meta.env.VITE_SERVER_URL || 'http://localhost:5000';
+// Sets the base URL for all future Axios requests and strips any accidental trailing slash
+const rawServerUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:5000';
+axios.defaults.baseURL = rawServerUrl.replace(/\/+$/, '');
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

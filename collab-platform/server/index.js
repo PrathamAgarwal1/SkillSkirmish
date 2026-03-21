@@ -17,11 +17,14 @@ const mediasoupManager = require('./mediasoup/mediasoupManager');
 const app = express();
 const server = http.createServer(app);
 
+const rawClientUrl = process.env.CLIENT_URL || '';
+const clientUrl = rawClientUrl.replace(/\/+$/, '');
+
 const allowedOrigins = [
     'http://localhost:5173',
     'https://PrathamAgarwal1.github.io',
     'https://prathamagarwal1.github.io',
-    process.env.CLIENT_URL
+    clientUrl
 ];
 
 const corsOptions = {
