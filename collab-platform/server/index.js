@@ -20,7 +20,8 @@ const server = http.createServer(app);
 const allowedOrigins = [
     'http://localhost:5173',
     'https://PrathamAgarwal1.github.io',
-    'https://prathamagarwal1.github.io'
+    'https://prathamagarwal1.github.io',
+    process.env.CLIENT_URL
 ];
 
 const corsOptions = {
