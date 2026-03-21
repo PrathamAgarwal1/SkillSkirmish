@@ -23,7 +23,7 @@
     "grok-sdk": "^0.0.1-security",
     "groq-sdk": "^0.37.0",
     "jsonwebtoken": "^9.0.2",
-    "livekit-server-sdk": "^2.15.0",
+    "mediasoup": "^3.14.16",
     "mongoose": "^8.19.1",
     "openai": "^6.2.0",
     "socket.io": "^4.8.1",

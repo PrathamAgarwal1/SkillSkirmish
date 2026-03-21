@@ -11,6 +11,9 @@ const User = require('./models/User');
 const Room = require('./models/Room');
 const Notification = require('./models/Notification');
 
+// Import mediasoup manager
+const mediasoupManager = require('./mediasoup/mediasoupManager');
+
 const app = express();
 const server = http.createServer(app);
 
@@ -56,6 +59,9 @@ const userSocketMap = {};
 app.set('socketio', io);
 app.set('userSocketMap', userSocketMap);
 
+// Track which mediasoup room each socket is in (for cleanup on disconnect)
+const socketMediasoupRooms = {}; // { socketId: Set<roomId> }
+
 const roomUsers = {}; // { roomId: [ { userId, username, socketId } ] }
 
 io.on('connection', (socket) => {
@@ -93,6 +99,12 @@ io.on('connection', (socket) => {
             io.to(roomId).emit('roomUsers', roomUsers[roomId]);
         }
         socket.leave(roomId);
+    });
+
+    socket.on('getRoomUsers', ({ roomId }) => {
+        if (roomUsers[roomId]) {
+            socket.emit('roomUsers', roomUsers[roomId]);
+        }
     });
 
     // --- WEB-RTC SIGNALING ---
@@ -150,6 +162,136 @@ io.on('connection', (socket) => {
         }
     });
 
+    // ========================================================
+    // MEDIASOUP SIGNALING EVENTS
+    // ========================================================
+
+    // Join a mediasoup room (get router RTP capabilities)
+    socket.on('ms-joinRoom', async ({ roomId }, callback) => {
+        try {
+            const router = await mediasoupManager.getOrCreateRouter(roomId);
+
+            // Track this socket's mediasoup rooms
+            if (!socketMediasoupRooms[socket.id]) socketMediasoupRooms[socket.id] = new Set();
+            socketMediasoupRooms[socket.id].add(roomId);
+
+            callback({ rtpCapabilities: router.rtpCapabilities });
+        } catch (error) {
+            console.error('[mediasoup] ms-joinRoom error:', error);
+            callback({ error: error.message });
+        }
+    });
+
+    // Create a WebRTC transport (send or recv)
+    socket.on('ms-createTransport', async ({ roomId, direction }, callback) => {
+        try {
+            const transportParams = await mediasoupManager.createWebRtcTransport(roomId, socket.id, direction);
+            callback(transportParams);
+        } catch (error) {
+            console.error('[mediasoup] ms-createTransport error:', error);
+            callback({ error: error.message });
+        }
+    });
+
+    // Connect a transport with DTLS parameters
+    socket.on('ms-connectTransport', async ({ roomId, transportId, dtlsParameters }, callback) => {
+        try {
+            await mediasoupManager.connectTransport(roomId, socket.id, transportId, dtlsParameters);
+            callback({ connected: true });
+        } catch (error) {
+            console.error('[mediasoup] ms-connectTransport error:', error);
+            callback({ error: error.message });
+        }
+    });
+
+    // Produce (send a media track to the SFU)
+    socket.on('ms-produce', async ({ roomId, transportId, kind, rtpParameters, appData }, callback) => {
+        try {
+            const { producerId } = await mediasoupManager.produce(roomId, socket.id, transportId, kind, rtpParameters, appData);
+
+            // Notify all other peers in the room about the new producer
+            socket.to(roomId).emit('ms-newProducer', {
+                producerId,
+                socketId: socket.id,
+                kind,
+                appData,
+            });
+
+            callback({ producerId });
+        } catch (error) {
+            console.error('[mediasoup] ms-produce error:', error);
+            callback({ error: error.message });
+        }
+    });
+
+    // Consume (receive a media track from the SFU)
+    socket.on('ms-consume', async ({ roomId, producerId, rtpCapabilities }, callback) => {
+        try {
+            const consumerParams = await mediasoupManager.consume(roomId, socket.id, producerId, rtpCapabilities);
+            callback(consumerParams);
+        } catch (error) {
+            console.error('[mediasoup] ms-consume error:', error);
+            callback({ error: error.message });
+        }
+    });
+
+    // Resume a paused consumer
+    socket.on('ms-resumeConsumer', async ({ roomId, consumerId }, callback) => {
+        try {
+            await mediasoupManager.resumeConsumer(roomId, socket.id, consumerId);
+            callback({ resumed: true });
+        } catch (error) {
+            console.error('[mediasoup] ms-resumeConsumer error:', error);
+            callback({ error: error.message });
+        }
+    });
+
+    // Close a producer (e.g. stop screen share)
+    socket.on('ms-closeProducer', ({ roomId, producerId }) => {
+        try {
+            mediasoupManager.closeProducer(roomId, socket.id, producerId);
+
+            // Notify other peers that this producer is gone
+            socket.to(roomId).emit('ms-producerClosed', { producerId, socketId: socket.id });
+        } catch (error) {
+            console.error('[mediasoup] ms-closeProducer error:', error);
+        }
+    });
+
+    // Get all existing producers in a room (for a newly joined peer)
+    socket.on('ms-getProducers', ({ roomId }, callback) => {
+        try {
+            const producers = mediasoupManager.getProducersInRoom(roomId, socket.id);
+            callback(producers);
+        } catch (error) {
+            console.error('[mediasoup] ms-getProducers error:', error);
+            callback([]);
+        }
+    });
+
+    // Leave a mediasoup room
+    socket.on('ms-leaveRoom', ({ roomId }) => {
+        try {
+            const closedProducerIds = mediasoupManager.cleanupPeer(roomId, socket.id);
+
+            // Remove tracking
+            if (socketMediasoupRooms[socket.id]) {
+                socketMediasoupRooms[socket.id].delete(roomId);
+            }
+
+            // Notify other peers about closed producers
+            for (const producerId of closedProducerIds) {
+                socket.to(roomId).emit('ms-producerClosed', { producerId, socketId: socket.id });
+            }
+        } catch (error) {
+            console.error('[mediasoup] ms-leaveRoom error:', error);
+        }
+    });
+
+    // ========================================================
+    // DISCONNECT HANDLER
+    // ========================================================
+
     socket.on('disconnect', () => {
         // Remove user from all rooms they were in
         for (const roomId in roomUsers) {
@@ -158,6 +300,18 @@ io.on('connection', (socket) => {
                 roomUsers[roomId] = roomUsers[roomId].filter(u => u.socketId !== socket.id);
                 io.to(roomId).emit('roomUsers', roomUsers[roomId]);
             }
+        }
+
+        // Cleanup mediasoup peers on disconnect
+        const msRooms = socketMediasoupRooms[socket.id];
+        if (msRooms) {
+            for (const roomId of msRooms) {
+                const closedProducerIds = mediasoupManager.cleanupPeer(roomId, socket.id);
+                for (const producerId of closedProducerIds) {
+                    socket.to(roomId).emit('ms-producerClosed', { producerId, socketId: socket.id });
+                }
+            }
+            delete socketMediasoupRooms[socket.id];
         }
 
         const userId = Object.keys(userSocketMap).find(key => userSocketMap[key] === socket.id);
@@ -180,8 +334,16 @@ app.use('/api/execute', require('./routes/execute'));
 // NEW AI Routes (Updated to look in the main routes folder)
 app.use('/api/matchmaking', require('./routes/matchmaking'));
 app.use('/api/assessment', require('./routes/assessment'));
-app.use('/api/livekit', require('./routes/livekit'));
 app.use('/api/ai', require('./routes/ai'));
 
+// Initialize mediasoup worker, then start HTTP server
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => console.log(`Server started on port ${PORT}`));
+(async () => {
+    try {
+        await mediasoupManager.createWorker();
+        console.log('[mediasoup] Worker ready');
+    } catch (err) {
+        console.error('[mediasoup] Failed to create worker:', err);
+    }
+    server.listen(PORT, () => console.log(`Server started on port ${PORT}`));
+})();

@@ -771,72 +771,278 @@ select:focus {
    IDE / WAR ROOM / CHAT RESTORED STYLES
    =========================================================== */
 
-/* --- LIVEKIT OVERRIDES --- */
-.lk-room-container {
-  background: transparent !important;
-}
+/* ===========================================================
+   PREMIUM VIDEO GRID (DISCORD/GATHER/ZOOM HYBRID)
+   =========================================================== */
 
-.lk-video-conference {
+/* Grid Layouts */
+.premium-video-grid {
+  flex: 1;
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  align-content: center;
+  justify-content: center;
+  width: 100%;
   height: 100%;
+  box-sizing: border-box;
 }
 
-.lk-grid-layout {
-  gap: 1rem !important;
-  padding: 1rem !important;
+.layout-full {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
 }
 
-.lk-participant-tile {
-  border-radius: 16px !important;
-  overflow: hidden !important;
-  background: #121212 !important;
-  border: 1px solid rgba(255, 255, 255, 0.05) !important;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5) !important;
+.layout-split {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr;
 }
 
-/* Hide default info bar if possible or style it */
-.lk-participant-metadata {
+.layout-grid {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.layout-scale {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+/* Premium Video Tile */
+.premium-video-tile {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #111214;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  aspect-ratio: 16 / 9;
+  border: 2px solid transparent;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  resize: both;
+}
+
+.tile-expanded {
   position: absolute !important;
-  bottom: 15px !important;
-  left: 15px !important;
-  background: rgba(0, 0, 0, 0.6) !important;
-  backdrop-filter: blur(4px) !important;
-  padding: 4px 12px !important;
-  border-radius: 20px !important;
-  font-family: 'Inter', sans-serif !important;
+  z-index: 100;
+  inset: 16px;
+  width: auto !important;
+  height: auto !important;
+  aspect-ratio: auto !important;
+  box-shadow: 0 0 50px rgba(0,0,0,0.8);
+}
+
+.premium-video-tile.active-speaker {
+  border-color: #5865F2; /* Discord Blurple */
+  box-shadow: 0 0 15px rgba(88, 101, 242, 0.6), 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.screen-tile {
+  grid-column: 1 / -1;
+  aspect-ratio: 16 / 9;
+}
+
+.premium-video-el {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Tile Overlays */
+.premium-tile-overlay {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+}
+
+.identity-tag {
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  padding: 6px 12px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Quick Actions (Hover) */
+.quick-actions {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  padding: 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.quick-btn {
+  background: transparent;
+  border: none;
+  color: #dbdee1;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.quick-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+}
+
+/* Avatar Tray (Cam Off) */
+.premium-avatar-tray {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px 24px 0;
+  flex-wrap: wrap;
+  min-height: 48px;
+}
+
+.avatar-bubble {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #2b2d31;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1.2rem;
+  color: white;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+  border: 2px solid transparent;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.avatar-bubble.active-speaker-ring {
+  border-color: #5865F2;
+  box-shadow: 0 0 15px rgba(88, 101, 242, 0.6);
+}
+
+.avatar-muted-indicator {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  background: #f23f43;
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid #000;
+}
+
+/* Discord Style Control Bar */
+.discord-control-bar {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 12px;
+  z-index: 20;
+}
+
+.discord-control-group {
+  display: flex;
+  background: #2b2d31;
+  border-radius: 12px;
+  padding: 6px;
+  gap: 4px;
+  align-items: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.discord-btn {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: #dbdee1;
+  font-size: 1.35rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  outline: none;
+}
+
+.discord-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+/* Off State (Discord Red) */
+.discord-btn-off {
+  background: white !important;
+  color: #f23f43 !important;
+}
+
+.discord-btn-off:hover {
+  background: #e3e5e8 !important;
+}
+
+/* Active State (Discord Green) */
+.discord-btn-active {
+  background: #23a55a !important;
   color: white !important;
 }
 
-.lk-participant-name {
-  font-size: 0.85rem !important;
-  font-weight: 500 !important;
-  color: white !important;
+.discord-btn-active:hover {
+  background: #1a8f4c !important;
 }
 
-/* Control Bar - Glassmorphic Floating Pill */
-.lk-control-bar {
-  background: rgba(22, 27, 34, 0.8) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  border-radius: 30px !important;
-  bottom: 20px !important;
-  padding: 0.5rem 1rem !important;
-  gap: 1rem !important;
-  backdrop-filter: blur(10px) !important;
-  margin-bottom: 20px !important;
+/* Leave Call Button (Discord Pill) */
+.discord-btn-leave {
+  width: 60px;
+  height: 50px;
+  border-radius: 25px;
+  background: #f23f43 !important;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: white;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
-.lk-button {
-  background: transparent !important;
-  border: none !important;
+.discord-btn-leave:hover {
+  background: #da373c !important;
 }
 
-.lk-button-group {
-  background: transparent !important;
+/* Spinner */
+.ms-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #58a6ff;
+  border-radius: 50%;
+  animation: ms-spin 0.8s linear infinite;
 }
 
-/* Hide connection quality indicators for cleaner look */
-.lk-connection-quality {
-  display: none !important;
+@keyframes ms-spin {
+  to { transform: rotate(360deg); }
 }
+
+/* Determine video grid behavior inside the tile */
 
 /* ===========================================================
    PHASE 4: WAR ROOM TILING LAYOUT
@@ -869,12 +1075,7 @@ select:focus {
   flex-direction: column;
   background: #000;
   overflow: hidden;
-}
-
-/* Determine video grid behavior inside the tile */
-.tiled-main .lk-video-conference {
-  width: 100%;
-  height: 100%;
+  position: relative;
 }
 
 /* Overlaid Timer needs to stay on top but relative to this cell */
