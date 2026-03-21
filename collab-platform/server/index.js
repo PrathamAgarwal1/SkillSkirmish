@@ -44,6 +44,11 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
+// Basic health check endpoint
+app.get('/', (req, res) => {
+    res.status(200).send('SkillSkirmish API is online and running.');
+});
+
 const mongoURI = process.env.MONGO_URI;
 if (!mongoURI) {
     console.error('CRITICAL WARNING: MONGO_URI environment variable is not set. MongoDB will not connect.');
