@@ -141,7 +141,7 @@ router.get('/callback', async (req, res) => {
 // Helper: Get frontend URL from env or use default
 // ============================================================
 function getFrontendUrl() {
-    return process.env.FRONTEND_URL || 'http://localhost:5173';
+    return process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
 }
 
 module.exports = router;

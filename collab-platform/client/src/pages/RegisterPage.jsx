@@ -19,7 +19,8 @@ const RegisterPage = () => {
 
     // Redirect to backend Google auth route (full page redirect)
     const handleGoogleLogin = () => {
-        const backendUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:5000';
+        const rawUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:5000';
+        const backendUrl = rawUrl.replace(/\/+$/, '');
         window.location.href = `${backendUrl}/api/auth/google/login`;
     };
 
