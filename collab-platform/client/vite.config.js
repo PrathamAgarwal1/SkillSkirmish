@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
   plugins: [react()],
-  base: mode === 'production' ? '/SkillSkirmish/' : '/',
+  base: '/', // Changed for Vercel deployment (from '/SkillSkirmish/')
   // --- ADD THIS SECTION ---
   // This tells Vite to replace any occurrence of 'global' with 'globalThis',
   // which is a standard variable available in both Node and browsers.
