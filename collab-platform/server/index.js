@@ -44,9 +44,14 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-mongoose.connect(process.env.MONGO_URI)
-    .then(() => console.log('MongoDB Connected...'))
-    .catch(err => console.error('MongoDB Connection Error:', err.message));
+const mongoURI = process.env.MONGO_URI;
+if (!mongoURI) {
+    console.error('CRITICAL WARNING: MONGO_URI environment variable is not set. MongoDB will not connect.');
+} else {
+    mongoose.connect(mongoURI)
+        .then(() => console.log('MongoDB Connected...'))
+        .catch(err => console.error('MongoDB Connection Error:', err.message));
+}
 
 // Socket.io Setup
 const io = new Server(server, {
@@ -346,5 +351,5 @@ const PORT = process.env.PORT || 5000;
     } catch (err) {
         console.error('[mediasoup] Failed to create worker:', err);
     }
-    server.listen(PORT, () => console.log(`Server started on port ${PORT}`));
+    server.listen(PORT, '0.0.0.0', () => console.log(`Server started on port ${PORT}`));
 })();
