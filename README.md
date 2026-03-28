@@ -1,2 +1,2 @@
 # SkillSkirmish
-https://prathamagarwal1.github.io/SkillSkirmish/
+https://skill-skirmish.vercel.app/
