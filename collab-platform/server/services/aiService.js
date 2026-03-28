@@ -9,6 +9,16 @@ const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GE
 const hf = process.env.HF_API_KEY ? new HfInference(process.env.HF_API_KEY) : null;
 
 /* ---------------------------------------------------------
+   MODEL CONSTANTS — Specialized for each task
+--------------------------------------------------------- */
+const MODELS = {
+    AUTOCOMPLETE: 'llama-3.1-8b-instant',           // 14.4K RPD, fast
+    CHAT: 'meta-llama/llama-4-scout-17b-16e-instruct', // 500K TPD, smart
+    EVALUATION: 'meta-llama/llama-4-scout-17b-16e-instruct',
+    GENERATION: 'meta-llama/llama-4-scout-17b-16e-instruct',
+};
+
+/* ---------------------------------------------------------
    SIMPLE IN-MEMORY CACHE (for autocomplete)
 --------------------------------------------------------- */
 const cache = new Map();
@@ -34,13 +44,99 @@ function setCache(key, value) {
 }
 
 /* ---------------------------------------------------------
-   CORE AI CALL — Groq → Gemini → HuggingFace fallback
+   TOKEN USAGE TRACKER — Cumulative analytics
+--------------------------------------------------------- */
+const usageTracker = {
+    totalCalls: 0,
+    totalPromptTokens: 0,
+    totalCompletionTokens: 0,
+    totalTokens: 0,
+    byModel: {},    // { modelName: { calls, prompt, completion, total } }
+    byTask: {},     // { taskLabel: { calls, prompt, completion, total } }
+    byProvider: {}, // { provider: { calls, prompt, completion, total } }
+    history: [],    // Last 100 calls for detailed analysis
+    startedAt: new Date().toISOString()
+};
+
+function _trackBucket(bucket, key, promptTok, completionTok, totalTok) {
+    if (!bucket[key]) bucket[key] = { calls: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    bucket[key].calls++;
+    bucket[key].promptTokens += promptTok;
+    bucket[key].completionTokens += completionTok;
+    bucket[key].totalTokens += totalTok;
+}
+
+function logTokenUsage(provider, model, usage, taskLabel = 'General') {
+    const prompt = usage?.prompt_tokens ?? usage?.promptTokenCount ?? 0;
+    const completion = usage?.completion_tokens ?? usage?.candidatesTokenCount ?? 0;
+    const total = usage?.total_tokens ?? (prompt + completion);
+
+    // Accumulate stats
+    usageTracker.totalCalls++;
+    usageTracker.totalPromptTokens += prompt;
+    usageTracker.totalCompletionTokens += completion;
+    usageTracker.totalTokens += total;
+
+    _trackBucket(usageTracker.byModel, model, prompt, completion, total);
+    _trackBucket(usageTracker.byTask, taskLabel, prompt, completion, total);
+    _trackBucket(usageTracker.byProvider, provider, prompt, completion, total);
+
+    // Keep last 100 calls
+    usageTracker.history.push({
+        timestamp: new Date().toISOString(),
+        provider,
+        model,
+        task: taskLabel,
+        promptTokens: prompt,
+        completionTokens: completion,
+        totalTokens: total
+    });
+    if (usageTracker.history.length > 100) usageTracker.history.shift();
+
+    // Console log
+    console.log(
+        `\n📊 ─── TOKEN USAGE [${taskLabel}] ───\n` +
+        `   Provider : ${provider}\n` +
+        `   Model    : ${model}\n` +
+        `   Prompt   : ${prompt} tokens\n` +
+        `   Response : ${completion} tokens\n` +
+        `   Total    : ${total} tokens\n` +
+        `   ── Session Totals ──\n` +
+        `   Calls    : ${usageTracker.totalCalls}\n` +
+        `   Tokens   : ${usageTracker.totalTokens}\n` +
+        `───────────────────────────────────`
+    );
+}
+
+function getUsageStats() {
+    return {
+        ...usageTracker,
+        uptime: `Since ${usageTracker.startedAt}`
+    };
+}
+
+function resetUsageStats() {
+    usageTracker.totalCalls = 0;
+    usageTracker.totalPromptTokens = 0;
+    usageTracker.totalCompletionTokens = 0;
+    usageTracker.totalTokens = 0;
+    usageTracker.byModel = {};
+    usageTracker.byTask = {};
+    usageTracker.byProvider = {};
+    usageTracker.history = [];
+    usageTracker.startedAt = new Date().toISOString();
+}
+
+/* ---------------------------------------------------------
+   CORE AI CALL — Groq → Gemini fallback + token tracking
 --------------------------------------------------------- */
 async function callAI(messages, options = {}) {
     const {
         temperature = 0.7,
         maxTokens = 2048,
-        jsonMode = false
+        jsonMode = false,
+        model = MODELS.CHAT,
+        taskLabel = 'General'
     } = options;
 
     let lastError = null;
@@ -48,56 +144,73 @@ async function callAI(messages, options = {}) {
     // --- 1. GROQ (fastest) ---
     if (groq) {
         try {
-            console.log("🤖 AI Chat: Attempting Groq...");
+            console.log(`🤖 [${taskLabel}] Attempting Groq (${model})...`);
             const params = {
                 messages,
-                model: 'llama-3.3-70b-versatile',
+                model,
                 temperature,
                 max_tokens: maxTokens
             };
             if (jsonMode) params.response_format = { type: "json_object" };
 
             const completion = await groq.chat.completions.create(params);
+
+            // Log token usage
+            logTokenUsage('Groq', model, completion.usage, taskLabel);
+
             return completion.choices[0].message.content;
         } catch (err) {
-            console.error("⚠️ Groq Failed:", err.message.substring(0, 80));
+            const isRateLimit = err.status === 429 || err.message?.includes('rate_limit');
+            console.error(`⚠️ Groq Failed (${isRateLimit ? 'RATE LIMITED' : 'ERROR'}):`, err.message?.substring(0, 100));
             lastError = err;
+            // Fall through to Gemini
         }
     }
 
-    // --- 2. GEMINI ---
+    // --- 2. GEMINI (fallback) ---
     if (genAI) {
-        const geminiModels = ["gemini-1.5-flash-latest", "gemini-1.5-pro"];
+        const geminiModels = ["gemini-2.0-flash", "gemini-1.5-flash-latest"];
         for (const modelName of geminiModels) {
             try {
-                console.log(`🤖 AI Chat: Switching to Gemini (${modelName})...`);
-                const model = genAI.getGenerativeModel({ model: modelName });
+                console.log(`🤖 [${taskLabel}] Falling back to Gemini (${modelName})...`);
+                const geminiModel = genAI.getGenerativeModel({ model: modelName });
 
                 // Convert chat format to Gemini format
                 const prompt = messages.map(m => `${m.role}: ${m.content}`).join('\n\n');
-                const result = await model.generateContent(prompt);
+                const result = await geminiModel.generateContent(prompt);
                 const response = await result.response;
+
+                // Log token usage from Gemini
+                const usageMetadata = response.usageMetadata;
+                if (usageMetadata) {
+                    logTokenUsage('Gemini', modelName, usageMetadata, taskLabel);
+                } else {
+                    console.log(`📊 [${taskLabel}] Gemini (${modelName}) — usage metadata unavailable`);
+                }
+
                 return response.text();
             } catch (err) {
-                console.error(`⚠️ Gemini (${modelName}) Failed:`, err.message.substring(0, 80));
+                console.error(`⚠️ Gemini (${modelName}) Failed:`, err.message?.substring(0, 100));
                 lastError = err;
             }
         }
     }
 
-    // --- 3. HUGGING FACE ---
+    // --- 3. HUGGING FACE (last resort) ---
     if (hf) {
         try {
-            console.log("🤖 AI Chat: Switching to HuggingFace...");
+            console.log(`🤖 [${taskLabel}] Last resort: HuggingFace...`);
             const completion = await hf.chatCompletion({
                 model: "microsoft/Phi-3-mini-4k-instruct",
                 messages,
                 max_tokens: maxTokens,
                 temperature
             });
+
+            console.log(`📊 [${taskLabel}] HuggingFace — token usage not available from this provider`);
             return completion.choices[0].message.content;
         } catch (err) {
-            console.error("⚠️ HuggingFace Failed:", err.message.substring(0, 80));
+            console.error("⚠️ HuggingFace Failed:", err.message?.substring(0, 100));
             lastError = err;
         }
     }
@@ -122,7 +235,12 @@ Always format your responses using Markdown. Use fenced code blocks with languag
     };
 
     const messages = [systemPrompt, ...userMessages];
-    return await callAI(messages, { temperature: 0.7, maxTokens: 2048 });
+    return await callAI(messages, {
+        temperature: 0.7,
+        maxTokens: 2048,
+        model: MODELS.CHAT,
+        taskLabel: 'Chat'
+    });
 }
 
 /* ---------------------------------------------------------
@@ -140,7 +258,12 @@ async function explainCode(code, language = 'javascript') {
         }
     ];
 
-    return await callAI(messages, { temperature: 0.3, maxTokens: 2048 });
+    return await callAI(messages, {
+        temperature: 0.3,
+        maxTokens: 2048,
+        model: MODELS.CHAT,
+        taskLabel: 'Code Explanation'
+    });
 }
 
 /* ---------------------------------------------------------
@@ -171,7 +294,12 @@ async function autocompleteCode(context, language = 'javascript', cursorPosition
         }
     ];
 
-    const result = await callAI(messages, { temperature: 0.2, maxTokens: 150 });
+    const result = await callAI(messages, {
+        temperature: 0.2,
+        maxTokens: 150,
+        model: MODELS.AUTOCOMPLETE,
+        taskLabel: 'Autocomplete'
+    });
 
     // Clean up: remove markdown code fences if AI added them
     let completion = result.trim();
@@ -184,10 +312,109 @@ async function autocompleteCode(context, language = 'javascript', cursorPosition
 }
 
 /* ---------------------------------------------------------
+   4) EVALUATE RESPONSE — Correctness analysis
+--------------------------------------------------------- */
+async function evaluateResponse(question, userAnswer, correctAnswer, language = 'javascript') {
+    const messages = [
+        {
+            role: 'system',
+            content: `You are a strict but fair coding exam grader. Evaluate the user's answer against the correct answer. Respond ONLY with valid JSON in this exact format:
+{
+  "isCorrect": true/false,
+  "score": 0-100,
+  "feedback": "Brief explanation of why the answer is correct/incorrect",
+  "correction": "The correct answer if wrong, or null if correct"
+}
+Be lenient with wording differences but strict on technical accuracy.`
+        },
+        {
+            role: 'user',
+            content: `Question: ${question}\n\nUser's Answer: ${userAnswer}\n\nExpected Answer: ${correctAnswer}`
+        }
+    ];
+
+    const result = await callAI(messages, {
+        temperature: 0.1,
+        maxTokens: 300,
+        jsonMode: true,
+        model: MODELS.EVALUATION,
+        taskLabel: 'Answer Evaluation'
+    });
+
+    try {
+        return JSON.parse(result);
+    } catch {
+        return {
+            isCorrect: false,
+            score: 0,
+            feedback: result,
+            correction: correctAnswer
+        };
+    }
+}
+
+/* ---------------------------------------------------------
+   5) GENERATE QUESTION — Dynamic question creation
+--------------------------------------------------------- */
+async function generateQuestion(topic, difficulty = 'medium', type = 'mcq', existingQuestions = []) {
+    const excludeList = existingQuestions.slice(0, 5).map(q => `- ${q}`).join('\n');
+
+    const messages = [
+        {
+            role: 'system',
+            content: `You are a coding quiz master. Generate a single ${type.toUpperCase()} question about ${topic} at ${difficulty} difficulty. Respond ONLY with valid JSON.
+
+For MCQ format:
+{
+  "type": "mcq",
+  "difficulty": "${difficulty}",
+  "question": "...",
+  "options": ["A", "B", "C", "D"],
+  "answer": "correct option text"
+}
+
+For Written format:
+{
+  "type": "written",
+  "difficulty": "${difficulty}",
+  "question": "...",
+  "answer": "concise correct answer"
+}
+
+Make the question unique, practical, and technically accurate. DO NOT repeat any of these existing questions:
+${excludeList || '(none)'}`
+        },
+        {
+            role: 'user',
+            content: `Generate a ${difficulty} ${type} question about ${topic}.`
+        }
+    ];
+
+    const result = await callAI(messages, {
+        temperature: 0.8,
+        maxTokens: 400,
+        jsonMode: true,
+        model: MODELS.GENERATION,
+        taskLabel: 'Question Generation'
+    });
+
+    try {
+        return JSON.parse(result);
+    } catch {
+        return null;
+    }
+}
+
+/* ---------------------------------------------------------
    EXPORTS
 --------------------------------------------------------- */
 module.exports = {
     generateChatResponse,
     explainCode,
-    autocompleteCode
+    autocompleteCode,
+    evaluateResponse,
+    generateQuestion,
+    getUsageStats,
+    resetUsageStats,
+    MODELS
 };

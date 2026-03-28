@@ -349,6 +349,7 @@ app.use('/api/execute', require('./routes/execute'));
 app.use('/api/matchmaking', require('./routes/matchmaking'));
 app.use('/api/assessment', require('./routes/assessment'));
 app.use('/api/ai', require('./routes/ai'));
+app.use('/api/dashboard', require('./routes/dashboard'));
 
 // Initialize mediasoup worker, then start HTTP server
 const PORT = process.env.PORT || 5000;

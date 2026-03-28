@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const rateLimit = require('express-rate-limit');
 const auth = require('../middleware/auth');
-const { generateChatResponse, explainCode, autocompleteCode } = require('../services/aiService');
+const { generateChatResponse, explainCode, autocompleteCode, evaluateResponse, generateQuestion, getUsageStats, resetUsageStats } = require('../services/aiService');
 
 /* ---------------------------------------------------------
    RATE LIMITERS
@@ -106,6 +106,74 @@ router.post('/autocomplete', auth, autocompleteLimiter, async (req, res) => {
         console.error('AI Autocomplete Error:', err.message);
         res.status(500).json({ msg: 'AI service is temporarily unavailable.' });
     }
+});
+
+/* ---------------------------------------------------------
+   POST /api/ai/evaluate
+   Body: { question, userAnswer, correctAnswer, language? }
+--------------------------------------------------------- */
+router.post('/evaluate', auth, chatLimiter, async (req, res) => {
+    try {
+        const { question, userAnswer, correctAnswer, language } = req.body;
+
+        if (!validateString(question, 5000) || !validateString(correctAnswer, 5000)) {
+            return res.status(400).json({ msg: 'question and correctAnswer are required' });
+        }
+        if (!validateString(userAnswer, 10000)) {
+            return res.status(400).json({ msg: 'userAnswer is required' });
+        }
+
+        const lang = validateString(language, 50) ? language : 'general';
+        const evaluation = await evaluateResponse(question, userAnswer, correctAnswer, lang);
+        res.json({ evaluation });
+    } catch (err) {
+        console.error('AI Evaluate Error:', err.message);
+        res.status(500).json({ msg: 'AI service is temporarily unavailable.' });
+    }
+});
+
+/* ---------------------------------------------------------
+   POST /api/ai/generate-question
+   Body: { topic, difficulty?, type?, existingQuestions? }
+--------------------------------------------------------- */
+router.post('/generate-question', auth, chatLimiter, async (req, res) => {
+    try {
+        const { topic, difficulty, type, existingQuestions } = req.body;
+
+        if (!validateString(topic, 200)) {
+            return res.status(400).json({ msg: 'topic is required' });
+        }
+
+        const diff = ['easy', 'medium', 'hard'].includes(difficulty) ? difficulty : 'medium';
+        const qType = ['mcq', 'written'].includes(type) ? type : 'mcq';
+        const existing = Array.isArray(existingQuestions) ? existingQuestions : [];
+
+        const question = await generateQuestion(topic, diff, qType, existing);
+        if (!question) {
+            return res.status(500).json({ msg: 'Failed to generate question. Try again.' });
+        }
+        res.json({ question });
+    } catch (err) {
+        console.error('AI Generate Question Error:', err.message);
+        res.status(500).json({ msg: 'AI service is temporarily unavailable.' });
+    }
+});
+
+/* ---------------------------------------------------------
+   GET /api/ai/usage
+   Returns cumulative token usage stats (by model, task, provider)
+--------------------------------------------------------- */
+router.get('/usage', auth, (req, res) => {
+    res.json(getUsageStats());
+});
+
+/* ---------------------------------------------------------
+   POST /api/ai/usage/reset
+   Resets all usage counters
+--------------------------------------------------------- */
+router.post('/usage/reset', auth, (req, res) => {
+    resetUsageStats();
+    res.json({ msg: 'Usage stats reset successfully' });
 });
 
 module.exports = router;

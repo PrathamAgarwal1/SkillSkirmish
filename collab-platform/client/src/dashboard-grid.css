@@ -522,3 +522,332 @@
 .log-content {
     color: var(--text-main);
 }
+
+/* ============================================
+   NEW: DASHBOARD COMPONENTS
+============================================ */
+
+/* --- STATS BAR --- */
+.stats-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    transition: all 0.25s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.stat-card::before {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background: var(--accent);
+    opacity: 0.6;
+}
+
+.stat-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+.stat-icon {
+    font-size: 1.8rem;
+    opacity: 0.8;
+}
+
+.stat-content {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-bright);
+    font-family: var(--font-mono);
+    line-height: 1.2;
+}
+
+.stat-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.stat-detail {
+    font-size: 0.7rem;
+    color: var(--accent);
+    font-family: var(--font-mono);
+    margin-top: 0.15rem;
+}
+
+/* --- ACTIVITY FEED --- */
+.activity-feed {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.activity-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+}
+
+.activity-item:last-child {
+    border-bottom: none;
+}
+
+.activity-icon {
+    font-size: 1rem;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.activity-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+    flex: 1;
+}
+
+.activity-title {
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.activity-detail {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+}
+
+.activity-rating {
+    font-size: 0.7rem;
+    font-weight: bold;
+}
+
+.activity-rating.positive {
+    color: var(--term-green);
+}
+
+.activity-rating.negative {
+    color: var(--term-red);
+}
+
+.activity-time {
+    color: var(--text-muted);
+    font-size: 0.65rem;
+    white-space: nowrap;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+/* --- SKILL ANALYTICS --- */
+.analytics-summary {
+    display: flex;
+    gap: 1.5rem;
+    padding-bottom: 0.8rem;
+    margin-bottom: 0.8rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    flex-wrap: wrap;
+}
+
+.analytics-stat strong {
+    color: var(--text-bright);
+}
+
+.skill-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.skill-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+}
+
+.skill-bar-label {
+    width: 80px;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.skill-bar-track {
+    flex: 1;
+    height: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.skill-bar-fill {
+    height: 100%;
+    border-radius: 5px;
+    animation: barGrow 0.6s ease-out forwards;
+    transform-origin: left;
+}
+
+@keyframes barGrow {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+}
+
+.skill-bar-value {
+    width: 40px;
+    color: var(--text-bright);
+    font-weight: bold;
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.provisional-badge {
+    background: rgba(255, 185, 0, 0.2);
+    color: var(--term-gold);
+    font-size: 0.6rem;
+    padding: 0 4px;
+    border-radius: 2px;
+    font-weight: bold;
+}
+
+/* --- PLATFORM PULSE --- */
+.platform-pulse .term-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.pulse-live {
+    color: var(--term-green);
+    font-size: 0.7rem;
+    font-family: var(--font-mono);
+    animation: pulse-blink 2s infinite;
+}
+
+@keyframes pulse-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+.pulse-grid {
+    display: flex;
+    gap: 1.5rem;
+    margin-bottom: 0.8rem;
+}
+
+.pulse-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.pulse-value {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--text-bright);
+    font-family: var(--font-mono);
+}
+
+.pulse-label {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+}
+
+.pulse-trending {
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    padding-top: 0.6rem;
+}
+
+.pulse-trending-label {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    display: block;
+    margin-bottom: 0.4rem;
+}
+
+.pulse-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+}
+
+.pulse-tag {
+    background: rgba(88, 166, 255, 0.1);
+    color: var(--term-blue);
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    padding: 2px 6px;
+    border-radius: 3px;
+    border: 1px solid rgba(88, 166, 255, 0.2);
+}
+
+.pulse-tag small {
+    opacity: 0.6;
+}
+
+/* --- SKELETON LOADING --- */
+.stat-card.skeleton {
+    animation: skeleton-shimmer 1.5s infinite;
+}
+
+.skeleton-text {
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 4px;
+    animation: skeleton-shimmer 1.5s infinite;
+}
+
+.skeleton-bar {
+    height: 14px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+    animation: skeleton-shimmer 1.5s infinite;
+}
+
+.activity-item.skeleton {
+    border-bottom: none;
+}
+
+@keyframes skeleton-shimmer {
+    0% { opacity: 0.3; }
+    50% { opacity: 0.6; }
+    100% { opacity: 0.3; }
+}

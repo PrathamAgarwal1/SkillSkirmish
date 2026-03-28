@@ -1,20 +1,25 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useCallback, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import AuthContext from '../context/AuthContext';
 import EditRoomModal from '../components/rooms/EditRoomModal';
 import InviteModal from '../components/rooms/InviteModal';
+import StatsBar from '../components/dashboard/StatsBar';
+import ActivityFeed from '../components/dashboard/ActivityFeed';
+import SkillAnalytics from '../components/dashboard/SkillAnalytics';
+import PlatformPulse from '../components/dashboard/PlatformPulse';
 import { socket } from '../socket';
 
 const DashboardPage = () => {
     const { user } = useContext(AuthContext);
     const navigate = useNavigate();
+
+    // Existing state
     const [myRooms, setMyRooms] = useState([]);
     const [notifications, setNotifications] = useState([]);
     const [roomName, setRoomName] = useState('');
     const [roomDescription, setRoomDescription] = useState('');
     const [loading, setLoading] = useState(true);
-    // Discovery fields
     const [roomSkills, setRoomSkills] = useState('');
     const [roomMinRating, setRoomMinRating] = useState('');
     const [roomCapacity, setRoomCapacity] = useState('');
@@ -31,29 +36,58 @@ const DashboardPage = () => {
     const [selectedMatchUser, setSelectedMatchUser] = useState(null);
     const [inviteRoomOptions, setInviteRoomOptions] = useState([]);
 
-    const fetchRooms = async () => {
+    // NEW: Dashboard data state
+    const [dashStats, setDashStats] = useState(null);
+    const [activity, setActivity] = useState([]);
+    const [analytics, setAnalytics] = useState(null);
+    const [platform, setPlatform] = useState(null);
+    const [statsLoading, setStatsLoading] = useState(true);
+
+    // --- DATA FETCHERS ---
+    const fetchRooms = useCallback(async () => {
         try {
             const res = await axios.get('/api/rooms/myrooms');
             setMyRooms(res.data);
         } catch (err) {
             console.error("Failed to fetch rooms", err);
         }
-    };
+    }, []);
 
-    const fetchNotifications = async () => {
+    const fetchNotifications = useCallback(async () => {
         try {
             const res = await axios.get('/api/notifications');
             setNotifications(res.data);
         } catch (err) {
             console.error("Failed to fetch notifications", err);
         }
-    };
+    }, []);
 
+    const fetchDashboardData = useCallback(async () => {
+        try {
+            setStatsLoading(true);
+            const [statsRes, activityRes, analyticsRes, platformRes] = await Promise.all([
+                axios.get('/api/dashboard/stats'),
+                axios.get('/api/dashboard/activity?limit=15'),
+                axios.get('/api/dashboard/analytics'),
+                axios.get('/api/dashboard/platform')
+            ]);
+            setDashStats(statsRes.data);
+            setActivity(activityRes.data);
+            setAnalytics(analyticsRes.data);
+            setPlatform(platformRes.data);
+        } catch (err) {
+            console.error("Failed to fetch dashboard data:", err);
+        } finally {
+            setStatsLoading(false);
+        }
+    }, []);
+
+    // --- INITIAL LOAD ---
     useEffect(() => {
         if (!user) return;
         const fetchData = async () => {
             setLoading(true);
-            await Promise.all([fetchRooms(), fetchNotifications()]);
+            await Promise.all([fetchRooms(), fetchNotifications(), fetchDashboardData()]);
 
             // Restore search state
             const savedSkill = sessionStorage.getItem('dashboard_matchingSkill');
@@ -65,37 +99,40 @@ const DashboardPage = () => {
         };
         fetchData();
 
+        // Socket listeners
         const handleDashboardUpdate = (data) => {
             if (data.userId === user._id) {
                 fetchRooms();
                 fetchNotifications();
+                fetchDashboardData();
             }
         };
         const handleNewNotification = () => { fetchNotifications(); };
+        const handleStatsUpdate = () => { fetchDashboardData(); };
 
         socket.on('dashboard-update', handleDashboardUpdate);
         socket.on('new-notification', handleNewNotification);
+        socket.on('dashboard-stats-update', handleStatsUpdate);
 
         return () => {
             socket.off('dashboard-update', handleDashboardUpdate);
             socket.off('new-notification', handleNewNotification);
+            socket.off('dashboard-stats-update', handleStatsUpdate);
         };
-    }, [user]);
+    }, [user, fetchRooms, fetchNotifications, fetchDashboardData]);
 
+    // --- HANDLERS (unchanged logic) ---
     const handleCreateRoom = async (e) => {
         e.preventDefault();
         if (!roomName) return alert('Please enter a room name');
         try {
             const payload = { name: roomName, description: roomDescription };
-
-            // Add discovery fields if toggled on
             if (roomDiscoverable) {
                 payload.isDiscoverable = true;
                 if (roomProjectDesc) payload.projectDescription = roomProjectDesc;
                 if (roomSkills.trim()) {
                     payload.requiredSkills = roomSkills.split(',').map(s => {
                         const trimmed = s.trim();
-                        // Support "React:5" syntax for weights
                         const parts = trimmed.split(':');
                         return {
                             name: parts[0].trim(),
@@ -116,6 +153,7 @@ const DashboardPage = () => {
             setRoomDiscoverable(false); setRoomProjectDesc('');
             setShowAdvanced(false);
             fetchRooms();
+            fetchDashboardData(); // Refresh stats
         } catch (err) {
             console.error("Failed to create room:", err);
             alert(`Failed to create room: ${err.response?.data?.msg || 'An error occurred.'}`);
@@ -124,8 +162,11 @@ const DashboardPage = () => {
 
     const handleDelete = async (roomId) => {
         if (window.confirm('Delete this room?')) {
-            try { await axios.delete(`/api/rooms/${roomId}`); fetchRooms(); }
-            catch (err) { alert('Failed to delete room.'); }
+            try {
+                await axios.delete(`/api/rooms/${roomId}`);
+                fetchRooms();
+                fetchDashboardData();
+            } catch (err) { alert('Failed to delete room.'); }
         }
     };
 
@@ -148,11 +189,8 @@ const DashboardPage = () => {
             });
             const matches = res.data.matches || [];
             setMatchResults(matches);
-
-            // Persist state
             sessionStorage.setItem('dashboard_matchingSkill', matchingSkill);
             sessionStorage.setItem('dashboard_matchResults', JSON.stringify(matches));
-
             if (matches.length === 0) {
                 alert('No matching developers found for this skill.');
             }
@@ -163,27 +201,22 @@ const DashboardPage = () => {
         }
     };
 
-    const handleInviteToRoom = (matchUser) => {
+    const handleInviteToRoom = useCallback((matchUser) => {
         setSelectedMatchUser(matchUser);
         setInviteRoomOptions(myRooms);
-    };
+    }, [myRooms]);
 
     const handleSendRoomInvite = async (roomId, message) => {
-        if (!selectedMatchUser) {
-            alert('No user selected');
-            return;
-        }
+        if (!selectedMatchUser) { alert('No user selected'); return; }
         try {
             await axios.post(`/api/rooms/${roomId}/send-invite`, {
-                userId: selectedMatchUser.userId, // Note: response has userId string, not object id
+                userId: selectedMatchUser.userId,
                 message
             });
             alert('Invite sent!');
             setSelectedMatchUser(null);
             setInviteRoomOptions([]);
-        } catch (err) {
-            alert('Failed to send invite');
-        }
+        } catch (err) { alert('Failed to send invite'); }
     };
 
     const handleRequestJoin = async (roomId) => {
@@ -197,37 +230,19 @@ const DashboardPage = () => {
         }
     };
 
-    // --- FIX: More Robust Accept Invite Logic ---
     const handleAcceptInvite = async (roomId) => {
-        if (!roomId) {
-            console.error("Cannot join room: Room ID is missing from invite.");
-            return;
-        }
-
+        if (!roomId) { console.error("Cannot join room: Room ID is missing from invite."); return; }
         try {
-            console.log(`Attempting to join room: ${roomId}`);
-
-            // 1. Call Backend to add user to member list
-            // We await this to ensure the user is a member BEFORE navigating
             const response = await axios.post(`/api/rooms/${roomId}/accept-invite`);
-
-            console.log("Join response:", response.data);
-
             if (response.data.msg === 'Joined successfully' || response.data.msg === 'Already a member') {
-                // 2. Navigate to the room immediately
-                // Using replace: false to allow going back
                 navigate(`/rooms/${roomId}`);
             } else {
                 alert(`Could not join room: ${response.data.msg}`);
             }
-
-            // 3. Refresh room list in background (don't await this to block nav)
             fetchRooms();
-
         } catch (err) {
             console.error("Failed to join room:", err);
-            const errorMsg = err.response?.data?.msg || "Error joining room. It may have been deleted.";
-            alert(errorMsg);
+            alert(err.response?.data?.msg || "Error joining room. It may have been deleted.");
         }
     };
 
@@ -235,7 +250,7 @@ const DashboardPage = () => {
         try {
             await axios.post(`/api/rooms/${roomID}/approve-join`, { userId, notificationId });
             alert('User approved!');
-            fetchNotifications(); // Refresh list to remove the request
+            fetchNotifications();
         } catch (err) {
             console.error("Failed to approve:", err);
             alert("Failed to approve request.");
@@ -248,8 +263,6 @@ const DashboardPage = () => {
         <>
             {editingRoom && <EditRoomModal room={editingRoom} onClose={() => setEditingRoom(null)} onRoomUpdated={() => { setEditingRoom(null); fetchRooms(); }} />}
 
-            {editingRoom && <EditRoomModal room={editingRoom} onClose={() => setEditingRoom(null)} onRoomUpdated={() => { setEditingRoom(null); fetchRooms(); }} />}
-
             <div className="dashboard-container">
                 <header className="dashboard-header">
                     <h2>~/dashboard</h2>
@@ -258,12 +271,18 @@ const DashboardPage = () => {
                     </div>
                 </header>
 
+                {/* NEW: Stats Bar */}
+                <StatsBar stats={dashStats} loading={statsLoading} />
+
                 <div className="dashboard-grid">
-                    {/* LEFT COL: Notifications & Actions */}
+                    {/* LEFT COL: Activity, Notifications, Matchmaking */}
                     <div className="dashboard-sidebar">
 
-                        {/* 1. Notifications */}
-                        <div className="term-card">
+                        {/* Activity Feed (NEW) */}
+                        <ActivityFeed activities={activity} loading={statsLoading} />
+
+                        {/* Notifications */}
+                        <div className="term-card" style={{ marginTop: '1.5rem' }}>
                             <div className="term-header">
                                 <div className="window-dots"><div className="dot dot-red"></div><div className="dot dot-yellow"></div><div className="dot dot-green"></div></div>
                                 <span>notifications.log</span>
@@ -291,7 +310,7 @@ const DashboardPage = () => {
                             </div>
                         </div>
 
-                        {/* 2. Quick Match */}
+                        {/* Quick Match */}
                         <div className="term-card" style={{ marginTop: '1.5rem' }}>
                             <div className="term-header">
                                 <span>quick_match.exe</span>
@@ -322,21 +341,14 @@ const DashboardPage = () => {
                                                             <strong><Link to={`/profile/${match.userId}`} className="text-white hover:underline">{match.username || 'Unknown User'}</Link></strong>
                                                             <br />
                                                             {skillNames ? (
-                                                                <span style={{ fontSize: '0.85em', color: '#999' }}>
-                                                                    {skillNames}
-                                                                </span>
+                                                                <span style={{ fontSize: '0.85em', color: '#999' }}>{skillNames}</span>
                                                             ) : (
                                                                 <span style={{ fontSize: '0.85em', color: '#999' }}>No skills listed</span>
                                                             )}
                                                         </span>
                                                         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                                                             <span className="status-tag">[SCORE: {match.matchScore}]</span>
-                                                            <button
-                                                                className="btn-term-sm"
-                                                                onClick={() => handleInviteToRoom(match)}
-                                                            >
-                                                                INVITE
-                                                            </button>
+                                                            <button className="btn-term-sm" onClick={() => handleInviteToRoom(match)}>INVITE</button>
                                                         </div>
                                                     </div>
                                                 </li>
@@ -350,7 +362,7 @@ const DashboardPage = () => {
                             </div>
                         </div>
 
-                        {/* 3. Join Room */}
+                        {/* Join Room */}
                         <div className="term-card" style={{ marginTop: '1.5rem' }}>
                             <div className="term-header">
                                 <span>connect_remote.sh</span>
@@ -373,9 +385,14 @@ const DashboardPage = () => {
                                 </ul>
                             </div>
                         </div>
+
+                        {/* Platform Pulse (NEW) */}
+                        <div style={{ marginTop: '1.5rem' }}>
+                            <PlatformPulse platform={platform} loading={statsLoading} />
+                        </div>
                     </div>
 
-                    {/* RIGHT COL: Main Room Management */}
+                    {/* RIGHT COL: Main Room Management + Analytics */}
                     <div className="dashboard-main">
 
                         {/* Create Room */}
@@ -469,6 +486,11 @@ const DashboardPage = () => {
                                     <button type="submit" className="btn-term-primary">EXECUTE CREATE</button>
                                 </form>
                             </div>
+                        </div>
+
+                        {/* Skill Analytics (NEW) */}
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <SkillAnalytics analytics={analytics} loading={statsLoading} />
                         </div>
 
                         {/* My Rooms List */}
