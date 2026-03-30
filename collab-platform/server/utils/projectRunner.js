@@ -1,18 +1,232 @@
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const net = require('net');
 const Project = require('../models/Project');
+const File = require('../models/File');
+const { syncAllFilesToDisk, installDependencies } = require('./templateManager');
+const { analyzeProject } = require('../services/aiService');
 
 // Store running processes
 const runningProcesses = new Map();
 
-/**
- * Run a project based on its type
- * Returns: { success: boolean, previewUrl: string, processId: string, message: string }
- */
+/* ---------------------------------------------------------
+   PORT UTILITIES — find an available port automatically
+--------------------------------------------------------- */
+const isPortAvailable = (port) => {
+    return new Promise((resolve) => {
+        const server = net.createServer();
+        server.once('error', () => resolve(false));
+        server.once('listening', () => {
+            server.close();
+            resolve(true);
+        });
+        server.listen(port, '127.0.0.1');
+    });
+};
+
+const findAvailablePort = async (startPort = 3001) => {
+    // Ports to avoid: 5000 (SkillSkirmish server), 5173 (SkillSkirmish client)
+    const blockedPorts = [5000, 5173];
+    let port = startPort;
+    const maxPort = startPort + 100;
+
+    while (port < maxPort) {
+        if (!blockedPorts.includes(port) && await isPortAvailable(port)) {
+            return port;
+        }
+        port++;
+    }
+    return startPort; // fallback
+};
+
+/* ---------------------------------------------------------
+   ENSURE PROJECT READY — sync files + install deps
+--------------------------------------------------------- */
+const ensureProjectReady = async (projectId, projectPath, io, roomId) => {
+    const emitToRoom = (message, type = 'info') => {
+        if (io && roomId) {
+            io.to(roomId).emit('project-console', { projectId, message, type });
+        }
+    };
+
+    emitToRoom('📂 Syncing project files to disk...', 'info');
+    await syncAllFilesToDisk(projectId);
+    emitToRoom('✅ Files synced', 'success');
+
+    if (!fs.existsSync(projectPath)) return;
+
+    // Helper to recursively find all package.jsons (ignore node_modules/.git)
+    const findPackageJsons = (dir, pkgList) => {
+        try {
+            const items = fs.readdirSync(dir, { withFileTypes: true });
+            for (const item of items) {
+                if (item.name === 'node_modules' || item.name.startsWith('.')) continue;
+                const fullPath = path.join(dir, item.name);
+                if (item.isDirectory()) {
+                    findPackageJsons(fullPath, pkgList);
+                } else if (item.name === 'package.json') {
+                    pkgList.push(fullPath);
+                }
+            }
+        } catch (err) {
+            console.error(`Error reading directory ${dir}:`, err);
+        }
+    };
+
+    const packageJsons = [];
+    findPackageJsons(projectPath, packageJsons);
+
+    if (packageJsons.length === 0) return;
+
+    // Install dependencies in every directory that has a package.json
+    for (const pkgJsonPath of packageJsons) {
+        const installDir = path.dirname(pkgJsonPath);
+        const nodeModulesPath = path.join(installDir, 'node_modules');
+        
+        let relativeDir = path.relative(projectPath, installDir);
+        if (!relativeDir) relativeDir = 'root';
+
+        if (!fs.existsSync(nodeModulesPath)) {
+            emitToRoom(`📦 Installing dependencies in /${relativeDir}...`, 'info');
+            const result = await installDependencies(installDir);
+            if (result.success) {
+                emitToRoom(`✅ Dependencies installed successfully in /${relativeDir}`, 'success');
+            } else {
+                emitToRoom(`⚠️ Dependency install issue in /${relativeDir}: ${result.message}`, 'warning');
+            }
+        }
+    }
+};
+
+/* ---------------------------------------------------------
+   LOCAL PROJECT ANALYSIS — deterministic fallback when AI fails
+   Parses package.json scripts + file structure directly
+--------------------------------------------------------- */
+const analyzeProjectLocally = (fileList, packageJsonContent, projectPath) => {
+    const filePaths = fileList.map(f => (typeof f === 'string' ? f : f.path) || '');
+    const hasFile = (name) => filePaths.some(p => p === name || p.endsWith('/' + name));
+    const hasExt = (ext) => filePaths.some(p => p.endsWith(ext));
+
+    let pkgJson = null;
+    try {
+        if (packageJsonContent) pkgJson = JSON.parse(packageJsonContent);
+    } catch (e) { /* ignore */ }
+
+    const scripts = pkgJson?.scripts || {};
+    const deps = { ...(pkgJson?.dependencies || {}), ...(pkgJson?.devDependencies || {}) };
+
+    // ── Vite project ──
+    if (deps['vite'] || deps['@vitejs/plugin-react'] || scripts.dev?.includes('vite')) {
+        return {
+            installCmd: 'npm install',
+            runCmd: `npx vite --port PORT --host`,
+            defaultPort: 3001,
+            projectType: 'vite',
+            needsInstall: true,
+            entryFile: 'index.html',
+            notes: 'Vite dev server detected'
+        };
+    }
+
+    // ── Next.js ──
+    if (deps['next'] || scripts.dev?.includes('next')) {
+        return {
+            installCmd: 'npm install',
+            runCmd: `npx next dev -p PORT`,
+            defaultPort: 3001,
+            projectType: 'nextjs',
+            needsInstall: true,
+            entryFile: 'pages/index.js',
+            notes: 'Next.js project detected'
+        };
+    }
+
+    // ── Create React App ──
+    if (deps['react-scripts']) {
+        return {
+            installCmd: 'npm install',
+            runCmd: `npx react-scripts start`,
+            defaultPort: 3001,
+            projectType: 'react-cra',
+            needsInstall: true,
+            entryFile: 'src/index.js',
+            notes: 'Create React App detected'
+        };
+    }
+
+    // ── Express / Node server ──
+    if (deps['express'] || deps['fastify'] || deps['koa']) {
+        const entryFile = pkgJson?.main ||
+            (scripts.start?.match(/node\s+(\S+)/)?.[1]) ||
+            (hasFile('server.js') ? 'server.js' :
+             hasFile('app.js') ? 'app.js' : 'index.js');
+        const runCmd = scripts.dev ? 'npm run dev' :
+                       scripts.start ? 'npm start' : `node ${entryFile}`;
+        return {
+            installCmd: 'npm install',
+            runCmd,
+            defaultPort: 4000,
+            projectType: 'express',
+            needsInstall: true,
+            entryFile,
+            notes: `Express/Node server → ${runCmd}`
+        };
+    }
+
+    // ── Generic Node.js with package.json ──
+    if (pkgJson) {
+        const entryFile = pkgJson.main ||
+            (scripts.start?.match(/node\s+(\S+)/)?.[1]) || 'index.js';
+        const runCmd = scripts.dev ? 'npm run dev' :
+                       scripts.start ? 'npm start' : `node ${entryFile}`;
+        return {
+            installCmd: Object.keys(deps).length > 0 ? 'npm install' : '',
+            runCmd,
+            defaultPort: 3001,
+            projectType: 'node',
+            needsInstall: Object.keys(deps).length > 0,
+            entryFile,
+            notes: `Node.js project → ${runCmd}`
+        };
+    }
+
+    // ── Python ──
+    if (hasExt('.py')) {
+        const mainPy = hasFile('main.py') ? 'main.py' :
+                       hasFile('app.py') ? 'app.py' :
+                       filePaths.find(p => p.endsWith('.py')) || 'main.py';
+        return {
+            installCmd: hasFile('requirements.txt') ? 'pip install -r requirements.txt' : '',
+            runCmd: `python ${mainPy}`,
+            defaultPort: 8000, projectType: 'python', needsInstall: hasFile('requirements.txt'),
+            entryFile: mainPy, notes: `Python → ${mainPy}`
+        };
+    }
+
+    // ── Static HTML ──
+    if (hasFile('index.html') || hasExt('.html')) {
+        return {
+            installCmd: '', runCmd: `npx http-server . -p PORT -c-1`,
+            defaultPort: 8080, projectType: 'static', needsInstall: false,
+            entryFile: 'index.html', notes: 'Static HTML → http-server'
+        };
+    }
+
+    // ── Last resort ──
+    const firstJs = filePaths.find(p => p.endsWith('.js') && !p.includes('/'));
+    return {
+        installCmd: '', runCmd: firstJs ? `node ${firstJs}` : 'echo No runnable files found',
+        defaultPort: 3001, projectType: 'unknown', needsInstall: false,
+        entryFile: firstJs || '', notes: firstJs ? `Running ${firstJs}` : 'Unknown project type'
+    };
+};
+
+/* ---------------------------------------------------------
+   SMART RUN PROJECT — AI analyzes, then executes
+--------------------------------------------------------- */
 const runProject = async (projectId, projectType, userId, io, roomId) => {
     try {
-        // Check if already running
         if (runningProcesses.has(projectId)) {
             return { success: false, message: 'Project is already running' };
         }
@@ -23,75 +237,142 @@ const runProject = async (projectId, projectType, userId, io, roomId) => {
         }
 
         const projectPath = path.join(process.cwd(), 'projects', projectId.toString());
-
-        // Ensure project directory exists
         if (!fs.existsSync(projectPath)) {
             fs.mkdirSync(projectPath, { recursive: true });
         }
 
-        let command, args, cwd, previewUrl;
+        const emitToRoom = (message, type = 'info') => {
+            if (io && roomId) {
+                io.to(roomId).emit('project-console', { projectId, message, type });
+            }
+            // Also emit to terminal for visibility
+            if (io && roomId) {
+                io.to(roomId).emit('terminal-output', { processId: 'system', message, type });
+            }
+        };
 
-        switch (projectType) {
-            case 'MERN Stack':
-                command = 'npm';
-                args = ['run', 'dev'];
-                cwd = projectPath;
-                previewUrl = 'http://localhost:5173'; // React client via Vite
-                break;
+        // ── STEP 1: Sync files and install deps ──
+        await ensureProjectReady(projectId, projectPath, io, roomId);
 
-            case 'React App':
-                command = 'npm';
-                args = ['run', 'dev'];
-                cwd = projectPath;
-                previewUrl = 'http://localhost:5173'; // Vite default
-                break;
+        // ── STEP 2: Find package.json and determine execution directory ──
+        const dbFiles = await File.find({ project: projectId });
+        const fileList = dbFiles.map(f => ({ path: f.path, isFolder: f.isFolder }));
 
-            case 'Node.js API':
-                command = 'npm';
-                args = ['start'];
-                cwd = projectPath;
-                previewUrl = 'http://localhost:5000';
-                break;
-
-            case 'Vanilla Web':
-                command = 'npx';
-                args = ['http-server', projectPath, '-p', '8080', '-c-1'];
-                previewUrl = 'http://localhost:8080';
-                break;
-
-            case 'Express + EJS':
-                command = 'npm';
-                args = ['start'];
-                cwd = projectPath;
-                previewUrl = 'http://localhost:3000';
-                break;
-
-            default:
-                return { success: false, message: 'Unsupported project type' };
+        let packageJsonContent = '';
+        let executeDir = projectPath;
+        
+        // Find the best package.json (root preferred, then shallowest nested)
+        const pkgFiles = dbFiles.filter(f => f.path.endsWith('package.json'));
+        if (pkgFiles.length > 0) {
+            pkgFiles.sort((a, b) => a.path.split('/').length - b.path.split('/').length);
+            const bestPkg = pkgFiles[0];
+            packageJsonContent = bestPkg.content || '';
+            const dirName = path.dirname(bestPkg.path);
+            if (dirName && dirName !== '.') {
+                executeDir = path.join(projectPath, dirName);
+            }
+        } else {
+            // Check disk just in case
+            const items = fs.readdirSync(projectPath, { withFileTypes: true });
+            const firstFolder = items.find(item => item.isDirectory() && !item.name.startsWith('.'));
+            if (firstFolder) {
+                const nestedPkgJson = path.join(projectPath, firstFolder.name, 'package.json');
+                if (fs.existsSync(nestedPkgJson)) {
+                    packageJsonContent = fs.readFileSync(nestedPkgJson, 'utf-8');
+                    executeDir = path.join(projectPath, firstFolder.name);
+                }
+            } else if (fs.existsSync(path.join(projectPath, 'package.json'))) {
+                packageJsonContent = fs.readFileSync(path.join(projectPath, 'package.json'), 'utf-8');
+            }
         }
 
-        // Spawn the process
-        const childProcess = spawn(command, args, {
-            cwd: cwd || projectPath,
-            stdio: ['pipe', 'pipe', 'pipe']
+        // ── STEP 3: Smart Analysis (AI → local fallback) ──
+        let analysis;
+        try {
+            emitToRoom('🤖 AI is analyzing your project...', 'info');
+            analysis = await analyzeProject(fileList, packageJsonContent);
+            
+            // If AI returned 'unknown' or clearly wrong, override with local
+            if (analysis.projectType === 'unknown' || analysis.notes?.includes('failed')) {
+                emitToRoom('🔄 AI was unsure, using smart local analysis...', 'info');
+                analysis = analyzeProjectLocally(fileList, packageJsonContent, projectPath);
+            }
+        } catch (aiErr) {
+            emitToRoom('🔄 Using smart local analysis...', 'info');
+            analysis = analyzeProjectLocally(fileList, packageJsonContent, projectPath);
+        }
+        
+        emitToRoom(`📋 Detected: ${analysis.projectType} project — ${analysis.notes}`, 'info');
+        
+        // Show any AI-identified errors that need fixing!
+        if (analysis.errorsToFix && analysis.errorsToFix.length > 0) {
+            emitToRoom(`⚠️ AI found potential issues needing fixing:`, 'warning');
+            analysis.errorsToFix.forEach(err => {
+                emitToRoom(`  - ${err}`, 'warning');
+            });
+        }
+        
+        console.log('[Project Analysis]:', JSON.stringify(analysis, null, 2));
+
+        // ── STEP 4: Find available port ──
+        const desiredPort = analysis.defaultPort || 3001;
+        const port = await findAvailablePort(desiredPort);
+        emitToRoom(`🔌 Using port ${port}${port !== desiredPort ? ` (${desiredPort} was busy)` : ''}`, 'info');
+
+        // ── STEP 5: Install dependencies if needed ──
+        if (analysis.needsInstall && analysis.installCmd) {
+            const nodeModulesPath = path.join(executeDir, 'node_modules');
+            if (!fs.existsSync(nodeModulesPath)) {
+                emitToRoom(`📦 Running: ${analysis.installCmd} (in ${path.relative(projectPath, executeDir) || 'root'})`, 'info');
+                const installResult = await installDependencies(executeDir);
+                if (installResult.success) {
+                    emitToRoom('✅ Dependencies ready', 'success');
+                } else {
+                    emitToRoom(`⚠️ Install warning: ${installResult.message}`, 'warning');
+                }
+            }
+        }
+
+        // ── STEP 6: Build the run command with correct port ──
+        let runCmd = analysis.runCmd || 'node index.js';
+        // Replace PORT placeholder with actual port
+        runCmd = runCmd.replace(/PORT/g, port.toString());
+        // Also replace hard-coded ports in the command
+        runCmd = runCmd.replace(/--port \d+/, `--port ${port}`);
+        runCmd = runCmd.replace(/-p \d+/, `-p ${port}`);
+
+        emitToRoom(`🚀 Running: ${runCmd} (in ${path.relative(projectPath, executeDir) || 'root'})`, 'info');
+
+        // ── STEP 7: Spawn the process ──
+        const env = { ...process.env, PORT: port.toString() };
+        const previewUrl = `http://localhost:${port}`;
+
+        const childProcess = spawn(runCmd, {
+            cwd: executeDir,
+            stdio: ['pipe', 'pipe', 'pipe'],
+            shell: true,
+            env
         });
 
         const processId = projectId.toString();
         const consoleOutput = [];
 
         // Capture stdout
+        // Regex to dynamically detect locally running dev servers like Vite
+        const urlRegex = /(http:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):\d+)/i;
+
         childProcess.stdout.on('data', (data) => {
             const message = data.toString().trim();
             if (message) {
                 consoleOutput.push({ message, type: 'info', timestamp: Date.now() });
-
-                // Emit to room via socket
                 if (io && roomId) {
-                    io.to(roomId).emit('project-console', {
-                        projectId,
-                        message,
-                        type: 'info'
-                    });
+                    io.to(roomId).emit('project-console', { projectId, message, type: 'info' });
+                    
+                    // Emitting dynamic preview URL update if matched
+                    const match = message.match(urlRegex);
+                    if (match) {
+                        io.to(roomId).emit('project-preview-url', { projectId, url: match[1] });
+                    }
                 }
             }
         });
@@ -100,15 +381,20 @@ const runProject = async (projectId, projectType, userId, io, roomId) => {
         childProcess.stderr.on('data', (data) => {
             const message = data.toString().trim();
             if (message) {
-                consoleOutput.push({ message, type: 'error', timestamp: Date.now() });
-
-                // Emit to room via socket
+                // Vite/webpack output goes to stderr but isn't actually errors
+                const isActualError = message.toLowerCase().includes('error') && 
+                                     !message.includes('localhost') && 
+                                     !message.includes('ready in');
+                const type = isActualError ? 'error' : 'info';
+                consoleOutput.push({ message, type, timestamp: Date.now() });
                 if (io && roomId) {
-                    io.to(roomId).emit('project-console', {
-                        projectId,
-                        message,
-                        type: 'error'
-                    });
+                    io.to(roomId).emit('project-console', { projectId, message, type });
+                    
+                    // Emitting dynamic preview URL update if matched
+                    const match = message.match(urlRegex);
+                    if (match) {
+                        io.to(roomId).emit('project-preview-url', { projectId, url: match[1] });
+                    }
                 }
             }
         });
@@ -116,56 +402,63 @@ const runProject = async (projectId, projectType, userId, io, roomId) => {
         // Handle process close
         childProcess.on('close', (code) => {
             runningProcesses.delete(processId);
-            const exitMessage = code === 0 ? 'Process completed successfully' : `Process exited with code ${code}`;
-            consoleOutput.push({ message: exitMessage, type: code === 0 ? 'success' : 'error', timestamp: Date.now() });
-
+            const msg = code === 0 ? 'Process completed successfully' : `Process exited with code ${code}`;
+            consoleOutput.push({ message: msg, type: code === 0 ? 'success' : 'error', timestamp: Date.now() });
             if (io && roomId) {
-                io.to(roomId).emit('project-stopped', {
-                    projectId,
-                    exitCode: code
-                });
+                io.to(roomId).emit('project-stopped', { projectId, exitCode: code });
             }
         });
 
-        // Handle errors
         childProcess.on('error', (err) => {
             runningProcesses.delete(processId);
             console.error(`Project execution error: ${err.message}`);
-
             if (io && roomId) {
-                io.to(roomId).emit('project-error', {
-                    projectId,
-                    error: err.message
-                });
+                io.to(roomId).emit('project-error', { projectId, error: err.message });
+                io.to(roomId).emit('project-console', { projectId, message: `❌ Error: ${err.message}`, type: 'error' });
             }
         });
 
         // Store process info
         runningProcesses.set(processId, {
             process: childProcess,
-            projectType,
+            projectType: analysis.projectType,
             userId,
             roomId,
+            port,
+            previewUrl,
             startedAt: Date.now(),
-            consoleOutput
+            consoleOutput,
+            analysis
         });
 
         return {
             success: true,
             previewUrl,
             processId,
-            message: `${projectType} started successfully`
+            port,
+            analysis,
+            message: `${analysis.projectType} project started on port ${port}`
         };
 
     } catch (err) {
         console.error('Run project error:', err);
+        // Emit error to console
+        if (io && roomId) {
+            io.to(roomId).emit('project-console', {
+                projectId,
+                message: `❌ Failed to start project: ${err.message}`,
+                type: 'error'
+            });
+        }
         return { success: false, message: err.message };
     }
 };
 
-/**
- * Stop a running project
- */
+/* ---------------------------------------------------------
+   STOP PROJECT
+--------------------------------------------------------- */
+const kill = require('tree-kill'); // Guarantees orphaned processes actually die!
+
 const stopProject = (projectId) => {
     const processId = projectId.toString();
     const info = runningProcesses.get(processId);
@@ -175,7 +468,12 @@ const stopProject = (projectId) => {
     }
 
     try {
-        info.process.kill('SIGTERM');
+        // Force-kill the parent shell AND every descendant subprocess it spawned (like Vite, nodemon)
+        kill(info.process.pid, 'SIGKILL', (err) => {
+            if (err) {
+                console.error(`Error terminating process tree ${info.process.pid}:`, err);
+            }
+        });
         runningProcesses.delete(processId);
         return { success: true, message: 'Project stopped' };
     } catch (err) {
@@ -183,50 +481,39 @@ const stopProject = (projectId) => {
     }
 };
 
-/**
- * Get console output for a project
- */
+/* ---------------------------------------------------------
+   CONSOLE OUTPUT
+--------------------------------------------------------- */
 const getConsoleOutput = (projectId) => {
     const processId = projectId.toString();
     const info = runningProcesses.get(processId);
-
-    if (!info) {
-        return { logs: [] };
-    }
-
-    return { logs: info.consoleOutput };
+    return { logs: info ? info.consoleOutput : [] };
 };
 
-/**
- * Check if project is running
- */
 const isProjectRunning = (projectId) => {
     return runningProcesses.has(projectId.toString());
 };
 
-/**
- * Run a single file
- */
+/* ---------------------------------------------------------
+   RUN FILE — uses project root as cwd
+--------------------------------------------------------- */
 const runFile = async (projectId, filePath, userId, io, roomId, userSocketMap) => {
     try {
-        const fullPath = path.join(process.cwd(), 'projects', projectId.toString(), filePath);
+        const projectRoot = path.join(process.cwd(), 'projects', projectId.toString());
+        const fullPath = path.join(projectRoot, filePath);
         const fileExt = path.extname(filePath);
         const fileName = path.basename(filePath);
 
         if (!fs.existsSync(fullPath)) {
-            // File not on disk — try to sync from MongoDB
-            const File = require('../models/File');
             const dbFile = await File.findOne({ project: projectId, path: filePath });
             if (!dbFile) {
                 return { success: false, message: 'File not found' };
             }
-            // Write it to disk
             const dir = path.dirname(fullPath);
             if (!fs.existsSync(dir)) {
                 fs.mkdirSync(dir, { recursive: true });
             }
             fs.writeFileSync(fullPath, dbFile.content || '');
-            console.log(`Synced file from DB to disk: ${filePath}`);
         }
 
         let command, args;
@@ -237,20 +524,34 @@ const runFile = async (projectId, filePath, userId, io, roomId, userSocketMap) =
         } else if (fileExt === '.py') {
             command = 'python';
             args = [fullPath];
+        } else if (fileExt === '.html') {
+            // For HTML files, serve them
+            const port = await findAvailablePort(8080);
+            command = 'npx';
+            args = ['http-server', projectRoot, '-p', port.toString(), '-c-1', '-o', filePath];
+            // Return immediately with preview URL
+            const childProcess = spawn(command, args, {
+                cwd: projectRoot, stdio: ['pipe', 'pipe', 'pipe'], shell: true
+            });
+            const processId = `file-${Date.now()}`;
+            runningProcesses.set(processId, {
+                process: childProcess, type: 'file', filePath, userId, roomId,
+                startedAt: Date.now(), consoleOutput: []
+            });
+            return { success: true, processId, previewUrl: `http://localhost:${port}/${filePath}`, message: `Serving ${fileName} on port ${port}` };
         } else {
             return { success: false, message: 'Unsupported file type for direct execution' };
         }
 
-        // Spawn process
         const childProcess = spawn(command, args, {
-            cwd: path.dirname(fullPath),
-            stdio: ['pipe', 'pipe', 'pipe']
+            cwd: projectRoot,
+            stdio: ['pipe', 'pipe', 'pipe'],
+            shell: true
         });
 
-        const processId = `file-${Date.now()}`; // Unique ID for this file run
+        const processId = `file-${Date.now()}`;
         const consoleOutput = [];
 
-        // Helper: emit to room if available, otherwise directly to user's socket
         const emitOutput = (eventName, data) => {
             if (!io) return;
             if (roomId) {
@@ -260,16 +561,14 @@ const runFile = async (projectId, filePath, userId, io, roomId, userSocketMap) =
             }
         };
 
-        // Capture stdout
         childProcess.stdout.on('data', (data) => {
-            const message = data.toString(); // Don't trim to preserve formatting
+            const message = data.toString();
             if (message) {
                 consoleOutput.push({ message, type: 'info', timestamp: Date.now() });
                 emitOutput('terminal-output', { processId, message, type: 'info' });
             }
         });
 
-        // Capture stderr
         childProcess.stderr.on('data', (data) => {
             const message = data.toString();
             if (message) {
@@ -278,7 +577,6 @@ const runFile = async (projectId, filePath, userId, io, roomId, userSocketMap) =
             }
         });
 
-        // Handle process close
         childProcess.on('close', (code) => {
             runningProcesses.delete(processId);
             const exitMessage = `\nProcess exited with code ${code}`;
@@ -287,32 +585,25 @@ const runFile = async (projectId, filePath, userId, io, roomId, userSocketMap) =
         });
 
         runningProcesses.set(processId, {
-            process: childProcess,
-            type: 'file',
-            filePath,
-            userId,
-            roomId,
-            startedAt: Date.now(),
-            consoleOutput
+            process: childProcess, type: 'file', filePath, userId, roomId,
+            startedAt: Date.now(), consoleOutput
         });
 
         return { success: true, processId, message: `Running ${fileName}...` };
-
     } catch (err) {
         console.error('Run file error:', err);
         return { success: false, message: err.message };
     }
 };
 
-/**
- * Write to a running process stdin
- */
+/* ---------------------------------------------------------
+   WRITE TO PROCESS STDIN
+--------------------------------------------------------- */
 const writeToProcess = (processId, input) => {
     const info = runningProcesses.get(processId);
     if (!info || !info.process) {
         return { success: false, message: 'Process not running' };
     }
-
     try {
         info.process.stdin.write(input + '\n');
         return { success: true };
@@ -321,19 +612,16 @@ const writeToProcess = (processId, input) => {
     }
 };
 
-/**
- * Stop any running process by ID
- */
+/* ---------------------------------------------------------
+   STOP PROCESS
+--------------------------------------------------------- */
 const stopProcess = (processId) => {
     const info = runningProcesses.get(processId);
     if (!info) {
         return { success: false, message: 'Process not running' };
     }
-
     try {
-        info.process.kill('SIGTERM'); // Try graceful termination
-        // Force kill after timeout if needed? 
-        // For now let's just send kill signal
+        info.process.kill('SIGTERM');
         runningProcesses.delete(processId);
         return { success: true, message: 'Process stopped' };
     } catch (err) {
@@ -341,12 +629,89 @@ const stopProcess = (processId) => {
     }
 };
 
+/* ---------------------------------------------------------
+   EXECUTE SHELL/GIT COMMAND
+--------------------------------------------------------- */
+const executeCommand = (projectId, command, io, roomId, subDir = '') => {
+    return new Promise((resolve) => {
+        const projectRoot = path.join(process.cwd(), 'projects', projectId.toString());
+        if (!fs.existsSync(projectRoot)) {
+            fs.mkdirSync(projectRoot, { recursive: true });
+        }
+
+        // Calculate the actual execution directory
+        let executeDir = projectRoot;
+        if (subDir) {
+            // Prevent directory traversal attacks outside the project
+            const resolvedPath = path.resolve(projectRoot, subDir);
+            if (resolvedPath.startsWith(projectRoot)) {
+                executeDir = resolvedPath;
+            }
+        }
+        
+        if (!fs.existsSync(executeDir)) {
+             resolve({ success: false, output: `Directory not found: ${subDir}`, exitCode: 1 });
+             return;
+        }
+
+        const childProcess = spawn(command, {
+            cwd: executeDir,
+            stdio: ['pipe', 'pipe', 'pipe'],
+            shell: true
+        });
+
+        let output = '';
+        let errorOutput = '';
+
+        const emitToRoom = (message, type = 'info') => {
+            if (io && roomId) {
+                io.to(roomId).emit('terminal-output', { processId: 'cmd', message, type });
+            }
+        };
+
+        childProcess.stdout.on('data', (data) => {
+            const msg = data.toString();
+            output += msg;
+            emitToRoom(msg, 'info');
+        });
+
+        childProcess.stderr.on('data', (data) => {
+            const msg = data.toString();
+            errorOutput += msg;
+            emitToRoom(msg, 'info');
+        });
+
+        childProcess.on('close', (code) => {
+            resolve({ success: code === 0, output: output + errorOutput, exitCode: code });
+        });
+
+        childProcess.on('error', (err) => {
+            resolve({ success: false, output: err.message, exitCode: 1 });
+        });
+
+        // Don't kill long-running processes! Just release the HTTP request 
+        // after 1.5 seconds so the UI terminal doesn't hang. The process will
+        // continue to stream output to the socket.
+        const timeout = setTimeout(() => {
+            childProcess.unref(); // Detach from parent
+            resolve({ success: true, output: '\n[Process detached to background and continuing to run...]\n', exitCode: 0 });
+        }, 1500);
+
+        // Clear timeout if process finishes quickly before 1.5s
+        childProcess.on('exit', () => {
+            clearTimeout(timeout);
+        });
+    });
+};
+
 module.exports = {
     runProject,
-    stopProject, // Keeps original stopProject (by projectId) logic intact if needed, or we can unify
+    stopProject,
     runFile,
     writeToProcess,
     stopProcess,
     getConsoleOutput,
-    isProjectRunning
+    isProjectRunning,
+    executeCommand,
+    findAvailablePort
 };

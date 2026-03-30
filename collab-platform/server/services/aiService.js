@@ -184,10 +184,98 @@ async function autocompleteCode(context, language = 'javascript', cursorPosition
 }
 
 /* ---------------------------------------------------------
+   4) PROJECT ANALYSIS — Analyze project files to determine run commands
+--------------------------------------------------------- */
+async function analyzeProject(fileList, packageJsonContent) {
+    const fileNames = fileList.map(f => f.path || f).join('\n');
+
+    const messages = [
+        {
+            role: 'system',
+            content: `You are a project analyzer. Given a project's file list and package.json, determine the EXACT commands needed to install dependencies and run the project.
+
+You MUST respond with ONLY a valid JSON object (no markdown, no explanation) with these fields:
+{
+  "installCmd": "the install command, e.g. npm install",
+  "runCmd": "the run command, e.g. npm start or npm run dev or node index.js or npx vite --port PORT or npx http-server . -p PORT",
+  "defaultPort": 3001,
+  "projectType": "react|node|express|vanilla|python|static|unknown",
+  "needsInstall": true,
+  "entryFile": "the main entry file like index.js or app.js or server.js",
+  "notes": "brief note about the project",
+  "errorsToFix": ["list of exact errors or missing files needed to run the project, or empty array if none"]
+}
+
+Rules:
+- For React/Vite projects, use "npx vite --port PORT" as runCmd
+- For Node/Express projects, use "node <entryFile>" as runCmd  
+- For static HTML projects, use "npx http-server . -p PORT -c-1" as runCmd
+- For Python projects, use "python <entryFile>" as runCmd
+- defaultPort should be between 3001-9000 (avoid 5173 and 5000)
+- needsInstall is true if there's a package.json with dependencies
+- If no package.json exists, set installCmd to "" and needsInstall to false
+- ALWAYS respond with valid JSON only, nothing else`
+        },
+        {
+            role: 'user',
+            content: `Analyze this project:\n\nFILE LIST:\n${fileNames}\n\nPACKAGE.JSON:\n${packageJsonContent || '(not found)'}`
+        }
+    ];
+
+    try {
+        const result = await callAI(messages, { temperature: 0.1, maxTokens: 500, jsonMode: true });
+        
+        // Parse JSON response
+        let parsed;
+        try {
+            // Strip markdown code fences if present
+            let cleaned = result.trim();
+            cleaned = cleaned.replace(/^```json?\n?/i, '').replace(/\n?```$/i, '').trim();
+            parsed = JSON.parse(cleaned);
+        } catch (parseErr) {
+            console.error('AI returned non-JSON response:', result.substring(0, 200));
+            // Fallback: try to extract JSON from the response
+            const jsonMatch = result.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                parsed = JSON.parse(jsonMatch[0]);
+            } else {
+                throw new Error('Could not parse AI response as JSON');
+            }
+        }
+
+        return {
+            installCmd: parsed.installCmd || '',
+            runCmd: parsed.runCmd || '',
+            defaultPort: parsed.defaultPort || 3001,
+            projectType: parsed.projectType || 'unknown',
+            needsInstall: parsed.needsInstall !== false,
+            entryFile: parsed.entryFile || '',
+            notes: parsed.notes || '',
+            errorsToFix: Array.isArray(parsed.errorsToFix) ? parsed.errorsToFix : []
+        };
+    } catch (err) {
+        console.error('Project analysis failed:', err.message);
+        // Return a safe fallback
+        return {
+            installCmd: packageJsonContent ? 'npm install' : '',
+            runCmd: 'node index.js',
+            defaultPort: 3001,
+            projectType: 'unknown',
+            needsInstall: !!packageJsonContent,
+            entryFile: 'index.js',
+            notes: 'AI analysis failed, using defaults',
+            errorsToFix: ['AI analysis failed. Please check your files manually.']
+        };
+    }
+}
+
+/* ---------------------------------------------------------
    EXPORTS
 --------------------------------------------------------- */
 module.exports = {
     generateChatResponse,
     explainCode,
-    autocompleteCode
+    autocompleteCode,
+    analyzeProject,
+    callAI
 };

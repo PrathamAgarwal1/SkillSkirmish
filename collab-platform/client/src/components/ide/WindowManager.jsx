@@ -23,13 +23,17 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
     const [terminalLogs, setTerminalLogs] = useState([{ message: 'Terminal ready', type: 'info' }]);
     const [activeFileProcessId, setActiveFileProcessId] = useState(null);
 
-    const [previewUrl, setPreviewUrl] = useState('http://localhost:3000');
+    const [previewUrl, setPreviewUrl] = useState('');
     const [installedPackages, setInstalledPackages] = useState([]);
     const [showPackageModal, setShowPackageModal] = useState(false);
     const [showBrowserWindow, setShowBrowserWindow] = useState(false);
 
     const wsRef = useRef(null);
     const isUnmountingRef = useRef(false);
+
+    // With frame-src http://localhost:* in CSP, the iframe can load directly
+    // from any localhost port. No proxy needed for local dev.
+    const toPreviewUrl = (rawUrl) => rawUrl || '';
 
     const addLog = (message, type = 'info') => {
         const timestamp = new Date().toLocaleTimeString();
@@ -137,12 +141,14 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
             }
         };
 
-        // Listener for File Execution Output - Goes to Terminal
+        // Listener for File Execution Output - Goes to BOTH Terminal AND Console
         const handleTerminalOutput = (data) => {
             if (!data) return;
             const { processId, message, type } = data;
             if (message && message.trim()) {
                 addTerminalLog(message, type || 'info');
+                // Also route to Console panel so console.log appears there
+                addLog(`[Output] ${message.trim()}`, type || 'info');
             }
         };
 
@@ -153,11 +159,21 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
             }
         };
 
+        // Handle dynamic preview URLs (e.g. Vite starts on 5173)
+        const handlePreviewUrl = ({ projectId: pid, url }) => {
+            if (pid === projectId) {
+                setPreviewUrl(toPreviewUrl(url));
+                setShowBrowserWindow(true);
+                addLog(`🌐 Auto-detected Frontend URL: ${url}`, 'success');
+            }
+        };
+
         // Register all listeners
         socket.on('project-console', handleProjectConsole);
         socket.on('project-stopped', handleProjectStopped);
         socket.on('terminal-output', handleTerminalOutput);
         socket.on('file-process-ended', handleFileProcessEnded);
+        socket.on('project-preview-url', handlePreviewUrl);
 
         console.log('[IDE] Socket listeners registered for roomId:', roomId);
 
@@ -166,6 +182,7 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
             socket.off('project-stopped', handleProjectStopped);
             socket.off('terminal-output', handleTerminalOutput);
             socket.off('file-process-ended', handleFileProcessEnded);
+            socket.off('project-preview-url', handlePreviewUrl);
         };
     }, [projectId]);
 
@@ -382,7 +399,8 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
     const handleRunProject = async () => {
         setIsProjectRunning(true);
         setConsoleLogs([]);
-        addLog(`Starting ${projectType}...`, 'info');
+        addLog(`🚀 Starting project...`, 'info');
+        addLog(`🤖 AI is analyzing your project structure...`, 'info');
 
         if (currentFile) {
             await handleSaveFile(fileContent);
@@ -396,16 +414,29 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
             });
 
             if (response.data.success) {
-                addLog(`✓ Project started successfully`, 'success');
-                if (response.data.previewUrl) {
-                    setPreviewUrl(response.data.previewUrl);
+                const { previewUrl: url, port, analysis, message } = response.data;
+                
+                addLog(`✓ ${message}`, 'success');
+                
+                if (analysis) {
+                    addLog(`📋 Type: ${analysis.projectType} | Port: ${port} | Entry: ${analysis.entryFile || 'auto'}`, 'info');
+                    if (analysis.notes) {
+                        addLog(`💡 ${analysis.notes}`, 'info');
+                    }
+                }
+
+                if (url) {
+                    setPreviewUrl(toPreviewUrl(url));
+                    addLog(`🌐 Preview: ${url}`, 'success');
+                    // Auto-open browser preview
+                    setShowBrowserWindow(true);
                 }
             } else {
-                addLog(`Failed to start: ${response.data.message}`, 'error');
+                addLog(`❌ Failed to start: ${response.data.message}`, 'error');
                 setIsProjectRunning(false);
             }
         } catch (err) {
-            addLog(`Error running project: ${err.response?.data?.message || err.message}`, 'error');
+            addLog(`❌ Error running project: ${err.response?.data?.message || err.message}`, 'error');
             setIsProjectRunning(false);
         }
     };
@@ -439,6 +470,7 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
 
         // Clear terminal logs and show running indicator
         setTerminalLogs([{ message: `$ Running ${currentFile.path}...`, type: 'info' }]);
+        addLog(`▶ Running file: ${currentFile.path}`, 'info');
 
         try {
             const response = await axios.post('/api/execute/run-file', {
@@ -478,6 +510,65 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
             });
         } catch (err) {
             addTerminalLog(`Error sending input: ${err.message}`, 'error');
+        }
+    };
+
+    // Execute shell/git commands when no process is running
+    const handleCommandExec = async (command, currentDir = '') => {
+        // Only log the command if it's not a clear command
+        if (command.trim().toLowerCase() === 'clear') {
+            setTerminalLogs([{ message: 'Terminal cleared', type: 'info' }]);
+            return currentDir;
+        }
+
+        addTerminalLog(`$ ${command}`, 'command');
+
+        try {
+            const response = await axios.post('/api/execute/run-command', {
+                projectId,
+                command,
+                roomId,
+                cwd: currentDir
+            });
+
+            if (response.data.output) {
+                addTerminalLog(response.data.output, response.data.success ? 'info' : 'error');
+            }
+            if (!response.data.success) {
+                addTerminalLog(`Command exited with code ${response.data.exitCode || 1}`, 'error');
+            }
+
+            // Return newCwd if provided by server (for `cd` commands)
+            if (response.data.newCwd !== undefined) {
+                return response.data.newCwd;
+            }
+        } catch (err) {
+            const errMsg = err.response?.data?.output || err.message;
+            addTerminalLog(`Error: ${errMsg}`, 'error');
+        }
+    };
+
+    // Upload files/folders to the project
+    const handleUploadFiles = async (fileList) => {
+        addLog(`📤 Uploading ${fileList.length} items...`, 'info');
+
+        try {
+            const response = await axios.post('/api/execute/upload-files-json', {
+                projectId,
+                files: fileList
+            });
+
+            if (response.data.success) {
+                addLog(`✅ ${response.data.message}`, 'success');
+                // Refresh file tree
+                const filesRes = await axios.get(`/api/files/project/${projectId}`);
+                const formattedFiles = formatFilesForTree(filesRes.data);
+                setFiles(formattedFiles);
+            } else {
+                addLog(`❌ Upload failed: ${response.data.message}`, 'error');
+            }
+        } catch (err) {
+            addLog(`❌ Upload error: ${err.response?.data?.message || err.message}`, 'error');
         }
     };
 
@@ -572,6 +663,7 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
                         onCreateFile={handleCreateFile}
                         onDeleteFile={handleDeleteFile}
                         onRenameFile={handleRenameFile}
+                        onUploadFiles={handleUploadFiles}
                     />
                     {/* Package Library Toggle Button */}
                     <button
@@ -626,6 +718,8 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
                             onInput={handleTerminalInput}
                             onClear={handleClearTerminal}
                             isRunning={!!activeFileProcessId}
+                            onCommand={handleCommandExec}
+                            projectId={projectId}
                         />
                     </div>
                 </div>

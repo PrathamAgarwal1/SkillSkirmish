@@ -1,18 +1,43 @@
 import React, { useState, useRef } from 'react';
 
 const BrowserPreviewWindow = ({ previewUrl, onRefresh, isLoading, onClose }) => {
-    const [url, setUrl] = useState(previewUrl || 'http://localhost:3000');
+    const [url, setUrl] = useState(previewUrl || '');
     const [isDragging, setIsDragging] = useState(false);
     const [isResizing, setIsResizing] = useState(false);
     const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
     const [position, setPosition] = useState({ x: 50, y: 50 });
     const [size, setSize] = useState({ width: 700, height: 600 });
+    const [isMaximized, setIsMaximized] = useState(false);
     const iframeRef = useRef(null);
     const windowRef = useRef(null);
     const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
 
+    const toggleMaximize = () => {
+        setIsMaximized(!isMaximized);
+    };
+
     const handleUrlChange = (e) => {
         setUrl(e.target.value);
+    };
+
+    // Convert raw localhost URLs to proxy URLs (must be absolute to go through backend)
+    const toProxyUrl = (inputUrl) => {
+        if (!inputUrl) return '';
+        const serverBase = import.meta.env?.VITE_SERVER_URL || 'http://localhost:5000';
+        try {
+            const parsed = new URL(inputUrl);
+            if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '0.0.0.0') {
+                const port = parsed.port;
+                if (!port) return inputUrl;
+                return `${serverBase}/api/preview/${port}${parsed.pathname || '/'}`;
+            }
+        } catch {
+            // Already a relative/proxy URL — make it absolute
+            if (inputUrl.startsWith('/api/preview/')) {
+                return `${serverBase}${inputUrl}`;
+            }
+        }
+        return inputUrl;
     };
 
     const handleGo = () => {
@@ -28,6 +53,7 @@ const BrowserPreviewWindow = ({ previewUrl, onRefresh, isLoading, onClose }) => 
     };
 
     const handleMouseDown = (e) => {
+        if (isMaximized) return; // Disable dragging when maximized
         setIsDragging(true);
         setDragOffset({ x: e.clientX - position.x, y: e.clientY - position.y });
     };
@@ -65,6 +91,31 @@ const BrowserPreviewWindow = ({ previewUrl, onRefresh, isLoading, onClose }) => 
             height: size.height
         };
     };
+
+    // Update URL when previewUrl prop changes and auto-navigate
+    React.useEffect(() => {
+        if (previewUrl && previewUrl !== url) {
+            setUrl(previewUrl);
+        }
+    }, [previewUrl]);
+
+    // Auto-navigate iframe when URL changes
+    React.useEffect(() => {
+        if (url && iframeRef.current) {
+            iframeRef.current.src = url;
+        }
+    }, [url]);
+
+    // Handle Escape key to exit maximize
+    React.useEffect(() => {
+        const handleEsc = (e) => {
+            if (e.key === 'Escape' && isMaximized) {
+                setIsMaximized(false);
+            }
+        };
+        window.addEventListener('keydown', handleEsc);
+        return () => window.removeEventListener('keydown', handleEsc);
+    }, [isMaximized]);
 
     React.useEffect(() => {
         if (isDragging || isResizing) {
@@ -170,24 +221,27 @@ const BrowserPreviewWindow = ({ previewUrl, onRefresh, isLoading, onClose }) => 
             style={{ 
                 flex: 'none',
                 position: 'fixed',
-                transform: `translate(${position.x}px, ${position.y}px)`,
-                cursor: isDragging ? 'grabbing' : isResizing ? 'se-resize' : 'grab',
+                top: isMaximized ? 0 : 'auto',
+                left: isMaximized ? 0 : 'auto',
+                transform: isMaximized ? 'none' : `translate(${position.x}px, ${position.y}px)`,
+                cursor: (isDragging && !isMaximized) ? 'grabbing' : (isResizing && !isMaximized) ? 'se-resize' : 'default',
                 transition: (isDragging || isResizing) ? 'none' : 'all 0.2s ease',
-                width: `${size.width}px`,
-                height: `${size.height}px`,
+                width: isMaximized ? '100vw' : `${size.width}px`,
+                height: isMaximized ? '100vh' : `${size.height}px`,
                 zIndex: 9999,
                 display: 'flex',
                 flexDirection: 'column',
                 overflow: 'hidden',
-                boxShadow: '0 10px 40px rgba(0, 0, 0, 0.6)',
-                borderRadius: '4px'
+                boxShadow: isMaximized ? 'none' : '0 10px 40px rgba(0, 0, 0, 0.6)',
+                borderRadius: isMaximized ? '0' : '4px'
             }}
         >
             <div 
                 className="window-header"
                 onMouseDown={handleMouseDown}
+                onDoubleClick={toggleMaximize}
                 style={{ 
-                    cursor: isDragging ? 'grabbing' : 'grab',
+                    cursor: isMaximized ? 'default' : (isDragging ? 'grabbing' : 'grab'),
                     userSelect: 'none',
                     display: 'flex',
                     justifyContent: 'space-between',
@@ -207,6 +261,20 @@ const BrowserPreviewWindow = ({ previewUrl, onRefresh, isLoading, onClose }) => 
                         disabled={isLoading}
                     >
                         🔄
+                    </button>
+                    <button 
+                        className="window-btn" 
+                        onClick={() => window.open(url, '_blank')} 
+                        title="Open in New Tab"
+                    >
+                        ↗️
+                    </button>
+                    <button 
+                        className="window-btn" 
+                        onClick={toggleMaximize} 
+                        title={isMaximized ? "Restore" : "Maximize"}
+                    >
+                        {isMaximized ? "🗗" : "🗖"}
                     </button>
                     <button 
                         className="window-btn"
@@ -247,27 +315,28 @@ const BrowserPreviewWindow = ({ previewUrl, onRefresh, isLoading, onClose }) => 
                     src={url}
                     title="Preview"
                     className="browser-frame"
-                    sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
                     style={{ flex: 1, border: 'none', pointerEvents: isDragging || isResizing ? 'none' : 'auto' }}
                 />
             </div>
             
-            {/* Resize Handle */}
-            <div
-                onMouseDown={handleResizeStart}
-                style={{
-                    position: 'absolute',
-                    bottom: 0,
-                    right: 0,
-                    width: '20px',
-                    height: '20px',
-                    cursor: 'se-resize',
-                    background: 'linear-gradient(135deg, transparent 50%, #007acc 50%)',
-                    opacity: 0.6,
-                    zIndex: 2000
-                }}
-                title="Drag to resize"
-            />
+            {/* Resize Handle - Hidden when maximized */}
+            {!isMaximized && (
+                <div
+                    onMouseDown={handleResizeStart}
+                    style={{
+                        position: 'absolute',
+                        bottom: 0,
+                        right: 0,
+                        width: '20px',
+                        height: '20px',
+                        cursor: 'se-resize',
+                        background: 'linear-gradient(135deg, transparent 50%, #007acc 50%)',
+                        opacity: 0.6,
+                        zIndex: 2000
+                    }}
+                    title="Drag to resize"
+                />
+            )}
         </div>
     );
 };

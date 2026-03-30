@@ -45,7 +45,8 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Basic health check endpoint
 app.get('/', (req, res) => {
@@ -344,6 +345,10 @@ app.use('/api/admin', require('./routes/admin'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/files', require('./routes/files'));
 app.use('/api/execute', require('./routes/execute'));
+
+// Preview proxy — must come BEFORE catch-all routes
+// Proxies /api/preview/<port>/... → http://localhost:<port>/...
+app.use('/api/preview', require('./routes/preview'));
 
 // NEW AI Routes (Updated to look in the main routes folder)
 app.use('/api/matchmaking', require('./routes/matchmaking'));
