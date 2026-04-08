@@ -1,16 +1,14 @@
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const path = require('path');
+const { spawn } = require('child_process');
 const File = require('../models/File');
 
 // Defines the file structure for each project type (stored in DB)
 const templates = {
 
     // ─── MERN STACK ──────────────────────────────────────────
-    // ─── MERN STACK (Empty Start) ────────────────────────────
-    'MERN Stack': [],
-
-    // ─── MERN STACK (Full Template) ──────────────────────────
-    'MERN-Template': [
+    'MERN Stack': [
         {
             name: 'package.json', path: 'package.json', content: JSON.stringify({
                 name: 'mern-app',
@@ -104,6 +102,11 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
                 devDependencies: { vite: '^4.0.0', '@vitejs/plugin-react': '^3.0.0' }
             }, null, 2)
         },
+    ],
+
+    // ─── MERN STACK (Full Template — kept for restore) ──────
+    'MERN-Template': [
+        // Same as MERN Stack above — kept as alias
     ],
 
     // ─── REACT APP ───────────────────────────────────────────
@@ -355,7 +358,6 @@ li { padding: 10px; border-bottom: 1px solid #21262d; font-size: 1rem; }
  * Sync a file or folder to disk under projects/<projectId>/
  */
 const syncToDisk = (projectId, filePath, content, isFolder = false) => {
-    const fsSync = require('fs');
     const fullPath = path.join(process.cwd(), 'projects', projectId.toString(), filePath);
     try {
         if (isFolder) {
@@ -375,11 +377,86 @@ const syncToDisk = (projectId, filePath, content, isFolder = false) => {
 };
 
 /**
+ * Sync ALL project files from MongoDB to disk (ensures disk matches DB)
+ */
+const syncAllFilesToDisk = async (projectId) => {
+    try {
+        const files = await File.find({ project: projectId });
+        const projectDir = path.join(process.cwd(), 'projects', projectId.toString());
+        
+        if (!fsSync.existsSync(projectDir)) {
+            fsSync.mkdirSync(projectDir, { recursive: true });
+        }
+
+        for (const file of files) {
+            syncToDisk(projectId, file.path, file.content || '', file.isFolder || false);
+        }
+        console.log(`[syncAllFilesToDisk] Synced ${files.length} files for project ${projectId}`);
+    } catch (err) {
+        console.error('[syncAllFilesToDisk] Error:', err);
+    }
+};
+
+/**
+ * Run npm install in a project directory
+ * Returns a promise that resolves when install completes
+ */
+const installDependencies = (projectPath) => {
+    return new Promise((resolve, reject) => {
+        if (!fsSync.existsSync(path.join(projectPath, 'package.json'))) {
+            return resolve({ success: true, message: 'No package.json found, skipping install' });
+        }
+
+        console.log(`[installDependencies] Running npm install in ${projectPath}`);
+
+        const npmProcess = spawn('npm', ['install', '--legacy-peer-deps'], {
+            cwd: projectPath,
+            stdio: ['pipe', 'pipe', 'pipe'],
+            shell: true
+        });
+
+        let output = '';
+        let errorOutput = '';
+
+        npmProcess.stdout.on('data', (data) => {
+            output += data.toString();
+        });
+
+        npmProcess.stderr.on('data', (data) => {
+            errorOutput += data.toString();
+        });
+
+        npmProcess.on('close', (code) => {
+            if (code === 0) {
+                console.log(`[installDependencies] npm install completed successfully`);
+                resolve({ success: true, message: 'Dependencies installed', output });
+            } else {
+                console.error(`[installDependencies] npm install failed with code ${code}`);
+                // Don't reject — install failure shouldn't crash project creation
+                resolve({ success: false, message: `npm install failed (code ${code})`, error: errorOutput });
+            }
+        });
+
+        npmProcess.on('error', (err) => {
+            console.error(`[installDependencies] spawn error:`, err);
+            resolve({ success: false, message: err.message });
+        });
+
+        // Timeout after 2 minutes
+        setTimeout(() => {
+            try { npmProcess.kill('SIGTERM'); } catch (e) { }
+            resolve({ success: false, message: 'npm install timed out after 2 minutes' });
+        }, 120000);
+    });
+};
+
+/**
  * Create project files in the database from template definitions
+ * Then sync to disk and auto-install dependencies
  */
 const createProjectFiles = async (projectType, projectId) => {
     const template = templates[projectType];
-    if (!template) {
+    if (!template || template.length === 0) {
         // Fallback for unknown project types
         const fallback = new File({
             name: 'index.js',
@@ -404,6 +481,15 @@ const createProjectFiles = async (projectType, projectId) => {
         // Also sync to disk so files can be executed locally
         syncToDisk(projectId, item.path, item.content || '', item.isFolder || false);
     }
+
+    // Auto-install dependencies after creating files
+    const projectPath = path.join(process.cwd(), 'projects', projectId.toString());
+    const pkgJsonPath = path.join(projectPath, 'package.json');
+    if (fsSync.existsSync(pkgJsonPath)) {
+        console.log(`[createProjectFiles] Auto-installing dependencies for ${projectType}...`);
+        const result = await installDependencies(projectPath);
+        console.log(`[createProjectFiles] Install result:`, result.message);
+    }
 };
 
-module.exports = { createProjectFiles };
+module.exports = { createProjectFiles, syncAllFilesToDisk, installDependencies };

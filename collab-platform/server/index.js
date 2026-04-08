@@ -10,9 +10,14 @@ const Message = require('./models/Message');
 const User = require('./models/User');
 const Room = require('./models/Room');
 const Notification = require('./models/Notification');
+const File = require('./models/File');
 
 // Import mediasoup manager
 const mediasoupManager = require('./mediasoup/mediasoupManager');
+
+// Import collaboration manager
+const collabManager = require('./services/collabManager');
+const Project = require('./models/Project');
 
 const app = express();
 const server = http.createServer(app);
@@ -45,7 +50,8 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Basic health check endpoint
 app.get('/', (req, res) => {
@@ -89,8 +95,11 @@ io.on('connection', (socket) => {
     socket.on('joinRoom', async ({ roomId, user }) => {
         socket.join(roomId);
 
-        // Add to roomUsers list
         if (!roomUsers[roomId]) roomUsers[roomId] = [];
+        
+        // Is this the first connection for this user in this room?
+        const isFirstJoin = !roomUsers[roomId].some(u => u.userId === user._id);
+
         // Allow multiple tabs for same user (for testing)
         // Only check if THIS socket is already added (which it shouldn't be on join)
         if (!roomUsers[roomId].some(u => u.socketId === socket.id)) {
@@ -100,11 +109,13 @@ io.on('connection', (socket) => {
         // Broadcast updated user list to room
         io.to(roomId).emit('roomUsers', roomUsers[roomId]);
 
-        // Broadcast entry message
-        socket.to(roomId).emit('message', {
-            text: `${user.username} has joined the room.`,
-            sender: { username: 'System' }
-        });
+        // Broadcast entry message ONLY on first connection
+        if (isFirstJoin) {
+            socket.to(roomId).emit('message', {
+                text: `${user.username} has joined the room.`,
+                sender: { username: 'System' }
+            });
+        }
     });
 
     socket.on('leaveRoom', ({ roomId, userId }) => {
@@ -303,10 +314,173 @@ io.on('connection', (socket) => {
     });
 
     // ========================================================
+    // COLLABORATIVE EDITING EVENTS
+    // ========================================================
+
+    // Join a project's collaborative session
+    socket.on('collab:join-project', async ({ projectId, userId, username }, callback) => {
+        try {
+            // Validate user is a member of this project
+            const project = await Project.findById(projectId);
+            if (!project) {
+                return callback && callback({ error: 'Project not found' });
+            }
+
+            const isMember = project.members.some(m => m.toString() === userId);
+            if (!isMember) {
+                return callback && callback({ error: 'Not a project member' });
+            }
+
+            // Join project-scoped socket room
+            const projectRoom = `project:${projectId}`;
+            socket.join(projectRoom);
+
+            // Track presence
+            collabManager.addUserToProject(projectId, socket.id, userId, username);
+
+            // Broadcast updated presence to all project members
+            const presence = collabManager.getProjectPresence(projectId);
+            io.to(projectRoom).emit('collab:presence', presence);
+
+            console.log(`[collab] ${username} joined project ${projectId}`);
+            callback && callback({ success: true });
+        } catch (error) {
+            console.error('[collab] join-project error:', error);
+            callback && callback({ error: error.message });
+        }
+    });
+
+    // Leave a project's collaborative session
+    socket.on('collab:leave-project', async ({ projectId }) => {
+        try {
+            const projectRoom = `project:${projectId}`;
+            socket.leave(projectRoom);
+
+            collabManager.removeUserFromProject(projectId, socket.id);
+
+            // Broadcast updated presence
+            const presence = collabManager.getProjectPresence(projectId);
+            io.to(projectRoom).emit('collab:presence', presence);
+
+            console.log(`[collab] Socket ${socket.id} left project ${projectId}`);
+        } catch (error) {
+            console.error('[collab] leave-project error:', error);
+        }
+    });
+
+    // Open a file for collaborative editing
+    socket.on('collab:open-file', async ({ projectId, fileId, fileName }, callback) => {
+        try {
+            const docKey = `${projectId}:${fileId}`;
+            const fileRoom = `collab:${docKey}`;
+
+            // Load file content from DB for initialization
+            const file = await File.findById(fileId);
+            if (!file) {
+                return callback && callback({ error: 'File not found' });
+            }
+
+            // Get or create the Yjs document
+            const docEntry = await collabManager.getOrCreateDoc(projectId, fileId, file.content || '');
+
+            // Add this socket to the document's user set
+            collabManager.addUserToDoc(docKey, socket.id);
+
+            // Join the file-specific socket room
+            socket.join(fileRoom);
+
+            // Update user's active file in presence
+            collabManager.setUserActiveFile(projectId, socket.id, fileId, fileName || file.name);
+
+            // Send full Yjs state to the joining client
+            const fullState = collabManager.getFullState(docKey);
+
+            // Broadcast updated presence
+            const projectRoom = `project:${projectId}`;
+            const presence = collabManager.getProjectPresence(projectId);
+            io.to(projectRoom).emit('collab:presence', presence);
+
+            console.log(`[collab] Socket ${socket.id} opened file ${fileId} (${collabManager.getDocUserCount(docKey)} users)`);
+            callback && callback({
+                state: fullState ? Array.from(fullState) : null,
+                userCount: collabManager.getDocUserCount(docKey)
+            });
+        } catch (error) {
+            console.error('[collab] open-file error:', error);
+            callback && callback({ error: error.message });
+        }
+    });
+
+    // Close a file (stop collaborating on it)
+    socket.on('collab:close-file', async ({ projectId, fileId }) => {
+        try {
+            const docKey = `${projectId}:${fileId}`;
+            const fileRoom = `collab:${docKey}`;
+
+            socket.leave(fileRoom);
+
+            const isEmpty = collabManager.removeUserFromDoc(docKey, socket.id);
+
+            // Update presence - clear active file
+            collabManager.setUserActiveFile(projectId, socket.id, null, null);
+
+            // If no more users, persist and clean up
+            if (isEmpty) {
+                await collabManager.removeDoc(docKey);
+            }
+
+            // Broadcast updated presence
+            const projectRoom = `project:${projectId}`;
+            const presence = collabManager.getProjectPresence(projectId);
+            io.to(projectRoom).emit('collab:presence', presence);
+
+            console.log(`[collab] Socket ${socket.id} closed file ${fileId}`);
+        } catch (error) {
+            console.error('[collab] close-file error:', error);
+        }
+    });
+
+    // Receive a Yjs binary update from a client and broadcast to others
+    socket.on('collab:sync-update', ({ projectId, fileId, update }) => {
+        try {
+            const docKey = `${projectId}:${fileId}`;
+            const fileRoom = `collab:${docKey}`;
+
+            // Apply update to server-side Y.Doc
+            collabManager.applyClientUpdate(docKey, update);
+
+            // Broadcast to all OTHER clients in the same file room
+            socket.to(fileRoom).emit('collab:sync-update', {
+                update,
+                senderId: socket.id
+            });
+        } catch (error) {
+            console.error('[collab] sync-update error:', error);
+        }
+    });
+
+    // Receive cursor position updates and broadcast to others
+    socket.on('collab:cursor-update', ({ projectId, fileId, cursor }) => {
+        const docKey = `${projectId}:${fileId}`;
+        const fileRoom = `collab:${docKey}`;
+
+        socket.to(fileRoom).emit('collab:cursor-update', {
+            socketId: socket.id,
+            cursor
+        });
+    });
+
+    // Request current presence for a project
+    socket.on('collab:get-presence', ({ projectId }, callback) => {
+        const presence = collabManager.getProjectPresence(projectId);
+        callback && callback(presence);
+    });
+
+    // ========================================================
     // DISCONNECT HANDLER
     // ========================================================
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
         // Remove user from all rooms they were in
         for (const roomId in roomUsers) {
             const wasPresent = roomUsers[roomId].some(u => u.socketId === socket.id);
@@ -328,6 +502,15 @@ io.on('connection', (socket) => {
             delete socketMediasoupRooms[socket.id];
         }
 
+        // Cleanup collaborative editing on disconnect
+        try {
+            await collabManager.cleanupSocket(socket.id);
+            // Broadcast updated presence to any projects this socket was in
+            // (cleanupSocket already removes from all projects/docs)
+        } catch (err) {
+            console.error('[collab] disconnect cleanup error:', err);
+        }
+
         const userId = Object.keys(userSocketMap).find(key => userSocketMap[key] === socket.id);
         if (userId) delete userSocketMap[userId];
     });
@@ -344,6 +527,10 @@ app.use('/api/admin', require('./routes/admin'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/files', require('./routes/files'));
 app.use('/api/execute', require('./routes/execute'));
+
+// Preview proxy — must come BEFORE catch-all routes
+// Proxies /api/preview/<port>/... → http://localhost:<port>/...
+app.use('/api/preview', require('./routes/preview'));
 
 // NEW AI Routes (Updated to look in the main routes folder)
 app.use('/api/matchmaking', require('./routes/matchmaking'));

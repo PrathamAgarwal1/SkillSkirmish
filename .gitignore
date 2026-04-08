@@ -7,3 +7,5 @@ node_module/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+# Ignore IDE projects
+collab-platform/server/projects/

@@ -50,64 +50,81 @@ const ManageMembersModal = ({ project, roomMembers, onClose, onMembersUpdated })
 
     if (loading) {
         return (
-            <div className="modal-backdrop">
-                <div className="modal-content"><h2>Loading...</h2></div>
+            <div className="modal-backdrop" style={{ background: 'rgba(5,5,5,0.85)', backdropFilter: 'blur(5px)' }}>
+                <div className="term-card" style={{ width: '300px', maxWidth: '90%', textAlign: 'center' }}>
+                    <div className="term-body">
+                        <h3 style={{ color: 'var(--term-blue)' }}>Loading data...</h3>
+                    </div>
+                </div>
             </div>
         );
     }
 
     return (
-        <div className="modal-backdrop">
-            <div className="modal-content">
-                <h2>Manage Members for "{project.name}"</h2>
-                <div className="members-management-grid">
-                    <div>
-                        <h4>Project Members</h4>
-                        <ul className="member-list">
-                            {projectMembers.map(member => (
-                                <li key={member._id} className="member-item">
-                                    <span>{member.username}</span>
-                                    <button
-                                        className="btn-action btn-delete"
-                                        onClick={() => handleRemoveMember(member._id)}
-                                    >
-                                        Remove
-                                    </button>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                    <div>
-                        <h4>Add from Room</h4>
-                        <ul className="member-list">
-                            {roomMembers
-                                .filter(rm => !isMemberOfProject(rm._id))
-                                .map(member => (
-                                    <li key={member._id} className="member-item">
-                                        <span>{member.username}</span>
+        <div className="modal-backdrop" style={{ background: 'rgba(5,5,5,0.85)', backdropFilter: 'blur(5px)' }}>
+            <div className="term-card" style={{ width: '600px', maxWidth: '95%', animation: 'fadeIn 0.3s' }}>
+                <div className="term-header">
+                    <div className="window-dots"><div className="dot dot-red"></div><div className="dot dot-yellow"></div><div className="dot dot-green"></div></div>
+                    <span>manage_members.sh</span>
+                </div>
+                <div className="term-body">
+                    <h2 style={{ fontSize: '1.2rem', marginBottom: '1rem', color: 'var(--term-blue)' }}>
+                        &gt; Managing Access: {project.name}
+                    </h2>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
+                        
+                        {/* Current Members List */}
+                        <div style={{ background: '#0a0a0a', border: '1px solid #333', padding: '1rem', borderRadius: '4px' }}>
+                            <h4 style={{ color: '#8b949e', marginBottom: '1rem', borderBottom: '1px solid #333', paddingBottom: '0.5rem', fontFamily: 'var(--font-mono)' }}>$ PROJECT_MEMBERS</h4>
+                            <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: '250px', overflowY: 'auto' }}>
+                                {projectMembers.length === 0 && <li style={{ color: '#484f58', fontSize: '0.9rem', fontStyle: 'italic' }}>No members added yet.</li>}
+                                {projectMembers.map(member => (
+                                    <li key={member._id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid #1f1f1f' }}>
+                                        <span style={{ color: '#c9d1d9', fontSize: '0.9rem' }}>{member.username}</span>
                                         <button
-                                            className="btn-action btn-edit"
-                                            onClick={() => handleAddMember(member._id)}
+                                            className="btn-term"
+                                            onClick={() => handleRemoveMember(member._id)}
+                                            style={{ color: '#f85149', borderColor: 'transparent', padding: '4px 8px' }}
                                         >
-                                            Add
+                                            REMOVE
                                         </button>
                                     </li>
                                 ))}
-                        </ul>
+                            </ul>
+                        </div>
+
+                        {/* Room Members List (to add) */}
+                        <div style={{ background: '#0a0a0a', border: '1px solid #333', padding: '1rem', borderRadius: '4px' }}>
+                            <h4 style={{ color: '#8b949e', marginBottom: '1rem', borderBottom: '1px solid #333', paddingBottom: '0.5rem', fontFamily: 'var(--font-mono)' }}>$ AVAILABLE_USERS</h4>
+                            <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: '250px', overflowY: 'auto' }}>
+                                {roomMembers.filter(rm => !isMemberOfProject(rm._id)).length === 0 && (
+                                    <li style={{ color: '#484f58', fontSize: '0.9rem', fontStyle: 'italic' }}>Everyone is already in the project.</li>
+                                )}
+                                {roomMembers
+                                    .filter(rm => !isMemberOfProject(rm._id))
+                                    .map(member => (
+                                        <li key={member._id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid #1f1f1f' }}>
+                                            <span style={{ color: '#c9d1d9', fontSize: '0.9rem' }}>{member.username}</span>
+                                            <button
+                                                className="btn-term"
+                                                onClick={() => handleAddMember(member._id)}
+                                                style={{ color: '#3fb950', borderColor: 'transparent', padding: '4px 8px' }}
+                                            >
+                                                ADD
+                                            </button>
+                                        </li>
+                                    ))}
+                            </ul>
+                        </div>
                     </div>
-                </div>
-                <div className="modal-actions">
-                    <button
-                        type="button"
-                        className="btn-secondary"
-                        onClick={onClose}
-                    >
-                        Close
-                    </button>
+                    
+                    <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <button type="button" className="btn-term" onClick={onClose}>CLOSE</button>
+                    </div>
                 </div>
             </div>
         </div>
     );
-}; // ✅ <-- This closing curly brace fixes your parsing error
+};
 
 export default ManageMembersModal;

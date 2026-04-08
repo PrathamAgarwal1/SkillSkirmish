@@ -5,6 +5,7 @@ const Project = require('../models/Project');
 const Room = require('../models/Room');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
+const Message = require('../models/Message');
 // Import the template manager to create File documents correctly
 const { createProjectFiles } = require('../utils/templateManager');
 
@@ -113,6 +114,23 @@ router.post('/', [auth, checkRoomAccess], async (req, res) => {
         // Notify room for real-time update
         io.to(roomId).emit('room-update');
 
+        // Emitting a SYSTEM chat message for the action
+        try {
+            const chatMsg = new Message({
+                room: roomId,
+                sender: req.user.id,
+                text: `created a new project: "${project.name}"`
+            });
+            await chatMsg.save();
+            io.to(roomId).emit('message', { 
+                ...chatMsg.toObject(), 
+                sender: { _id: sender._id, username: 'System' },
+                text: `${sender.username} created a new project: "${project.name}"` 
+            });
+        } catch (msgErr) {
+            console.error('Error sending system chat message:', msgErr);
+        }
+
         res.json(project);
     } catch (err) {
         console.error("Create Project Error:", err);
@@ -148,11 +166,22 @@ router.delete('/:id', [auth, checkRoomAccess], async (req, res) => {
 });
 
 // @route   GET api/projects/:id
-router.get('/:id', auth, async (req, res) => {
+router.get('/:id', [auth, checkRoomAccess], async (req, res) => {
     try {
-        const project = await Project.findById(req.params.id);
-        if (!project) return res.status(404).json({ msg: 'Project not found' });
-        res.json(project);
+        // req.project is already populated by checkRoomAccess
+        if (!req.project) {
+            return res.status(404).json({ msg: 'Project not found' });
+        }
+
+        // Project access check: Must be room owner or explicitly added to the project
+        const isOwner = req.room.owner.toString() === req.user.id;
+        const isProjectMember = req.project.members.some(m => m.toString() === req.user.id);
+
+        if (!isOwner && !isProjectMember) {
+            return res.status(403).json({ msg: 'You must be added to this project to open it' });
+        }
+
+        res.json(req.project);
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
@@ -180,12 +209,38 @@ router.put('/:id', [auth, checkRoomAccess], async (req, res) => {
 // @route   POST api/projects/:id/members
 router.post('/:id/members', [auth, checkRoomAccess], async (req, res) => {
     try {
+        if (req.room.owner.toString() !== req.user.id) {
+            return res.status(403).json({ msg: 'Only the room leader can manage project members' });
+        }
+
         const { userId } = req.body;
         const project = await Project.findByIdAndUpdate(
             req.params.id,
             { $addToSet: { members: userId } },
             { new: true }
         ).populate('members', 'username');
+
+        // Emitting a SYSTEM chat message for the action
+        try {
+            const addedUser = await User.findById(userId).select('username');
+            const leader = await User.findById(req.user.id).select('username');
+            const roomId = req.room._id.toString();
+            
+            const chatMsg = new Message({
+                room: roomId,
+                sender: req.user.id,
+                text: `added ${addedUser.username} to project "${project.name}"`
+            });
+            await chatMsg.save();
+            const io = req.app.get('socketio');
+            io.to(roomId).emit('message', { 
+                ...chatMsg.toObject(), 
+                sender: { _id: leader._id, username: 'System' },
+                text: `${leader.username} added ${addedUser.username} to project "${project.name}"` 
+            });
+        } catch (msgErr) {
+            console.error('Error sending system chat message:', msgErr);
+        }
 
         res.json(project.members);
     } catch (err) {
@@ -197,6 +252,10 @@ router.post('/:id/members', [auth, checkRoomAccess], async (req, res) => {
 // @route   DELETE api/projects/:id/members/:memberId
 router.delete('/:id/members/:memberId', [auth, checkRoomAccess], async (req, res) => {
     try {
+        if (req.room.owner.toString() !== req.user.id) {
+            return res.status(403).json({ msg: 'Only the room leader can manage project members' });
+        }
+
         const project = await Project.findByIdAndUpdate(
             req.params.id,
             { $pull: { members: req.params.memberId } },

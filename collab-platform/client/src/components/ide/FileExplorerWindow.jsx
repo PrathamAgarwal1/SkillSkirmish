@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 
-const FileExplorerWindow = ({ files = [], onSelectFile, selectedFile, onCreateFile, onDeleteFile, onRenameFile }) => {
+const FileExplorerWindow = ({ files = [], onSelectFile, selectedFile, onCreateFile, onDeleteFile, onRenameFile, onUploadFiles }) => {
+    const folderInputRef = useRef(null);
+    const fileInputRef = useRef(null);
     const [expandedFolders, setExpandedFolders] = useState(new Set());
     const [renamingPath, setRenamingPath] = useState(null);
     const [renameValue, setRenameValue] = useState('');
@@ -296,8 +298,84 @@ const FileExplorerWindow = ({ files = [], onSelectFile, selectedFile, onCreateFi
         alignItems: 'center',
     };
 
+    const handleFolderUpload = async (e) => {
+        const files = Array.from(e.target.files);
+        if (files.length === 0) return;
+
+        // Read all files and their relative paths
+        const fileList = [];
+        const folders = new Set();
+
+        for (const file of files) {
+            const relativePath = file.webkitRelativePath || file.name;
+            // Skip node_modules, .git, etc.
+            if (relativePath.includes('node_modules/') || relativePath.includes('.git/')) continue;
+            
+            // Collect folder paths
+            const parts = relativePath.split('/');
+            for (let i = 1; i < parts.length; i++) {
+                folders.add(parts.slice(0, i).join('/'));
+            }
+
+            try {
+                const content = await file.text();
+                fileList.push({ filePath: relativePath, content, isFolder: false });
+            } catch (err) {
+                console.warn(`Could not read file: ${relativePath}`);
+            }
+        }
+
+        // Add folder entries first
+        const folderEntries = Array.from(folders).map(f => ({ filePath: f, content: '', isFolder: true }));
+        
+        if (onUploadFiles) {
+            onUploadFiles([...folderEntries, ...fileList]);
+        }
+
+        // Reset input
+        e.target.value = '';
+    };
+
+    const handleFileUpload = async (e) => {
+        const files = Array.from(e.target.files);
+        if (files.length === 0) return;
+
+        const fileList = [];
+        for (const file of files) {
+            try {
+                const content = await file.text();
+                fileList.push({ filePath: file.name, content, isFolder: false });
+            } catch (err) {
+                console.warn(`Could not read file: ${file.name}`);
+            }
+        }
+
+        if (onUploadFiles) {
+            onUploadFiles(fileList);
+        }
+
+        e.target.value = '';
+    };
+
     return (
         <div className="ide-window" style={{ minWidth: '250px', maxWidth: '400px' }}>
+            {/* Hidden file inputs */}
+            <input 
+                ref={folderInputRef} 
+                type="file" 
+                webkitdirectory="" 
+                directory="" 
+                multiple 
+                style={{ display: 'none' }} 
+                onChange={handleFolderUpload} 
+            />
+            <input 
+                ref={fileInputRef} 
+                type="file" 
+                multiple 
+                style={{ display: 'none' }} 
+                onChange={handleFileUpload} 
+            />
             <div className="window-header">
                 <h3>
                     <span className="window-title-icon">📁</span>
@@ -319,6 +397,22 @@ const FileExplorerWindow = ({ files = [], onSelectFile, selectedFile, onCreateFi
                     >
                         📁
                     </button>
+                    <button
+                        className="window-btn"
+                        onClick={() => fileInputRef.current?.click()}
+                        title="Upload Files"
+                        style={{ color: '#4ec9b0' }}
+                    >
+                        📤
+                    </button>
+                    <button
+                        className="window-btn"
+                        onClick={() => folderInputRef.current?.click()}
+                        title="Upload Folder"
+                        style={{ color: '#569cd6' }}
+                    >
+                        📂⬆
+                    </button>
                 </div>
             </div>
             <div className="window-content" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -331,7 +425,7 @@ const FileExplorerWindow = ({ files = [], onSelectFile, selectedFile, onCreateFi
                     )}
                     {files.length === 0 && !creatingIn ? (
                         <div className="file-tree-item" style={{ opacity: 0.7 }}>
-                            No files yet
+                            No files yet — upload a folder or create files
                         </div>
                     ) : (
                         renderFileTree(files)
