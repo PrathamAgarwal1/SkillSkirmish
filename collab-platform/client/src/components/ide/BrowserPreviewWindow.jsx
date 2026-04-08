@@ -20,10 +20,10 @@ const BrowserPreviewWindow = ({ previewUrl, onRefresh, isLoading, onClose }) => 
         setUrl(e.target.value);
     };
 
-    // Convert raw localhost URLs to proxy URLs (must be absolute to go through backend)
+    // Convert raw localhost URLs or relative proxy paths to absolute proxy URLs
     const toProxyUrl = (inputUrl) => {
         if (!inputUrl) return '';
-        const serverBase = import.meta.env?.VITE_SERVER_URL || 'http://localhost:5000';
+        const serverBase = (import.meta.env?.VITE_SERVER_URL || 'http://localhost:5000').replace(/\/+$/, '');
         try {
             const parsed = new URL(inputUrl);
             if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '0.0.0.0') {
@@ -32,7 +32,7 @@ const BrowserPreviewWindow = ({ previewUrl, onRefresh, isLoading, onClose }) => 
                 return `${serverBase}/api/preview/${port}${parsed.pathname || '/'}`;
             }
         } catch {
-            // Already a relative/proxy URL — make it absolute
+            // Relative URL like /api/preview/3001 — make absolute
             if (inputUrl.startsWith('/api/preview/')) {
                 return `${serverBase}${inputUrl}`;
             }

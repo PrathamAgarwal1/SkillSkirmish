@@ -34,9 +34,24 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
     const wsRef = useRef(null);
     const isUnmountingRef = useRef(false);
 
-    // With frame-src http://localhost:* in CSP, the iframe can load directly
-    // from any localhost port. No proxy needed for local dev.
-    const toPreviewUrl = (rawUrl) => rawUrl || '';
+    // Convert preview URLs to go through backend proxy in production
+    const toPreviewUrl = (rawUrl) => {
+        if (!rawUrl) return '';
+        const serverBase = (import.meta.env?.VITE_SERVER_URL || 'http://localhost:5000').replace(/\/+$/, '');
+        // Already a relative proxy URL from the server (e.g. /api/preview/3001)
+        if (rawUrl.startsWith('/api/preview/')) {
+            return `${serverBase}${rawUrl}`;
+        }
+        // Raw localhost URL from stdout detection — convert to proxy
+        try {
+            const parsed = new URL(rawUrl);
+            if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '0.0.0.0') {
+                const port = parsed.port;
+                if (port) return `${serverBase}/api/preview/${port}${parsed.pathname || '/'}`;
+            }
+        } catch { /* not a full URL */ }
+        return rawUrl;
+    };
 
     const addLog = (message, type = 'info') => {
         const timestamp = new Date().toLocaleTimeString();

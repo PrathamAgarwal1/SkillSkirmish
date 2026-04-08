@@ -90,7 +90,7 @@ router.get('/console-output/:projectId', auth, (req, res) => {
 router.post('/install-package', auth, async (req, res) => {
     try {
         const { projectId, packageName, projectType } = req.body;
-        const projectPath = path.join(process.cwd(), 'projects', projectId.toString());
+        const projectPath = path.join(process.env.PROJECTS_DIR || path.join(process.cwd(), 'projects'), projectId.toString());
 
         const result = await installPackage(projectId, packageName, projectType, projectPath);
         res.json(result);
@@ -154,7 +154,7 @@ router.post('/install-deps', auth, async (req, res) => {
         const { projectId } = req.body;
         const io = req.app.get('socketio');
         const roomId = req.body.roomId || null;
-        const projectPath = path.join(process.cwd(), 'projects', projectId.toString());
+        const projectPath = path.join(process.env.PROJECTS_DIR || path.join(process.cwd(), 'projects'), projectId.toString());
 
         // First sync all files from DB to disk
         await syncAllFilesToDisk(projectId);
@@ -235,7 +235,7 @@ router.post('/run-command', auth, async (req, res) => {
         // Special handling for CD commands to create a stateful terminal!
         if (cmdLower.startsWith('cd ') || cmdLower === 'cd') {
             const dest = command.substring(2).trim();
-            const projectRoot = path.join(process.cwd(), 'projects', projectId.toString());
+            const projectRoot = path.join(process.env.PROJECTS_DIR || path.join(process.cwd(), 'projects'), projectId.toString());
             let newCwd = ''; // root default
 
             if (dest && dest !== '~' && dest !== '/') {
@@ -284,7 +284,7 @@ router.post('/upload-files', auth, upload.array('files', 100), async (req, res) 
             return res.status(404).json({ success: false, message: 'Project not found' });
         }
 
-        const projectPath = path.join(process.cwd(), 'projects', projectId.toString());
+        const projectPath = path.join(process.env.PROJECTS_DIR || path.join(process.cwd(), 'projects'), projectId.toString());
         const results = [];
 
         for (const file of uploadedFiles) {
@@ -381,7 +381,7 @@ router.post('/upload-files-json', auth, async (req, res) => {
             return res.status(404).json({ success: false, message: 'Project not found' });
         }
 
-        const projectPath = path.join(process.cwd(), 'projects', projectId.toString());
+        const projectPath = path.join(process.env.PROJECTS_DIR || path.join(process.cwd(), 'projects'), projectId.toString());
         const results = [];
 
         for (const fileData of fileList) {

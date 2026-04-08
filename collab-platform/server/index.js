@@ -27,10 +27,13 @@ const clientUrl = rawClientUrl.replace(/\/+$/, '');
 
 const allowedOrigins = [
     'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:5175',
     'https://PrathamAgarwal1.github.io',
     'https://prathamagarwal1.github.io',
+    'https://skill-skirmish.vercel.app',
     clientUrl
-];
+].filter(Boolean);
 
 const corsOptions = {
     origin: function (origin, callback) {
@@ -71,7 +74,8 @@ if (!mongoURI) {
 const io = new Server(server, {
     cors: {
         origin: allowedOrigins,
-        methods: ["GET", "POST"]
+        methods: ["GET", "POST"],
+        credentials: true
     }
 });
 

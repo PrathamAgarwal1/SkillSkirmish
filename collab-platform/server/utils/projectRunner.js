@@ -236,7 +236,7 @@ const runProject = async (projectId, projectType, userId, io, roomId) => {
             return { success: false, message: 'Project not found' };
         }
 
-        const projectPath = path.join(process.cwd(), 'projects', projectId.toString());
+        const projectPath = path.join(process.env.PROJECTS_DIR || path.join(process.cwd(), 'projects'), projectId.toString());
         if (!fs.existsSync(projectPath)) {
             fs.mkdirSync(projectPath, { recursive: true });
         }
@@ -345,7 +345,7 @@ const runProject = async (projectId, projectType, userId, io, roomId) => {
 
         // ── STEP 7: Spawn the process ──
         const env = { ...process.env, PORT: port.toString() };
-        const previewUrl = `http://localhost:${port}`;
+        const previewUrl = `/api/preview/${port}`;
 
         const childProcess = spawn(runCmd, {
             cwd: executeDir,
@@ -499,7 +499,7 @@ const isProjectRunning = (projectId) => {
 --------------------------------------------------------- */
 const runFile = async (projectId, filePath, userId, io, roomId, userSocketMap) => {
     try {
-        const projectRoot = path.join(process.cwd(), 'projects', projectId.toString());
+        const projectRoot = path.join(process.env.PROJECTS_DIR || path.join(process.cwd(), 'projects'), projectId.toString());
         const fullPath = path.join(projectRoot, filePath);
         const fileExt = path.extname(filePath);
         const fileName = path.basename(filePath);
@@ -538,7 +538,7 @@ const runFile = async (projectId, filePath, userId, io, roomId, userSocketMap) =
                 process: childProcess, type: 'file', filePath, userId, roomId,
                 startedAt: Date.now(), consoleOutput: []
             });
-            return { success: true, processId, previewUrl: `http://localhost:${port}/${filePath}`, message: `Serving ${fileName} on port ${port}` };
+            return { success: true, processId, previewUrl: `/api/preview/${port}/${filePath}`, message: `Serving ${fileName} on port ${port}` };
         } else {
             return { success: false, message: 'Unsupported file type for direct execution' };
         }
@@ -634,7 +634,7 @@ const stopProcess = (processId) => {
 --------------------------------------------------------- */
 const executeCommand = (projectId, command, io, roomId, subDir = '') => {
     return new Promise((resolve) => {
-        const projectRoot = path.join(process.cwd(), 'projects', projectId.toString());
+        const projectRoot = path.join(process.env.PROJECTS_DIR || path.join(process.cwd(), 'projects'), projectId.toString());
         if (!fs.existsSync(projectRoot)) {
             fs.mkdirSync(projectRoot, { recursive: true });
         }

@@ -358,7 +358,7 @@ li { padding: 10px; border-bottom: 1px solid #21262d; font-size: 1rem; }
  * Sync a file or folder to disk under projects/<projectId>/
  */
 const syncToDisk = (projectId, filePath, content, isFolder = false) => {
-    const fullPath = path.join(process.cwd(), 'projects', projectId.toString(), filePath);
+    const fullPath = path.join(process.env.PROJECTS_DIR || path.join(process.cwd(), 'projects'), projectId.toString(), filePath);
     try {
         if (isFolder) {
             if (!fsSync.existsSync(fullPath)) {
@@ -382,7 +382,7 @@ const syncToDisk = (projectId, filePath, content, isFolder = false) => {
 const syncAllFilesToDisk = async (projectId) => {
     try {
         const files = await File.find({ project: projectId });
-        const projectDir = path.join(process.cwd(), 'projects', projectId.toString());
+        const projectDir = path.join(process.env.PROJECTS_DIR || path.join(process.cwd(), 'projects'), projectId.toString());
         
         if (!fsSync.existsSync(projectDir)) {
             fsSync.mkdirSync(projectDir, { recursive: true });
@@ -483,7 +483,7 @@ const createProjectFiles = async (projectType, projectId) => {
     }
 
     // Auto-install dependencies after creating files
-    const projectPath = path.join(process.cwd(), 'projects', projectId.toString());
+    const projectPath = path.join(process.env.PROJECTS_DIR || path.join(process.cwd(), 'projects'), projectId.toString());
     const pkgJsonPath = path.join(projectPath, 'package.json');
     if (fsSync.existsSync(pkgJsonPath)) {
         console.log(`[createProjectFiles] Auto-installing dependencies for ${projectType}...`);

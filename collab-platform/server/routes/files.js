@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 // --- HELPER FUNCTIONS FOR DISK SYNC ---
-const getProjectDir = (projectId) => path.join(process.cwd(), 'projects', projectId.toString());
+const getProjectDir = (projectId) => path.join(process.env.PROJECTS_DIR || path.join(process.cwd(), 'projects'), projectId.toString());
 
 const syncToDisk = (projectId, filePath, content, isFolder = false) => {
     try {
