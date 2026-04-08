@@ -504,17 +504,17 @@ const runFile = async (projectId, filePath, userId, io, roomId, userSocketMap) =
         const fileExt = path.extname(filePath);
         const fileName = path.basename(filePath);
 
-        if (!fs.existsSync(fullPath)) {
-            const dbFile = await File.findOne({ project: projectId, path: filePath });
-            if (!dbFile) {
-                return { success: false, message: 'File not found' };
-            }
-            const dir = path.dirname(fullPath);
-            if (!fs.existsSync(dir)) {
-                fs.mkdirSync(dir, { recursive: true });
-            }
-            fs.writeFileSync(fullPath, dbFile.content || '');
+        // ALWAYS sync this singular file to disk before running so it reflects the latest edits
+        const dbFile = await File.findOne({ project: projectId, path: filePath });
+        if (!dbFile) {
+            return { success: false, message: 'File not found in database' };
         }
+        
+        const dir = path.dirname(fullPath);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        fs.writeFileSync(fullPath, dbFile.content || '');
 
         let command, args;
 

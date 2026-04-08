@@ -198,7 +198,7 @@ const DashboardPage = () => {
     };
 
     // --- FIX: More Robust Accept Invite Logic ---
-    const handleAcceptInvite = async (roomId) => {
+    const handleAcceptInvite = async (roomId, notificationId) => {
         if (!roomId) {
             console.error("Cannot join room: Room ID is missing from invite.");
             return;
@@ -209,7 +209,7 @@ const DashboardPage = () => {
 
             // 1. Call Backend to add user to member list
             // We await this to ensure the user is a member BEFORE navigating
-            const response = await axios.post(`/api/rooms/${roomId}/accept-invite`);
+            const response = await axios.post(`/api/rooms/${roomId}/accept-invite`, { notificationId });
 
             console.log("Join response:", response.data);
 
@@ -275,7 +275,7 @@ const DashboardPage = () => {
                                             <li key={n._id} className="term-list-item">
                                                 <span className="timestamp">[{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}]</span> {n.message}
                                                 {n.type === 'invite' && n.relatedId && (
-                                                    <button className="btn-term-action" onClick={() => handleAcceptInvite(n.relatedId)}>
+                                                    <button className="btn-term-action" onClick={() => handleAcceptInvite(n.relatedId, n._id)}>
                                                         [ACCEPT INVITE]
                                                     </button>
                                                 )}

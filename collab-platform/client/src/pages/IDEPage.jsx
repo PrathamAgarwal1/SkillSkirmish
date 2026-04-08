@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useContext } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import WindowManager from '../components/ide/WindowManager';
+import AuthContext from '../context/AuthContext';
 
 const IDEPage = () => {
     const { projectId, roomId } = useParams();
+    const { user } = useContext(AuthContext);
     const [project, setProject] = useState(null);
     const [loading, setLoading] = useState(true);
 
@@ -28,7 +30,7 @@ const IDEPage = () => {
     }
 
     if (!project) {
-        return <div style={{ padding: '20px' }}><h1>Project not found</h1></div>;
+        return <div style={{ padding: '20px' }}><h1>Project not found or Access Denied</h1></div>;
     }
 
     return (
@@ -36,6 +38,7 @@ const IDEPage = () => {
             projectId={projectId}
             projectType={project.projectType || 'React App'}
             roomId={roomId}
+            user={user}
         />
     );
 };

@@ -9,7 +9,7 @@ import PackageLibraryWindow from './PackageLibraryWindow';
 import { socket } from '../../socket'; // Import the global socket instance
 import './IDEStyles.css';
 
-const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
+const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) => {
     const [currentFile, setCurrentFile] = useState(null);
     const [fileContent, setFileContent] = useState('');
     const [files, setFiles] = useState([]);
@@ -27,6 +27,9 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
     const [installedPackages, setInstalledPackages] = useState([]);
     const [showPackageModal, setShowPackageModal] = useState(false);
     const [showBrowserWindow, setShowBrowserWindow] = useState(false);
+
+    // Collaborative editing presence
+    const [collabPresence, setCollabPresence] = useState([]);
 
     const wsRef = useRef(null);
     const isUnmountingRef = useRef(false);
@@ -68,6 +71,46 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
             }
         };
     }, [activeFileProcessId, isProjectRunning]);
+
+    // --- COLLABORATIVE EDITING: Join/Leave Project ---
+    useEffect(() => {
+        if (!socket || !projectId || !user) return;
+
+        // Join the project's collaborative session
+        socket.emit('collab:join-project', {
+            projectId,
+            userId: user._id,
+            username: user.username
+        }, (response) => {
+            if (response?.error) {
+                console.warn('[collab] Could not join project:', response.error);
+            } else {
+                console.log('[collab] Joined project for collaboration');
+            }
+        });
+
+        // Listen for presence updates
+        const handlePresence = (presence) => {
+            // Filter out self using socket.id so same user on multiple tabs works
+            const others = presence.filter(p => p.socketId !== socket.id);
+            setCollabPresence(others);
+        };
+        socket.on('collab:presence', handlePresence);
+
+        // Request initial presence
+        socket.emit('collab:get-presence', { projectId }, (presence) => {
+            if (presence) {
+                const others = presence.filter(p => p.socketId !== socket.id);
+                setCollabPresence(others);
+            }
+        });
+
+        return () => {
+            socket.emit('collab:leave-project', { projectId });
+            socket.off('collab:presence', handlePresence);
+            setCollabPresence([]);
+        };
+    }, [projectId, user]);
 
     const formatFilesForTree = useCallback((fileList) => {
         // Build a proper tree structure handling folders as first-class citizens
@@ -598,6 +641,30 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
                         {projectType} • {files.length} files
                     </span>
 
+                    {/* Collaborators Presence Bar */}
+                    {collabPresence.length > 0 && (
+                        <div className="collab-presence-bar">
+                            {collabPresence.map((p, i) => (
+                                <div
+                                    key={p.socketId}
+                                    className="collab-avatar"
+                                    title={`${p.username}${p.activeFileName ? ` — editing ${p.activeFileName}` : ''}`}
+                                    style={{
+                                        '--avatar-color': `hsl(${(i * 47 + 120) % 360}, 70%, 60%)`
+                                    }}
+                                >
+                                    {p.username?.charAt(0)?.toUpperCase() || '?'}
+                                    {p.activeFileName && (
+                                        <span className="collab-avatar-file">{p.activeFileName}</span>
+                                    )}
+                                </div>
+                            ))}
+                            <span className="collab-count">
+                                {collabPresence.length} online
+                            </span>
+                        </div>
+                    )}
+
                     {/* Run Project Controls */}
                     <div style={{ display: 'flex', gap: '4px', borderRight: '1px solid #444', paddingRight: '10px' }}>
                         <button onClick={handleRunProject} disabled={isProjectRunning} title="Run entire project (server/client)">
@@ -697,6 +764,8 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId }) => {
                     fileContent={fileContent}
                     onContentChange={handleContentChange}
                     onSaveFile={handleSaveFile}
+                    projectId={projectId}
+                    user={user}
                     language="javascript"
                 />
 

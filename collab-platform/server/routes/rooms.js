@@ -400,6 +400,7 @@ router.post('/', auth, async (req, res) => {
 // @route   POST api/rooms/:id/accept-invite
 router.post('/:id/accept-invite', auth, async (req, res) => {
     try {
+        const { notificationId } = req.body;
         const room = await Room.findById(req.params.id);
         if (!room) return res.status(404).json({ msg: 'Room not found' });
 
@@ -409,6 +410,13 @@ router.post('/:id/accept-invite', auth, async (req, res) => {
 
         room.members.push(req.user.id);
         await room.save();
+        
+        // Delete the notification so it doesn't persist
+        if (notificationId) {
+            const Notification = require('../models/Notification');
+            await Notification.findByIdAndDelete(notificationId);
+        }
+
         res.json({ msg: 'Joined successfully', roomId: room._id });
     } catch (err) {
         res.status(500).send('Server Error');
@@ -478,7 +486,7 @@ router.post('/:id/request-join', auth, async (req, res) => {
 router.post('/:id/approve-join', auth, async (req, res) => {
     try {
         const { userId, notificationId } = req.body; // User to approve
-        const room = await Room.findById(req.params.id).populate('members', 'username');
+        let room = await Room.findById(req.params.id).populate('members', 'username');
 
         if (!room) return res.status(404).json({ msg: 'Room not found' });
         if (room.owner.toString() !== req.user.id) return res.status(401).json({ msg: 'Not Authorized' });
