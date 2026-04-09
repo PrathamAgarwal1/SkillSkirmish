@@ -33,7 +33,7 @@ router.use('/:port', (req, res, next) => {
         return res.status(403).json({ error: 'Cannot proxy to this port' });
     }
 
-    const target = `http://127.0.0.1:${port}`;
+    const target = `http://localhost:${port}`;
 
     // Create a one-shot proxy for this request
     const proxy = createProxyMiddleware({

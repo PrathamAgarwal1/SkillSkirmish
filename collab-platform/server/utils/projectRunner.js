@@ -344,7 +344,7 @@ const runProject = async (projectId, projectType, userId, io, roomId) => {
         emitToRoom(`🚀 Running: ${runCmd} (in ${path.relative(projectPath, executeDir) || 'root'})`, 'info');
 
         // ── STEP 7: Spawn the process ──
-        const env = { ...process.env, PORT: port.toString() };
+        const env = { ...process.env, PORT: port.toString(), HOST: '0.0.0.0' };
         const previewUrl = `/api/preview/${port}`;
 
         const childProcess = spawn(runCmd, {
