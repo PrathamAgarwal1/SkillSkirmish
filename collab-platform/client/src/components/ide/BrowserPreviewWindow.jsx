@@ -24,6 +24,12 @@ const BrowserPreviewWindow = ({ previewUrl, onRefresh, isLoading, onClose }) => 
     const toProxyUrl = (inputUrl) => {
         if (!inputUrl) return '';
         const serverBase = (import.meta.env?.VITE_SERVER_URL || 'http://localhost:5000').replace(/\/+$/, '');
+
+        // Already an absolute URL pointing to the proxy (server returns these in production)
+        if (inputUrl.startsWith('http') && inputUrl.includes('/api/preview/')) {
+            return inputUrl;
+        }
+
         try {
             const parsed = new URL(inputUrl);
             if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '0.0.0.0') {

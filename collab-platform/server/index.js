@@ -534,7 +534,11 @@ app.use('/api/execute', require('./routes/execute'));
 
 // Preview proxy — must come BEFORE catch-all routes
 // Proxies /api/preview/<port>/... → http://localhost:<port>/...
-app.use('/api/preview', require('./routes/preview'));
+// NOTE: Strip frame-blocking headers so the iframe can load preview content
+app.use('/api/preview', (req, res, next) => {
+    res.removeHeader('X-Frame-Options');
+    next();
+}, require('./routes/preview'));
 
 // NEW AI Routes (Updated to look in the main routes folder)
 app.use('/api/matchmaking', require('./routes/matchmaking'));

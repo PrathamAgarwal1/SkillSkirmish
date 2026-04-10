@@ -40,6 +40,33 @@ const findAvailablePort = async (startPort = 3001) => {
     return startPort; // fallback
 };
 
+/**
+ * Wait for a port to start accepting connections.
+ * Retries up to `maxRetries` times with `intervalMs` delay between attempts.
+ * Returns true if the port became reachable, false if all retries exhausted.
+ */
+const waitForPort = (port, maxRetries = 30, intervalMs = 1000) => {
+    return new Promise((resolve) => {
+        let attempts = 0;
+        const tryConnect = () => {
+            attempts++;
+            const client = net.createConnection({ port, host: '127.0.0.1' }, () => {
+                client.destroy();
+                resolve(true);
+            });
+            client.on('error', () => {
+                client.destroy();
+                if (attempts >= maxRetries) {
+                    resolve(false);
+                } else {
+                    setTimeout(tryConnect, intervalMs);
+                }
+            });
+        };
+        tryConnect();
+    });
+};
+
 /* ---------------------------------------------------------
    ENSURE PROJECT READY — sync files + install deps
 --------------------------------------------------------- */
@@ -345,7 +372,9 @@ const runProject = async (projectId, projectType, userId, io, roomId) => {
 
         // ── STEP 7: Spawn the process ──
         const env = { ...process.env, PORT: port.toString(), HOST: '0.0.0.0' };
-        const previewUrl = `/api/preview/${port}`;
+        // Build absolute preview URL so production clients can reach the proxy
+        const serverBase = (process.env.SERVER_URL || `http://localhost:${process.env.PORT || 5000}`).replace(/\/+$/, '');
+        const previewUrl = `${serverBase}/api/preview/${port}`;
 
         const childProcess = spawn(runCmd, {
             cwd: executeDir,
@@ -430,6 +459,15 @@ const runProject = async (projectId, projectType, userId, io, roomId) => {
             consoleOutput,
             analysis
         });
+
+        // Wait for the project to actually start listening before returning the preview URL
+        emitToRoom(`⏳ Waiting for project to start on port ${port}...`, 'info');
+        const portReady = await waitForPort(port, 30, 1000); // 30 retries × 1s = 30s max
+        if (portReady) {
+            emitToRoom(`✅ Project is live on port ${port}!`, 'success');
+        } else {
+            emitToRoom(`⚠️ Port ${port} did not respond in 30s — preview may still load once ready`, 'warning');
+        }
 
         return {
             success: true,

@@ -38,6 +38,12 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
     const toPreviewUrl = (rawUrl) => {
         if (!rawUrl) return '';
         const serverBase = (import.meta.env?.VITE_SERVER_URL || 'http://localhost:5000').replace(/\/+$/, '');
+
+        // Already an absolute URL pointing to the proxy (server now returns these in production)
+        if (rawUrl.startsWith('http') && rawUrl.includes('/api/preview/')) {
+            return rawUrl;
+        }
+
         // Already a relative proxy URL from the server (e.g. /api/preview/3001)
         if (rawUrl.startsWith('/api/preview/')) {
             return `${serverBase}${rawUrl}`;
