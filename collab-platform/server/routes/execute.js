@@ -86,6 +86,27 @@ router.get('/console-output/:projectId', auth, (req, res) => {
     }
 });
 
+// Debug: check running processes (helps diagnose production preview issues)
+router.get('/debug-status/:projectId', auth, (req, res) => {
+    try {
+        const { projectId } = req.params;
+        const { isProjectRunning, getConsoleOutput } = require('../utils/projectRunner');
+        const running = isProjectRunning(projectId);
+        const { logs } = getConsoleOutput(projectId);
+        const lastLogs = logs.slice(-20); // Last 20 log entries
+        res.json({
+            projectId,
+            running,
+            logCount: logs.length,
+            recentLogs: lastLogs,
+            serverPort: process.env.PORT || '5000',
+            serverUrl: process.env.SERVER_URL || 'not set'
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Install a specific package
 router.post('/install-package', auth, async (req, res) => {
     try {

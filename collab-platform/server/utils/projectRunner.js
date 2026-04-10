@@ -26,8 +26,9 @@ const isPortAvailable = (port) => {
 };
 
 const findAvailablePort = async (startPort = 3001) => {
-    // Ports to avoid: 5000 (SkillSkirmish server), 5173 (SkillSkirmish client)
-    const blockedPorts = [5000, 5173];
+    // Ports to avoid: main server port, Vite dev, and common conflicts
+    const serverPort = parseInt(process.env.PORT || '5000', 10);
+    const blockedPorts = [serverPort, 5000, 5173];
     let port = startPort;
     const maxPort = startPort + 100;
 
@@ -460,14 +461,22 @@ const runProject = async (projectId, projectType, userId, io, roomId) => {
             analysis
         });
 
-        // Wait for the project to actually start listening before returning the preview URL
-        emitToRoom(`⏳ Waiting for project to start on port ${port}...`, 'info');
-        const portReady = await waitForPort(port, 30, 1000); // 30 retries × 1s = 30s max
-        if (portReady) {
-            emitToRoom(`✅ Project is live on port ${port}!`, 'success');
-        } else {
-            emitToRoom(`⚠️ Port ${port} did not respond in 30s — preview may still load once ready`, 'warning');
-        }
+        // Return the HTTP response IMMEDIATELY so the client gets the preview URL
+        // Then check port readiness in the background via Socket.IO
+        emitToRoom(`⏳ Waiting for project to become ready on port ${port}...`, 'info');
+
+        // Fire-and-forget: poll port readiness & emit live status via Socket.IO
+        waitForPort(port, 40, 1500).then((portReady) => {
+            if (portReady) {
+                emitToRoom(`✅ Project is live on port ${port}!`, 'success');
+                // Re-emit the preview URL so any late-joining members get it too
+                if (io && roomId) {
+                    io.to(roomId).emit('project-preview-url', { projectId, url: previewUrl });
+                }
+            } else {
+                emitToRoom(`⚠️ Port ${port} did not respond in 60s — the project may have crashed. Check console output above for errors.`, 'warning');
+            }
+        });
 
         return {
             success: true,
