@@ -3,6 +3,7 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const path = require('path');
 const fs = require('fs');
+const archiver = require('archiver');
 const multer = require('multer');
 const { spawn } = require('child_process');
 const { runProject, stopProject, getConsoleOutput, runFile, writeToProcess, stopProcess, executeCommand } = require('../utils/projectRunner');
@@ -301,10 +302,134 @@ router.post('/run-command', auth, async (req, res) => {
             return res.json({ success: true, output: '', newCwd });
         }
 
+        // Special handling for git clone - initiate async download
+        if (cmdLower.startsWith('git clone')) {
+            const gitUrl = command.substring('git clone'.length).trim();
+            if (!gitUrl) {
+                return res.json({ success: false, output: 'Error: Please provide a git URL. Usage: git clone <url>' });
+            }
+
+            // Extract repo name from URL
+            const repoNameMatch = gitUrl.match(/\/([^\/]+?)(\.git)?$/);
+            const repoName = repoNameMatch ? repoNameMatch[1] : 'cloned-repo';
+            
+            // Execute clone in background and send flag for download
+            const result = await executeCommand(projectId, command, io, roomId, cwd);
+            if (result.success) {
+                // Include download token so client can request the download
+                result.downloadPath = repoName;
+                result.isGitClone = true;
+            }
+            return res.json(result);
+        }
+
         const result = await executeCommand(projectId, command, io, roomId, cwd);
         res.json(result);
     } catch (err) {
         res.status(500).json({ success: false, output: err.message });
+    }
+});
+
+// ─── NEW: Download git cloned project as ZIP ─────────────────────
+router.post('/download-git-clone', auth, async (req, res) => {
+    try {
+        const { projectId, pathToClone } = req.body;
+        
+        if (!projectId || !pathToClone) {
+            return res.status(400).json({ success: false, message: 'Missing projectId or pathToClone' });
+        }
+
+        const projectRoot = path.join(process.env.PROJECTS_DIR || path.join(process.cwd(), 'projects'), projectId.toString());
+        const sourceDir = path.join(projectRoot, pathToClone);
+
+        // Validate path to prevent directory traversal
+        if (!sourceDir.startsWith(projectRoot)) {
+            console.error(`[Download] Path traversal attempt: ${sourceDir} not in ${projectRoot}`);
+            return res.status(400).json({ success: false, message: 'Invalid path' });
+        }
+
+        if (!fs.existsSync(sourceDir)) {
+            console.error(`[Download] Source directory not found: ${sourceDir}`);
+            return res.status(404).json({ success: false, message: `Cloned directory not found: ${pathToClone}` });
+        }
+
+        const stats = fs.statSync(sourceDir);
+        if (!stats.isDirectory()) {
+            console.error(`[Download] Path is not a directory: ${sourceDir}`);
+            return res.status(400).json({ success: false, message: 'Path is not a directory' });
+        }
+
+        // Use temp directory for zip files
+        const tempDir = path.join(process.cwd(), 'temp_uploads');
+        if (!fs.existsSync(tempDir)) {
+            fs.mkdirSync(tempDir, { recursive: true });
+        }
+
+        const zipName = `${path.basename(sourceDir)}-${Date.now()}.zip`;
+        const zipPath = path.join(tempDir, zipName);
+
+        console.log(`[Download] Creating zip: ${zipPath} from source: ${sourceDir}`);
+
+        return new Promise((resolve) => {
+            const output = fs.createWriteStream(zipPath);
+            const archive = archiver('zip', { zlib: { level: 6 } });
+
+            // Handle write stream errors
+            output.on('error', (err) => {
+                console.error('[Download] Write stream error:', err);
+                res.status(500).json({ success: false, message: 'Failed to write zip file' });
+                resolve();
+            });
+
+            // Handle archive errors
+            archive.on('error', (err) => {
+                console.error('[Download] Archive error:', err);
+                res.status(500).json({ success: false, message: 'Failed to create archive' });
+                resolve();
+            });
+
+            // When archive finishes writing
+            output.on('close', () => {
+                console.log(`[Download] Zip created successfully: ${zipPath} (${archive.pointer()} bytes)`);
+                
+                // Send the file
+                res.download(zipPath, zipName, (err) => {
+                    if (err) {
+                        console.error('[Download] Download error:', err);
+                    }
+                    
+                    // Clean up zip file after a delay
+                    setTimeout(() => {
+                        try {
+                            if (fs.existsSync(zipPath)) {
+                                fs.unlinkSync(zipPath);
+                                console.log(`[Download] Cleaned up zip: ${zipPath}`);
+                            }
+                        } catch (err) {
+                            console.error('[Download] Cleanup error:', err);
+                        }
+                    }, 2000);
+                });
+                resolve();
+            });
+
+            // Pipe archive to output
+            archive.pipe(output);
+            
+            // Add directory to archive
+            const repoName = path.basename(sourceDir);
+            archive.directory(sourceDir, repoName);
+            
+            // Finalize archive
+            archive.finalize().catch((err) => {
+                console.error('[Download] Finalize error:', err);
+                res.status(500).json({ success: false, message: 'Failed to finalize archive' });
+                resolve();
+            });
+        });
+    } catch (err) {
+        console.error('[Download] Unexpected error:', err);
+        res.status(500).json({ success: false, message: err.message });
     }
 });
 

@@ -7,10 +7,22 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
     const [commandHistory, setCommandHistory] = useState([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
     const [currentDir, setCurrentDir] = useState('');
+    const [githubLink, setGithubLink] = useState(() => {
+        // Load from localStorage on mount
+        const saved = localStorage.getItem(`github-link-${projectId}`);
+        return saved || '';
+    });
+    const [showGitConfig, setShowGitConfig] = useState(false);
 
     useEffect(() => {
         terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [logs]);
+
+    // Save GitHub link to localStorage
+    const handleSaveGithubLink = () => {
+        localStorage.setItem(`github-link-${projectId}`, githubLink);
+        setShowGitConfig(false);
+    };
 
     // Focus input when clicking anywhere in terminal
     const handleTerminalClick = () => {
@@ -85,6 +97,8 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
     // Quick command buttons
     const quickCommands = [
         { label: 'git status', cmd: 'git status' },
+        { label: 'git log', cmd: 'git log --oneline -5' },
+        { label: 'git clone', cmd: githubLink ? `git clone ${githubLink}` : 'git clone <url>' },
         { label: 'npm install', cmd: 'npm install' },
         { label: 'npm start', cmd: 'npm start' },
         { label: 'ls / dir', cmd: 'dir' },
@@ -116,6 +130,94 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
                         </button>
                     )}
                 </div>
+            </div>
+
+            {/* GitHub Link Configuration Section */}
+            <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '6px 10px',
+                backgroundColor: '#323233',
+                borderBottom: '1px solid #3e3e42',
+                fontSize: '12px'
+            }}>
+                <span style={{ color: '#999', whiteSpace: 'nowrap' }}>🔗 GitHub:</span>
+                {showGitConfig ? (
+                    <>
+                        <input
+                            type="text"
+                            value={githubLink}
+                            onChange={(e) => setGithubLink(e.target.value)}
+                            placeholder="https://github.com/user/repo.git"
+                            style={{
+                                flex: 1,
+                                padding: '4px 6px',
+                                backgroundColor: '#1e1e1e',
+                                border: '1px solid #444',
+                                color: '#e0e0e0',
+                                fontSize: 'inherit',
+                                outline: 'none',
+                                borderRadius: '3px'
+                            }}
+                        />
+                        <button
+                            onClick={handleSaveGithubLink}
+                            style={{
+                                padding: '2px 8px',
+                                backgroundColor: '#007acc',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: '3px',
+                                cursor: 'pointer',
+                                fontSize: 'inherit'
+                            }}
+                        >
+                            Save
+                        </button>
+                        <button
+                            onClick={() => setShowGitConfig(false)}
+                            style={{
+                                padding: '2px 8px',
+                                backgroundColor: '#444',
+                                color: '#999',
+                                border: 'none',
+                                borderRadius: '3px',
+                                cursor: 'pointer',
+                                fontSize: 'inherit'
+                            }}
+                        >
+                            Cancel
+                        </button>
+                    </>
+                ) : (
+                    <>
+                        <span style={{ 
+                            color: githubLink ? '#6a9955' : '#999',
+                            flex: 1,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis'
+                        }}>
+                            {githubLink || 'Not set'}
+                        </span>
+                        <button
+                            onClick={() => setShowGitConfig(true)}
+                            title="Configure GitHub repository"
+                            style={{
+                                padding: '2px 6px',
+                                backgroundColor: '#333',
+                                color: '#58a6ff',
+                                border: '1px solid #444',
+                                borderRadius: '3px',
+                                cursor: 'pointer',
+                                fontSize: '10px'
+                            }}
+                        >
+                            ⚙️ Edit
+                        </button>
+                    </>
+                )}
             </div>
 
             {/* Quick command bar — only shown when no process is running */}
@@ -170,11 +272,18 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
                             <div style={{ color: '#569cd6', marginBottom: '4px' }}>
                                 {shortDir} $
                             </div>
-                            <div style={{ opacity: 0.7 }}>
+                            <div style={{ opacity: 0.7, marginBottom: '8px' }}>
                                 Terminal ready. Type commands below or use the quick buttons.
                             </div>
-                            <div style={{ marginTop: '4px', opacity: 0.5, fontSize: '11px' }}>
-                                Supports: git, npm, npx, node, python, ls, dir, mkdir, pip
+                            <div style={{ marginTop: '8px', padding: '8px', backgroundColor: '#1a1a1a', borderRadius: '3px', borderLeft: '3px solid #569cd6', fontSize: '11px', opacity: 0.8 }}>
+                                <div style={{ marginBottom: '4px', color: '#4ec9b0', fontWeight: 'bold' }}>📚 Available Commands:</div>
+                                <div>✓ Git: clone, init, add, commit, push, pull, status, log</div>
+                                <div>✓ NPM: install, start, run, test, build</div>
+                                <div>✓ Node: node file.js, node -e "code"</div>
+                                <div>✓ File: ls/dir, cd, mkdir, cp, rm, cat</div>
+                                <div style={{ marginTop: '4px', color: '#dcdcaa' }}>
+                                    💡 Set GitHub link above to quick-clone repos!
+                                </div>
                             </div>
                         </div>
                     ) : (

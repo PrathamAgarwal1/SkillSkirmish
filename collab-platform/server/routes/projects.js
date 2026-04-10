@@ -60,12 +60,14 @@ router.get('/room/:roomId', auth, async (req, res) => {
 });
 
 // @route   POST api/projects
+// Create a new project - leader (room owner) is automatically added
 router.post('/', [auth, checkRoomAccess], async (req, res) => {
     const { name, description, projectType = 'React App', roomId } = req.body;
 
     try {
         const room = req.room;
 
+        // Always add the room leader (owner) and the creator to the project
         const membersSet = new Set([req.user.id, room.owner.toString()]);
         const members = Array.from(membersSet);
 
@@ -171,20 +173,33 @@ router.delete('/:id', [auth, checkRoomAccess], async (req, res) => {
 // @route   GET api/projects/:id
 router.get('/:id', [auth, checkRoomAccess], async (req, res) => {
     try {
-        // req.project is already populated by checkRoomAccess
         if (!req.project) {
             return res.status(404).json({ msg: 'Project not found' });
         }
 
+        // Re-fetch with populated members so the client gets {_id, username} objects
+        let populatedProject = await Project.findById(req.project._id)
+            .populate('members', 'username');
+
+        // Retroactively enforce Room Owner in members list for older projects
+        const roomOwnerStr = req.room.owner.toString();
+        if (!populatedProject.members.some(m => m._id.toString() === roomOwnerStr)) {
+            populatedProject = await Project.findByIdAndUpdate(
+                req.project._id,
+                { $addToSet: { members: req.room.owner } },
+                { new: true }
+            ).populate('members', 'username');
+        }
+
         // Project access check: Must be room owner or explicitly added to the project
         const isOwner = req.room.owner.toString() === req.user.id;
-        const isProjectMember = req.project.members.some(m => m.toString() === req.user.id);
+        const isProjectMember = populatedProject.members.some(m => m._id.toString() === req.user.id);
 
         if (!isOwner && !isProjectMember) {
             return res.status(403).json({ msg: 'You must be added to this project to open it' });
         }
 
-        res.json(req.project);
+        res.json(populatedProject);
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
@@ -210,10 +225,14 @@ router.put('/:id', [auth, checkRoomAccess], async (req, res) => {
 });
 
 // @route   POST api/projects/:id/members
+// Only the room leader (owner) can add members to projects
 router.post('/:id/members', [auth, checkRoomAccess], async (req, res) => {
     try {
-        if (req.room.owner.toString() !== req.user.id) {
-            return res.status(403).json({ msg: 'Only the room leader can manage project members' });
+        // Only room leader (owner) can add members
+        const isLeader = req.room.owner.toString() === req.user.id;
+        
+        if (!isLeader) {
+            return res.status(403).json({ msg: 'Only the room leader can add members to projects' });
         }
 
         const { userId } = req.body;
@@ -253,14 +272,19 @@ router.post('/:id/members', [auth, checkRoomAccess], async (req, res) => {
 });
 
 // @route   DELETE api/projects/:id/members/:memberId
+// Only the room leader (owner) can remove members from projects
 router.delete('/:id/members/:memberId', [auth, checkRoomAccess], async (req, res) => {
     try {
-        if (req.room.owner.toString() !== req.user.id) {
-            return res.status(403).json({ msg: 'Only the room leader can manage project members' });
+        // Only room leader (owner) can remove members
+        const isLeader = req.room.owner.toString() === req.user.id;
+        
+        if (!isLeader) {
+            return res.status(403).json({ msg: 'Only the room leader can remove members from projects' });
         }
 
+        // Leader (room owner) cannot be removed from the project
         if (req.params.memberId === req.room.owner.toString()) {
-            return res.status(400).json({ msg: 'Cannot remove the room owner from the project' });
+            return res.status(400).json({ msg: 'The room leader cannot be removed from the project' });
         }
 
         const project = await Project.findByIdAndUpdate(

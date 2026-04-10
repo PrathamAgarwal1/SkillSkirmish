@@ -619,6 +619,43 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
             }
             if (!response.data.success) {
                 addTerminalLog(`Command exited with code ${response.data.exitCode || 1}`, 'error');
+            } else if (response.data.isGitClone && response.data.downloadPath) {
+                // Handle git clone - trigger download with a small delay for server to finish zipping
+                addTerminalLog('✅ Git clone successful! Preparing download...', 'success');
+                
+                // Wait a bit for the server to complete zip creation
+                setTimeout(async () => {
+                    try {
+                        console.log(`[Download] Requesting: projectId=${projectId}, pathToClone=${response.data.downloadPath}`);
+                        const downloadRes = await axios.post('/api/execute/download-git-clone', {
+                            projectId,
+                            pathToClone: response.data.downloadPath
+                        }, { 
+                            responseType: 'blob',
+                            timeout: 30000 // 30 second timeout for zip creation
+                        });
+                        
+                        // Check if response is actually a blob/file
+                        if (downloadRes.data.size > 0) {
+                            // Create download link
+                            const url = window.URL.createObjectURL(new Blob([downloadRes.data]));
+                            const link = document.createElement('a');
+                            link.href = url;
+                            link.setAttribute('download', `${response.data.downloadPath}.zip`);
+                            document.body.appendChild(link);
+                            link.click();
+                            link.parentNode.removeChild(link);
+                            window.URL.revokeObjectURL(url);
+                            addTerminalLog(`📥 Downloaded: ${response.data.downloadPath}.zip`, 'success');
+                        } else {
+                            addTerminalLog(`⚠️ Download file is empty`, 'warning');
+                        }
+                    } catch (downloadErr) {
+                        const errMsg = downloadErr.response?.data?.message || downloadErr.message;
+                        console.error('[Download Error]', downloadErr);
+                        addTerminalLog(`⚠️ Clone succeeded but download failed: ${errMsg}`, 'warning');
+                    }
+                }, 500);
             }
 
             // Return newCwd if provided by server (for `cd` commands)
