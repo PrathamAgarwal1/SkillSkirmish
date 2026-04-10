@@ -373,9 +373,8 @@ const runProject = async (projectId, projectType, userId, io, roomId) => {
 
         // ── STEP 7: Spawn the process ──
         const env = { ...process.env, PORT: port.toString(), HOST: '0.0.0.0' };
-        // Build absolute preview URL so production clients can reach the proxy
-        const serverBase = (process.env.SERVER_URL || `http://localhost:${process.env.PORT || 5000}`).replace(/\/+$/, '');
-        const previewUrl = `${serverBase}/api/preview/${port}`;
+        // Build relative preview URL so production clients can reliably resolve it using VITE_SERVER_URL
+        const previewUrl = `/api/preview/${port}`;
 
         const childProcess = spawn(runCmd, {
             cwd: executeDir,
@@ -539,6 +538,22 @@ const getConsoleOutput = (projectId) => {
 
 const isProjectRunning = (projectId) => {
     return runningProcesses.has(projectId.toString());
+};
+
+/* ---------------------------------------------------------
+   STATUS OUTPUT
+--------------------------------------------------------- */
+const getProjectStatus = (projectId) => {
+    const processId = projectId.toString();
+    const info = runningProcesses.get(processId);
+    if (!info) return { running: false };
+    return {
+        running: true,
+        projectType: info.projectType,
+        port: info.port,
+        previewUrl: info.previewUrl,
+        startedAt: info.startedAt
+    };
 };
 
 /* ---------------------------------------------------------
@@ -759,6 +774,7 @@ module.exports = {
     stopProcess,
     getConsoleOutput,
     isProjectRunning,
+    getProjectStatus,
     executeCommand,
     findAvailablePort
 };

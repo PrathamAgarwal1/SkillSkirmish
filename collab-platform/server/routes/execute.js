@@ -90,8 +90,9 @@ router.get('/console-output/:projectId', auth, (req, res) => {
 router.get('/debug-status/:projectId', auth, (req, res) => {
     try {
         const { projectId } = req.params;
-        const { isProjectRunning, getConsoleOutput } = require('../utils/projectRunner');
+        const { isProjectRunning, getConsoleOutput, getProjectStatus } = require('../utils/projectRunner');
         const running = isProjectRunning(projectId);
+        const status = getProjectStatus(projectId);
         const { logs } = getConsoleOutput(projectId);
         const lastLogs = logs.slice(-20); // Last 20 log entries
         res.json({
@@ -100,10 +101,28 @@ router.get('/debug-status/:projectId', auth, (req, res) => {
             logCount: logs.length,
             recentLogs: lastLogs,
             serverPort: process.env.PORT || '5000',
-            serverUrl: process.env.SERVER_URL || 'not set'
+            serverUrl: process.env.SERVER_URL || 'not set',
+            previewUrl: status.previewUrl || ''
         });
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+// Get project running status, preview URL, and port
+router.get('/status/:projectId', auth, (req, res) => {
+    try {
+        const { projectId } = req.params;
+        const { getProjectStatus, getConsoleOutput } = require('../utils/projectRunner');
+        const status = getProjectStatus(projectId);
+        if (status.running) {
+            const { logs } = getConsoleOutput(projectId);
+            res.json({ ...status, logs });
+        } else {
+            res.json(status);
+        }
+    } catch (err) {
+        res.status(500).json({ running: false, error: err.message });
     }
 });
 

@@ -39,19 +39,16 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
         if (!rawUrl) return '';
         const serverBase = (import.meta.env?.VITE_SERVER_URL || 'http://localhost:5000').replace(/\/+$/, '');
 
-        // Already an absolute URL pointing to the proxy (server now returns these in production)
-        if (rawUrl.startsWith('http') && rawUrl.includes('/api/preview/')) {
-            return rawUrl;
+        // If it contains /api/preview/, strictly reuse it but with our known server base to ensure accessibility
+        const apiIndex = rawUrl.indexOf('/api/preview/');
+        if (apiIndex !== -1) {
+            return `${serverBase}${rawUrl.substring(apiIndex)}`;
         }
 
-        // Already a relative proxy URL from the server (e.g. /api/preview/3001)
-        if (rawUrl.startsWith('/api/preview/')) {
-            return `${serverBase}${rawUrl}`;
-        }
         // Raw localhost URL from stdout detection — convert to proxy
         try {
             const parsed = new URL(rawUrl);
-            if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '0.0.0.0') {
+            if (['localhost', '127.0.0.1', '0.0.0.0'].includes(parsed.hostname)) {
                 const port = parsed.port;
                 if (port) return `${serverBase}/api/preview/${port}${parsed.pathname || '/'}`;
             }
@@ -316,6 +313,28 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
         };
         loadFiles();
     }, [projectId, formatFilesForTree]);
+
+    // Check running status on mount (for late joining members)
+    useEffect(() => {
+        if (!projectId) return;
+        const fetchStatus = async () => {
+            try {
+                const response = await axios.get(`/api/execute/status/${projectId}`);
+                if (response.data.running) {
+                    setIsProjectRunning(true);
+                    if (response.data.previewUrl) {
+                        setPreviewUrl(toPreviewUrl(response.data.previewUrl));
+                    }
+                    if (response.data.logs) {
+                        setConsoleLogs(response.data.logs);
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to fetch project status', err);
+            }
+        };
+        fetchStatus();
+    }, [projectId]);
 
     const handleSelectFile = async (file) => {
         setCurrentFile(file);
