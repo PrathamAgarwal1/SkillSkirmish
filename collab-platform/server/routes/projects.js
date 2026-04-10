@@ -66,12 +66,15 @@ router.post('/', [auth, checkRoomAccess], async (req, res) => {
     try {
         const room = req.room;
 
+        const membersSet = new Set([req.user.id, room.owner.toString()]);
+        const members = Array.from(membersSet);
+
         const newProject = new Project({
             name,
             description,
             projectType, // Save the type (e.g., 'React App')
             room: roomId,
-            members: [req.user.id] // Add creator as a member
+            members: members
         });
 
         const project = await newProject.save();
@@ -254,6 +257,10 @@ router.delete('/:id/members/:memberId', [auth, checkRoomAccess], async (req, res
     try {
         if (req.room.owner.toString() !== req.user.id) {
             return res.status(403).json({ msg: 'Only the room leader can manage project members' });
+        }
+
+        if (req.params.memberId === req.room.owner.toString()) {
+            return res.status(400).json({ msg: 'Cannot remove the room owner from the project' });
         }
 
         const project = await Project.findByIdAndUpdate(

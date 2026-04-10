@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
-const ManageMembersModal = ({ project, roomMembers, onClose, onMembersUpdated }) => {
+const ManageMembersModal = ({ project, roomMembers, roomOwner, onClose, onMembersUpdated }) => {
     const [projectMembers, setProjectMembers] = useState([]);
     const [loading, setLoading] = useState(true);
 
@@ -47,6 +47,9 @@ const ManageMembersModal = ({ project, roomMembers, onClose, onMembersUpdated })
     };
     
     const isMemberOfProject = (userId) => projectMembers.some(pm => pm._id === userId);
+    
+    // Check if user is the room owner
+    const isRoomOwner = (userId) => roomOwner && (roomOwner === userId || roomOwner._id === userId);
 
     if (loading) {
         return (
@@ -78,18 +81,28 @@ const ManageMembersModal = ({ project, roomMembers, onClose, onMembersUpdated })
                             <h4 style={{ color: '#8b949e', marginBottom: '1rem', borderBottom: '1px solid #333', paddingBottom: '0.5rem', fontFamily: 'var(--font-mono)' }}>$ PROJECT_MEMBERS</h4>
                             <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: '250px', overflowY: 'auto' }}>
                                 {projectMembers.length === 0 && <li style={{ color: '#484f58', fontSize: '0.9rem', fontStyle: 'italic' }}>No members added yet.</li>}
-                                {projectMembers.map(member => (
+                                {projectMembers.map(member => {
+                                    const owner = isRoomOwner(member._id);
+                                    return (
                                     <li key={member._id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid #1f1f1f' }}>
-                                        <span style={{ color: '#c9d1d9', fontSize: '0.9rem' }}>{member.username}</span>
-                                        <button
-                                            className="btn-term"
-                                            onClick={() => handleRemoveMember(member._id)}
-                                            style={{ color: '#f85149', borderColor: 'transparent', padding: '4px 8px' }}
-                                        >
-                                            REMOVE
-                                        </button>
+                                        <span style={{ color: '#c9d1d9', fontSize: '0.9rem' }}>
+                                            {member.username} 
+                                            {owner && <span style={{color: '#f0883e', fontSize: '0.75rem', marginLeft: '6px', fontWeight: 'bold'}}>[LEADER]</span>}
+                                        </span>
+                                        {!owner ? (
+                                            <button
+                                                className="btn-term"
+                                                onClick={() => handleRemoveMember(member._id)}
+                                                style={{ color: '#f85149', borderColor: 'transparent', padding: '4px 8px' }}
+                                            >
+                                                REMOVE
+                                            </button>
+                                        ) : (
+                                            <span style={{ color: '#8b949e', fontSize: '0.75rem', padding: '4px 8px', fontStyle: 'italic' }}>OWNER</span>
+                                        )}
                                     </li>
-                                ))}
+                                    );
+                                })}
                             </ul>
                         </div>
 

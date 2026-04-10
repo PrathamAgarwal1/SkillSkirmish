@@ -928,6 +928,7 @@ const RoomPage = () => {
                 <ManageMembersModal
                     project={manageMembersProject}
                     roomMembers={roomMembers}
+                    roomOwner={room.owner}
                     onClose={() => setManageMembersProject(null)}
                     onMembersUpdated={handleMembersUpdated}
                 />
