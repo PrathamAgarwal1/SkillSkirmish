@@ -71,7 +71,8 @@ const UserSchema = new mongoose.Schema({
         github: { type: String, default: '' },
         linkedin: { type: String, default: '' },
         portfolio: { type: String, default: '' },
-        twitter: { type: String, default: '' }
+        twitter: { type: String, default: '' },
+        leetcode: { type: String, default: '' }
     },
     socialsPublic: {
         type: Boolean,

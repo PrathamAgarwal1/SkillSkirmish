@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
 const User = require('../models/User');
+const Room = require('../models/Room');
+const Notification = require('../models/Notification');
 
 // @route   GET api/profile/me
 // @desc    Get current user's profile
@@ -59,7 +61,7 @@ router.get('/', async (req, res) => {
 router.put('/', auth, async (req, res) => {
     const { 
         skills, socialLinks, socialsPublic, 
-        bio, location, company, website 
+        bio, location, company, website, username
     } = req.body;
 
     const profileFields = {};
@@ -72,11 +74,61 @@ router.put('/', auth, async (req, res) => {
     if (website) profileFields.website = website;
 
     try {
+        let isNameChanged = false;
+        let oldUsername = '';
+
+        if (username) {
+            const existingUser = await User.findOne({ username, _id: { $ne: req.user.id } });
+            if (existingUser) {
+                return res.status(400).json({ msg: 'Username is already taken' });
+            }
+            const currentUser = await User.findById(req.user.id);
+            if (currentUser && currentUser.username !== username) {
+                isNameChanged = true;
+                oldUsername = currentUser.username;
+            }
+            profileFields.username = username;
+        }
+
         let user = await User.findByIdAndUpdate(
             req.user.id,
             { $set: profileFields },
             { new: true }
         ).select('-password');
+
+        if (isNameChanged) {
+            const rooms = await Room.find({ members: req.user.id });
+            const membersToNotify = new Set();
+            rooms.forEach(room => {
+                room.members.forEach(memberId => {
+                    if (memberId.toString() !== req.user.id) {
+                        membersToNotify.add(memberId.toString());
+                    }
+                });
+            });
+
+            const notificationsToInsert = Array.from(membersToNotify).map(memberId => ({
+                user: memberId,
+                sender: req.user.id,
+                message: `${oldUsername} changed name to ${username}`,
+                type: 'info'
+            }));
+
+            if (notificationsToInsert.length > 0) {
+                await Notification.insertMany(notificationsToInsert);
+                
+                const io = req.app.get('socketio');
+                const userSocketMap = req.app.get('userSocketMap');
+                if (io && userSocketMap) {
+                    membersToNotify.forEach(memberId => {
+                        const socketId = userSocketMap[memberId];
+                        if (socketId) {
+                            io.to(socketId).emit('new-notification');
+                        }
+                    });
+                }
+            }
+        }
 
         return res.json(user);
     } catch (err) {

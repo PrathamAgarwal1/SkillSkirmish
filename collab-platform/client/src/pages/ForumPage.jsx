@@ -157,7 +157,8 @@ const ForumPage = () => {
                 ))}
             </div>
 
-            {activeTab === 'matchmake' && (
+            <div style={{ flexGrow: 1, overflowY: 'auto', paddingRight: '0.5rem', minHeight: 0 }}>
+                {activeTab === 'matchmake' && (
                 <div style={{ maxWidth: '650px', margin: '0 auto' }}>
                     <div className="term-card">
                         <div className="term-header">
@@ -333,9 +334,9 @@ const ForumPage = () => {
                         </div>
                     )}
 
-                    <div className="room-grid-display">
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
                         {recommendedRooms.map((room, idx) => (
-                            <div key={room.roomId} className="term-card" style={{ marginBottom: '1rem' }}>
+                            <div key={room.roomId} className="term-card" style={{ display: 'flex', flexDirection: 'column' }}>
                                 <div className="term-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ color: 'var(--term-green)', fontFamily: 'var(--font-mono)' }}>
                                         room_{idx + 1}
@@ -344,19 +345,19 @@ const ForumPage = () => {
                                         color: getScoreColor(room.matchScore),
                                         fontFamily: 'var(--font-mono)',
                                         fontWeight: 'bold',
-                                        fontSize: '0.85rem'
+                                        fontSize: '0.75rem'
                                     }}>
                                         MATCH: {room.matchScore}/100
                                     </span>
                                 </div>
-                                <div className="term-body" style={{ padding: '1.2rem' }}>
+                                <div className="term-body" style={{ padding: '0.8rem', display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
                                     {/* Room Name & Owner */}
-                                    <div style={{ marginBottom: '0.8rem' }}>
-                                        <h4 style={{ color: 'var(--text-bright)', margin: 0, fontFamily: 'var(--font-mono)', fontSize: '1rem' }}>
+                                    <div style={{ marginBottom: '0.6rem' }}>
+                                        <h4 style={{ color: 'var(--text-bright)', margin: 0, fontFamily: 'var(--font-mono)', fontSize: '0.9rem' }}>
                                             {room.name}
                                         </h4>
                                         {room.owner && (
-                                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
                                                 by {room.owner.username}
                                             </span>
                                         )}
@@ -364,37 +365,24 @@ const ForumPage = () => {
 
                                     {/* Description */}
                                     {room.description && (
-                                        <p style={{ color: 'var(--text-main)', fontSize: '0.85rem', marginBottom: '0.8rem', lineHeight: '1.4' }}>
+                                        <p style={{ color: 'var(--text-main)', fontSize: '0.75rem', marginBottom: '0.6rem', lineHeight: '1.3' }}>
                                             {room.description}
                                         </p>
                                     )}
 
                                     {/* Required Skills */}
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.8rem' }}>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginBottom: '0.6rem' }}>
                                         {room.requiredSkills.map(skill => (
                                             <span key={skill.name} style={{
                                                 background: 'rgba(57, 134, 250, 0.15)',
                                                 color: 'var(--term-blue)',
-                                                padding: '0.2rem 0.6rem',
+                                                padding: '0.1rem 0.4rem',
                                                 borderRadius: 'var(--radius-sm)',
-                                                fontSize: '0.7rem',
+                                                fontSize: '0.65rem',
                                                 fontFamily: 'var(--font-mono)',
                                                 border: '1px solid rgba(57, 134, 250, 0.3)'
                                             }}>
                                                 {skill.name} {skill.weight > 1 ? `×${skill.weight}` : ''}
-                                            </span>
-                                        ))}
-                                        {room.tags && room.tags.map(tag => (
-                                            <span key={tag} style={{
-                                                background: 'rgba(255, 255, 255, 0.05)',
-                                                color: 'var(--text-muted)',
-                                                padding: '0.2rem 0.6rem',
-                                                borderRadius: 'var(--radius-sm)',
-                                                fontSize: '0.7rem',
-                                                fontFamily: 'var(--font-mono)',
-                                                border: '1px solid var(--border-subtle)'
-                                            }}>
-                                                #{tag}
                                             </span>
                                         ))}
                                     </div>
@@ -402,12 +390,13 @@ const ForumPage = () => {
                                     {/* Reasoning */}
                                     <div style={{
                                         background: 'rgba(0,0,0,0.2)',
-                                        padding: '0.5rem 0.8rem',
+                                        padding: '0.4rem 0.6rem',
                                         borderRadius: 'var(--radius-sm)',
-                                        marginBottom: '1rem',
-                                        fontSize: '0.75rem',
+                                        marginBottom: '0.8rem',
+                                        fontSize: '0.7rem',
                                         fontFamily: 'var(--font-mono)',
-                                        color: 'var(--text-muted)'
+                                        color: 'var(--text-muted)',
+                                        marginTop: 'auto'
                                     }}>
                                         <span style={{ color: 'var(--term-blue)' }}>ANALYSIS:</span> {room.reason}
                                     </div>
@@ -415,15 +404,15 @@ const ForumPage = () => {
                                     {/* Footer: Members + Join Button */}
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <span style={{
-                                            fontSize: '0.75rem', color: 'var(--text-muted)',
+                                            fontSize: '0.7rem', color: 'var(--text-muted)',
                                             fontFamily: 'var(--font-mono)'
                                         }}>
-                                            👥 {room.memberCount}/{room.capacity} members
+                                            👥 {room.memberCount}/{room.capacity}
                                         </span>
                                         <button
                                             className="btn-term-primary"
                                             onClick={() => handleRequestJoinRoom(room.roomId)}
-                                            style={{ fontSize: '0.75rem', padding: '0.4rem 1rem' }}
+                                            style={{ fontSize: '0.7rem', padding: '0.3rem 0.8rem' }}
                                         >
                                             REQUEST ACCESS
                                         </button>
@@ -434,6 +423,7 @@ const ForumPage = () => {
                     </div>
                 </div>
             )}
+            </div>
 
             {/* INVITE MODAL */}
             {showInviteModal && (

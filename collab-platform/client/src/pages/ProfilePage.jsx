@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import AIAssessmentModal from '../components/assessment/AIAssessmentModal';
 import InviteModal from '../components/rooms/InviteModal';
 import AuthContext from '../context/AuthContext';
+import { socket } from '../socket';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceArea
 } from 'recharts';
@@ -77,6 +78,15 @@ const ProfilePage = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [graphFilter, setGraphFilter] = useState('');
 
+    // Edit Profile State
+    const [isEditing, setIsEditing] = useState(false);
+    const [editForm, setEditForm] = useState({
+        username: '',
+        github: '',
+        linkedin: '',
+        leetcode: ''
+    });
+
     // Invite Logic State
     const [myRooms, setMyRooms] = useState([]);
     const [showInviteModal, setShowInviteModal] = useState(false);
@@ -93,6 +103,12 @@ const ProfilePage = () => {
             if (res.data.skills && res.data.skills.length > 0 && !graphFilter) {
                 setGraphFilter(res.data.skills[0].name);
             }
+            setEditForm({
+                username: res.data.username || '',
+                github: res.data.socialLinks?.github || '',
+                linkedin: res.data.socialLinks?.linkedin || '',
+                leetcode: res.data.socialLinks?.leetcode || ''
+            });
         } catch (err) {
             console.error("Failed to fetch profile:", err);
         } finally {
@@ -137,9 +153,29 @@ const ProfilePage = () => {
             });
     };
 
-    // Helper: is this skill actually rated?
     const isRated = (s) => s && s.elo != null && (s.matchesPlayed || 0) > 0;
     const displayElo = (s) => isRated(s) ? s.elo : null;
+
+    const handleSaveProfile = async () => {
+        try {
+            const res = await axios.put('/api/profile', {
+                username: editForm.username,
+                socialLinks: {
+                    ...profile.socialLinks,
+                    github: editForm.github,
+                    linkedin: editForm.linkedin,
+                    leetcode: editForm.leetcode
+                }
+            });
+            setProfile(res.data);
+            setIsEditing(false);
+            if (res.data.username !== profile.username) {
+                socket.emit('profileUpdated', { userId: profile._id, username: res.data.username });
+            }
+        } catch (err) {
+            alert(`Failed to save profile: ${err.response?.data?.msg || 'Error'}`);
+        }
+    };
 
     const handleSendInvite = async (roomId, message) => {
         try {
@@ -221,49 +257,92 @@ const ProfilePage = () => {
                     padding: '1.5rem', display: 'flex', justifyContent: 'space-between',
                     alignItems: 'center', flexWrap: 'wrap', gap: '1rem'
                 }}>
-                    <div>
-                        <h1 style={{
-                            fontSize: '2rem', marginBottom: '0.5rem', color: 'var(--text-bright)',
-                            fontFamily: 'var(--font-mono)'
-                        }}>
-                            {profile.username}
-                        </h1>
-                        <div style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                            <span style={{ color: 'var(--term-blue)' }}>ID:</span> {profile._id}
-                            <span style={{ margin: '0 10px', color: 'var(--border-subtle)' }}>|</span>
-                            <span style={{ color: 'var(--term-blue)' }}>EMAIL:</span> {profile.email}
-                        </div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                        <div style={{
-                            fontSize: '0.75rem', color: 'var(--text-muted)',
-                            letterSpacing: '1px', fontFamily: 'var(--font-mono)', marginBottom: '0.3rem'
-                        }}>MAX RATING</div>
-                        {(() => {
-                            const ratedSkills = profile.skills.filter(s => isRated(s));
-                            const maxElo = ratedSkills.length > 0 ? Math.max(...ratedSkills.map(s => s.elo)) : null;
-                            return (
-                                <div style={{
-                                    fontSize: '1.8rem', fontWeight: 'bold',
-                                    color: maxElo != null ? getRankColor(maxElo) : 'var(--text-muted)',
+                    {!isEditing ? (
+                        <>
+                            <div>
+                                <h1 style={{
+                                    fontSize: '2rem', marginBottom: '0.5rem', color: 'var(--text-bright)',
                                     fontFamily: 'var(--font-mono)'
                                 }}>
-                                    {maxElo != null ? getRankName(maxElo) : 'Unrated'}
+                                    {profile.username}
+                                    {isOwnProfile && (
+                                        <button onClick={() => setIsEditing(true)} 
+                                            style={{ marginLeft: '1rem', background: 'none', border: 'none', color: 'var(--term-blue)', cursor: 'pointer', fontSize: '0.9rem' }}>
+                                            [EDIT PROFILE]
+                                        </button>
+                                    )}
+                                </h1>
+                                <div style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                    <span style={{ color: 'var(--term-blue)' }}>ID:</span> {profile._id}
+                                    <span style={{ margin: '0 10px', color: 'var(--border-subtle)' }}>|</span>
+                                    <span style={{ color: 'var(--term-blue)' }}>EMAIL:</span> {profile.email}
                                 </div>
-                            );
-                        })()}
-                    </div>
+                                
+                                {/* SOCIAL LINKS */}
+                                <div style={{ marginTop: '0.5rem', display: 'flex', gap: '1rem', fontSize: '0.85rem' }}>
+                                    {profile.socialLinks?.github && <a href={profile.socialLinks.github} target="_blank" rel="noreferrer" style={{ color: 'var(--term-green)' }}>GitHub</a>}
+                                    {profile.socialLinks?.linkedin && <a href={profile.socialLinks.linkedin} target="_blank" rel="noreferrer" style={{ color: 'var(--term-green)' }}>LinkedIn</a>}
+                                    {profile.socialLinks?.leetcode && <a href={profile.socialLinks.leetcode} target="_blank" rel="noreferrer" style={{ color: 'var(--term-green)' }}>LeetCode</a>}
+                                </div>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                                <div style={{
+                                    fontSize: '0.75rem', color: 'var(--text-muted)',
+                                    letterSpacing: '1px', fontFamily: 'var(--font-mono)', marginBottom: '0.3rem'
+                                }}>MAX RATING</div>
+                                {(() => {
+                                    const ratedSkills = profile.skills.filter(s => isRated(s));
+                                    const maxElo = ratedSkills.length > 0 ? Math.max(...ratedSkills.map(s => s.elo)) : null;
+                                    return (
+                                        <div style={{
+                                            fontSize: '1.8rem', fontWeight: 'bold',
+                                            color: maxElo != null ? getRankColor(maxElo) : 'var(--text-muted)',
+                                            fontFamily: 'var(--font-mono)'
+                                        }}>
+                                            {maxElo != null ? getRankName(maxElo) : 'Unrated'}
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+                        </>
+                    ) : (
+                        <div style={{ width: '100%' }}>
+                            <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: '1fr 1fr' }}>
+                                <div>
+                                    <label style={{ color: 'var(--term-blue)', fontSize: '0.75rem', display: 'block', marginBottom: '0.2rem' }}>USERNAME</label>
+                                    <input type="text" className="term-input" value={editForm.username} onChange={e => setEditForm({...editForm, username: e.target.value})} />
+                                </div>
+                                <div>
+                                    <label style={{ color: 'var(--term-blue)', fontSize: '0.75rem', display: 'block', marginBottom: '0.2rem' }}>GITHUB URL</label>
+                                    <input type="text" className="term-input" value={editForm.github} onChange={e => setEditForm({...editForm, github: e.target.value})} />
+                                </div>
+                                <div>
+                                    <label style={{ color: 'var(--term-blue)', fontSize: '0.75rem', display: 'block', marginBottom: '0.2rem' }}>LINKEDIN URL</label>
+                                    <input type="text" className="term-input" value={editForm.linkedin} onChange={e => setEditForm({...editForm, linkedin: e.target.value})} />
+                                </div>
+                                <div>
+                                    <label style={{ color: 'var(--term-blue)', fontSize: '0.75rem', display: 'block', marginBottom: '0.2rem' }}>LEETCODE URL</label>
+                                    <input type="text" className="term-input" value={editForm.leetcode} onChange={e => setEditForm({...editForm, leetcode: e.target.value})} />
+                                </div>
+                            </div>
+                            <div style={{ marginTop: '1rem', display: 'flex', gap: '1rem' }}>
+                                <button className="btn-term-primary" onClick={handleSaveProfile}>SAVE CHANGES</button>
+                                <button className="btn-term" onClick={() => setIsEditing(false)}>CANCEL</button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
 
-            <div className="dashboard-grid" style={{
-                gridTemplateColumns: isOwnProfile ? '300px 1fr' : '1fr',
-                gap: '1.5rem'
+            <div style={{
+                display: 'flex',
+                gap: '1.5rem',
+                flexDirection: isOwnProfile ? 'row' : 'column'
             }}>
 
                 {/* --- LEFT COLUMN (ONLY VISIBLE IF IT IS MY PROFILE) --- */}
                 {isOwnProfile && (
-                    <div className="dashboard-sidebar" style={{ gap: '1.5rem' }}>
+                    <div style={{ width: '380px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                         {/* Skill Check Card */}
                         <div className="term-card">
                             <div className="term-header">
@@ -330,7 +409,7 @@ const ProfilePage = () => {
                 )}
 
                 {/* --- RIGHT COLUMN (GRAPH) --- */}
-                <div className="dashboard-main">
+                <div style={{ flexGrow: 1, minWidth: 0 }}>
                     <div className="term-card">
                         <div className="term-header" style={{ justifyContent: 'space-between' }}>
                             <span>rating_history.log</span>

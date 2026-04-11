@@ -191,6 +191,28 @@ io.on('connection', (socket) => {
         }
     });
 
+    // --- PROFILE ALERTS ---
+    socket.on('profileUpdated', ({ userId, username }) => {
+        let updatedRooms = [];
+        for (const roomId in roomUsers) {
+            let updated = false;
+            roomUsers[roomId] = roomUsers[roomId].map(u => {
+                if (u.userId === userId) {
+                    updated = true;
+                    return { ...u, username };
+                }
+                return u;
+            });
+            if (updated) {
+                updatedRooms.push(roomId);
+                io.to(roomId).emit('roomUsers', roomUsers[roomId]); // Broadcast to specific rooms
+            }
+        }
+        // Emit global state update so any listening components (like Dashboard) update their views
+        io.emit('dashboard-update', { userId });
+        console.log(`Profile updated for user ${userId}. Updated rooms: ${updatedRooms.join(', ')}`);
+    });
+
     // ========================================================
     // MEDIASOUP SIGNALING EVENTS
     // ========================================================
