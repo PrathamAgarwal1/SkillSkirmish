@@ -13,9 +13,9 @@ const hf = process.env.HF_API_KEY ? new HfInference(process.env.HF_API_KEY) : nu
 --------------------------------------------------------- */
 const MODELS = {
     AUTOCOMPLETE: 'llama-3.1-8b-instant',           // 14.4K RPD, fast
-    CHAT: 'meta-llama/llama-4-scout-17b-16e-instruct', // 500K TPD, smart
-    EVALUATION: 'meta-llama/llama-4-scout-17b-16e-instruct',
-    GENERATION: 'meta-llama/llama-4-scout-17b-16e-instruct',
+    CHAT: 'llama-3.3-70b-versatile', // 500K TPD, smart
+    EVALUATION: 'llama-3.3-70b-versatile',
+    GENERATION: 'llama-3.3-70b-versatile',
 };
 
 /* ---------------------------------------------------------
@@ -173,7 +173,11 @@ async function callAI(messages, options = {}) {
         for (const modelName of geminiModels) {
             try {
                 console.log(`🤖 [${taskLabel}] Falling back to Gemini (${modelName})...`);
-                const geminiModel = genAI.getGenerativeModel({ model: modelName });
+                const generationConfig = {};
+                if (jsonMode) {
+                    generationConfig.responseMimeType = "application/json";
+                }
+                const geminiModel = genAI.getGenerativeModel({ model: modelName, generationConfig });
 
                 // Convert chat format to Gemini format
                 const prompt = messages.map(m => `${m.role}: ${m.content}`).join('\n\n');
