@@ -195,8 +195,7 @@ const ForumPage = () => {
                     {matchResult && matchResult.matches && matchResult.matches.map((match, idx) => (
                         <div key={idx} className="term-card" style={{ marginTop: '1.5rem' }}>
                             <div className="term-header">
-                                <span style={{ color: 'var(--term-green)' }}>match_result_{idx + 1}</span>
-                                <span style={{ marginLeft: 'auto', color: 'var(--term-gold)' }}>Score: {match.matchScore}</span>
+                                <span style={{ color: 'var(--term-green)' }}>{match.username || `match_result_${idx + 1}`}</span>
                             </div>
                             <div className="term-body" style={{ padding: '1.5rem' }}>
                                 <div style={{ marginBottom: '1rem' }}>
