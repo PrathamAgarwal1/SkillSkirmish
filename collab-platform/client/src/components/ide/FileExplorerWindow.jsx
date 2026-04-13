@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 
-const FileExplorerWindow = ({ files = [], onSelectFile, selectedFile, onCreateFile, onDeleteFile, onRenameFile, onUploadFiles }) => {
+const FileExplorerWindow = ({ files = [], onSelectFile, selectedFile, onCreateFile, onDeleteFile, onRenameFile, onUploadFiles, onCollapse }) => {
     const folderInputRef = useRef(null);
     const fileInputRef = useRef(null);
     const [expandedFolders, setExpandedFolders] = useState(new Set());
@@ -413,6 +413,16 @@ const FileExplorerWindow = ({ files = [], onSelectFile, selectedFile, onCreateFi
                     >
                         📂⬆
                     </button>
+                    {onCollapse && (
+                        <button
+                            className="window-btn"
+                            onClick={onCollapse}
+                            title="Collapse Explorer"
+                            style={{ color: '#999', fontSize: '12px', fontWeight: 'bold' }}
+                        >
+                            ◀
+                        </button>
+                    )}
                 </div>
             </div>
             <div className="window-content" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>

@@ -19,6 +19,7 @@ const ForumPage = () => {
     const [filterSkill, setFilterSkill] = useState('');
     const [filterMinElo, setFilterMinElo] = useState('');
     const [filterMaxElo, setFilterMaxElo] = useState('');
+    const [filterName, setFilterName] = useState('');
 
     // Discover Rooms State
     const [recommendedRooms, setRecommendedRooms] = useState([]);
@@ -139,20 +140,61 @@ const ForumPage = () => {
             </header>
 
             {/* Tab Bar */}
+            <style>{`
+                .forum-tab-icon { transition: transform 0.3s ease, filter 0.3s ease; display: inline-block; vertical-align: middle; margin-right: 6px; }
+                .forum-tab:hover .forum-tab-icon { transform: scale(1.2) rotate(8deg); filter: drop-shadow(0 0 4px currentColor); }
+                .forum-tab.active .forum-tab-icon { animation: tabIconPulse 2s ease-in-out infinite; }
+                @keyframes tabIconPulse {
+                    0%, 100% { transform: scale(1); filter: drop-shadow(0 0 2px currentColor); }
+                    50% { transform: scale(1.15); filter: drop-shadow(0 0 8px currentColor); }
+                }
+                .forum-tab { transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important; position: relative; overflow: hidden; }
+                .forum-tab:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+                .forum-tab::after { content: ''; position: absolute; bottom: 0; left: 50%; width: 0; height: 2px; background: currentColor; transition: all 0.3s ease; transform: translateX(-50%); }
+                .forum-tab:hover::after { width: 80%; }
+                .forum-tab.active::after { width: 100%; background: rgba(255,255,255,0.5); }
+            `}</style>
             <div style={{
                 display: 'flex', gap: '0.5rem', marginBottom: '2rem',
                 borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.5rem'
             }}>
-                {['matchmake', 'browse', 'discover'].map(tab => (
-                    <button key={tab} onClick={() => setActiveTab(tab)} style={{
-                        background: activeTab === tab ? 'var(--term-green)' : 'transparent',
-                        color: activeTab === tab ? '#fff' : 'var(--text-muted)',
-                        border: activeTab === tab ? 'none' : '1px solid var(--border-subtle)',
-                        padding: '0.5rem 1.2rem', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+                {[
+                    { key: 'matchmake', label: 'AI Matchmaking', icon: (
+                        <svg className="forum-tab-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="10" opacity="0.3"/>
+                            <circle cx="12" cy="12" r="6" opacity="0.5"/>
+                            <circle cx="12" cy="12" r="2" fill="currentColor"/>
+                            <line x1="12" y1="2" x2="12" y2="6"/>
+                            <line x1="12" y1="18" x2="12" y2="22"/>
+                            <line x1="2" y1="12" x2="6" y2="12"/>
+                            <line x1="18" y1="12" x2="22" y2="12"/>
+                        </svg>
+                    )},
+                    { key: 'browse', label: 'Browse Developers', icon: (
+                        <svg className="forum-tab-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                            <circle cx="9" cy="7" r="4"/>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                        </svg>
+                    )},
+                    { key: 'discover', label: 'Discover Rooms', icon: (
+                        <svg className="forum-tab-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="10"/>
+                            <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" fill="currentColor" opacity="0.3"/>
+                        </svg>
+                    )}
+                ].map(tab => (
+                    <button key={tab.key} className={`forum-tab ${activeTab === tab.key ? 'active' : ''}`} onClick={() => setActiveTab(tab.key)} style={{
+                        background: activeTab === tab.key ? 'var(--term-green)' : 'transparent',
+                        color: activeTab === tab.key ? '#fff' : 'var(--text-muted)',
+                        border: activeTab === tab.key ? 'none' : '1px solid var(--border-subtle)',
+                        padding: '0.6rem 1.4rem', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
                         fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 'bold',
-                        textTransform: 'uppercase', letterSpacing: '1px', transition: 'all 0.2s'
+                        textTransform: 'uppercase', letterSpacing: '1px',
+                        display: 'flex', alignItems: 'center', gap: '0'
                     }}>
-                        {tab === 'matchmake' ? '⚡ AI Matchmaking' : tab === 'browse' ? '👥 Browse Developers' : '🔍 Discover Rooms'}
+                        {tab.icon}{tab.label}
                     </button>
                 ))}
             </div>
@@ -186,8 +228,29 @@ const ForumPage = () => {
                                 style={{ marginBottom: '1rem' }} />
 
                             <button className="btn-term-primary" onClick={handleAIMatchmake}
-                                disabled={loading || !requiredSkills} style={{ width: '100%', padding: '0.8rem' }}>
-                                {loading ? 'ANALYZING CANDIDATES...' : '⚡ FIND MATCH'}
+                                disabled={loading || !requiredSkills} style={{
+                                    width: '100%', padding: '0.8rem', display: 'flex', alignItems: 'center',
+                                    justifyContent: 'center', gap: '8px', position: 'relative', overflow: 'hidden'
+                                }}>
+                                {loading ? (
+                                    <>
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: 'spin 1s linear infinite' }}>
+                                            <circle cx="12" cy="12" r="10" opacity="0.3"/>
+                                            <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round"/>
+                                        </svg>
+                                        ANALYZING CANDIDATES...
+                                    </>
+                                ) : (
+                                    <>
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                            <circle cx="12" cy="12" r="10" opacity="0.3"/>
+                                            <circle cx="12" cy="12" r="6" opacity="0.5"/>
+                                            <circle cx="12" cy="12" r="2" fill="currentColor"/>
+                                        </svg>
+                                        FIND MATCH
+                                    </>
+                                )}
+                                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
                             </button>
                         </div>
                     </div>
@@ -223,6 +286,14 @@ const ForumPage = () => {
                     {/* Filter Bar */}
                     <div className="term-card" style={{ marginBottom: '1.5rem', padding: '1.2rem', display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
                         <div style={{ flex: 2, minWidth: '200px' }}>
+                            <label style={{ fontSize: '0.7rem', color: 'var(--term-green)', display: 'block', marginBottom: '0.4rem', fontFamily: 'var(--font-mono)' }}>SEARCH NAME</label>
+                            <input
+                                type="text" className="term-input"
+                                placeholder="Search by name..."
+                                value={filterName} onChange={e => setFilterName(e.target.value)}
+                            />
+                        </div>
+                        <div style={{ flex: 2, minWidth: '200px' }}>
                             <label style={{ fontSize: '0.7rem', color: 'var(--term-blue)', display: 'block', marginBottom: '0.4rem', fontFamily: 'var(--font-mono)' }}>FILTER SKILL</label>
                             <input
                                 type="text" className="term-input"
@@ -250,19 +321,23 @@ const ForumPage = () => {
 
                     <div className="room-grid-display">
                         {developers.filter(dev => {
+                            const username = dev.user?.username || '';
+                            const nameMatch = !filterName || username.toLowerCase().includes(filterName.toLowerCase());
                             const skills = dev.skills || [];
                             const hasSkill = !filterSkill || skills.some(s => s.name.toLowerCase().includes(filterSkill.toLowerCase()));
                             const maxRating = skills.length > 0 ? Math.max(...skills.map(s => s.elo || 0)) : 0;
                             const minRating = filterMinElo ? parseInt(filterMinElo) : 0;
                             const maxRatingLimit = filterMaxElo ? parseInt(filterMaxElo) : 10000;
-                            return hasSkill && maxRating >= minRating && maxRating <= maxRatingLimit;
+                            return nameMatch && hasSkill && maxRating >= minRating && maxRating <= maxRatingLimit;
                         }).length > 0 ? developers.filter(dev => {
+                            const username = dev.user?.username || '';
+                            const nameMatch = !filterName || username.toLowerCase().includes(filterName.toLowerCase());
                             const skills = dev.skills || [];
                             const hasSkill = !filterSkill || skills.some(s => s.name.toLowerCase().includes(filterSkill.toLowerCase()));
                             const maxRating = skills.length > 0 ? Math.max(...skills.map(s => s.elo || 0)) : 0;
                             const minRating = filterMinElo ? parseInt(filterMinElo) : 0;
                             const maxRatingLimit = filterMaxElo ? parseInt(filterMaxElo) : 10000;
-                            return hasSkill && maxRating >= minRating && maxRating <= maxRatingLimit;
+                            return nameMatch && hasSkill && maxRating >= minRating && maxRating <= maxRatingLimit;
                         }).map(dev => (
                             <div key={dev._id} className="room-card-mini" style={{ flexDirection: 'column', gap: '0.8rem' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>

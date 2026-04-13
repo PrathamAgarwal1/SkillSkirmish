@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, projectId }) => {
+const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, projectId, collapsed, onToggleCollapse }) => {
     const terminalEndRef = useRef(null);
     const [inputValue, setInputValue] = useState('');
     const inputRef = useRef(null);
@@ -119,7 +119,7 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
                     {!isRunning && <span style={{ marginLeft: '8px', color: '#569cd6', fontSize: '11px' }}>● Shell Ready</span>}
                 </h3>
                 <div className="window-controls" style={{ display: 'flex', gap: '4px' }}>
-                    {onClear && (
+                    {!collapsed && onClear && (
                         <button 
                             className="window-btn" 
                             onClick={onClear} 
@@ -129,9 +129,21 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
                             🗑️
                         </button>
                     )}
+                    {onToggleCollapse && (
+                        <button
+                            className="window-btn"
+                            onClick={onToggleCollapse}
+                            title={collapsed ? "Expand Terminal" : "Collapse Terminal"}
+                            style={{ color: '#999', fontSize: '12px', fontWeight: 'bold' }}
+                        >
+                            {collapsed ? '▼' : '▲'}
+                        </button>
+                    )}
                 </div>
             </div>
 
+            {!collapsed && (
+                <>
             {/* GitHub Link Configuration Section */}
             <div style={{
                 display: 'flex',
@@ -334,6 +346,8 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
                     />
                 </div>
             </div>
+                </>
+            )}
         </div>
     );
 };

@@ -369,7 +369,7 @@ const ProfilePage = () => {
                                     }}
                                     disabled={isOnCooldown || profile.skills.length === 0}
                                     style={{ width: '100%', padding: '0.7rem' }}>
-                                    {isOnCooldown ? 'COOLDOWN ACTIVE' : '⚡ START ASSESSMENT'}
+                                    {isOnCooldown ? 'COOLDOWN ACTIVE' : '▸ START ASSESSMENT'}
                                 </button>
                                 {isOnCooldown && (
                                     <div style={{

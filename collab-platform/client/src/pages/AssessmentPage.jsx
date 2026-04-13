@@ -53,7 +53,7 @@ const AssessmentPage = () => {
 
     const getTypeBadge = (type) => {
         const colors = { coding: '#f0883e', mcq: 'var(--term-blue)', subjective: 'var(--term-purple)' };
-        const labels = { coding: '⌨️ CODING', mcq: '📝 MCQ', subjective: '💬 SUBJECTIVE' };
+        const labels = { coding: '⌘ CODING', mcq: '☰ MCQ', subjective: '⊳ SUBJECTIVE' };
         return { color: colors[type] || 'var(--text-muted)', label: labels[type] || type?.toUpperCase() };
     };
 
@@ -64,7 +64,7 @@ const AssessmentPage = () => {
         setPhase('session');
         setLoading(true);
         addToHistory('bot', `Initializing assessment for [${skill}]...`);
-        addToHistory('bot', 'Assessment includes: ⌨️ Coding, 📝 MCQ, and 💬 Subjective questions. You can skip any question.');
+        addToHistory('bot', 'Assessment includes: ⌘ Coding, ☰ MCQ, and ⊳ Subjective questions. You can skip any question.');
 
         try {
             const res = await axios.post('/api/assessment/start', { skill });
@@ -205,9 +205,9 @@ const AssessmentPage = () => {
                         {/* Assessment category cards */}
                         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center', margin: '2rem 0' }}>
                             {[
-                                { icon: '⌨️', label: 'Coding', desc: '8 coding challenges', color: '#f0883e' },
-                                { icon: '📝', label: 'MCQ', desc: '6 multiple choice', color: 'var(--term-blue)' },
-                                { icon: '💬', label: 'Subjective', desc: '6 open-ended', color: 'var(--term-purple)' }
+                                { icon: '⌘', label: 'Coding', desc: '8 coding challenges', color: '#f0883e' },
+                                { icon: '☰', label: 'MCQ', desc: '6 multiple choice', color: 'var(--term-blue)' },
+                                { icon: '⊳', label: 'Subjective', desc: '6 open-ended', color: 'var(--term-purple)' }
                             ].map(m => (
                                 <div key={m.label} style={{
                                     width: '160px', padding: '1.2rem',
@@ -226,7 +226,7 @@ const AssessmentPage = () => {
                             padding: '0.8rem 3rem', fontSize: '1rem', letterSpacing: '1px',
                             borderRadius: 'var(--radius-md)', marginBottom: '1rem'
                         }}>
-                            ⚡ START ASSESSMENT
+                            {'▸'} START ASSESSMENT
                         </button>
 
                         <div>
@@ -445,11 +445,11 @@ const AssessmentPage = () => {
                                 borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-muted)', fontSize: '0.85rem',
                                 display: 'flex', justifyContent: 'space-between', alignItems: 'center'
                             }}>
-                                <span style={{ color: badge.color }}>⌨️ CODING — {getEditorLanguage().toUpperCase()}</span>
+                                <span style={{ color: badge.color }}>[CODING] — {getEditorLanguage().toUpperCase()}</span>
                                 <div style={{ display: 'flex', gap: '0.5rem' }}>
                                     <button onClick={handleSkip} disabled={loading} className="btn-term" style={{
                                         padding: '0.3rem 0.8rem', fontSize: '0.75rem'
-                                    }}>SKIP ⏭</button>
+                                    }}>SKIP {'»'}</button>
                                 </div>
                             </div>
                             <Editor
@@ -479,9 +479,9 @@ const AssessmentPage = () => {
                         /* MCQ OPTIONS */
                         <div style={{ padding: '1.5rem' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                                <span style={{ color: 'var(--term-blue)', fontSize: '0.85rem', fontWeight: 'bold' }}>📝 Select your answer:</span>
+                                <span style={{ color: 'var(--term-blue)', fontSize: '0.85rem', fontWeight: 'bold' }}>☰ Select your answer:</span>
                                 <button onClick={handleSkip} disabled={loading} className="btn-term"
-                                    style={{ padding: '0.3rem 0.8rem', fontSize: '0.75rem' }}>SKIP ⏭</button>
+                                    style={{ padding: '0.3rem 0.8rem', fontSize: '0.75rem' }}>SKIP {'»'}</button>
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem' }}>
                                 {sessionData.options.map((opt, idx) => (
@@ -507,9 +507,9 @@ const AssessmentPage = () => {
                         /* SUBJECTIVE TEXT INPUT */
                         <div style={{ padding: '1.5rem', backgroundColor: 'var(--bg-card)' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.8rem' }}>
-                                <span style={{ color: 'var(--term-purple)', fontSize: '0.85rem', fontWeight: 'bold' }}>💬 Your answer:</span>
+                                <span style={{ color: 'var(--term-purple)', fontSize: '0.85rem', fontWeight: 'bold' }}>⊳ Your answer:</span>
                                 <button onClick={handleSkip} disabled={loading} className="btn-term"
-                                    style={{ padding: '0.3rem 0.8rem', fontSize: '0.75rem' }}>SKIP ⏭</button>
+                                    style={{ padding: '0.3rem 0.8rem', fontSize: '0.75rem' }}>SKIP {'»'}</button>
                             </div>
                             <form onSubmit={handleSubmitAnswer} style={{ display: 'flex', gap: '0.8rem', alignItems: 'center' }}>
                                 <span style={{ color: 'var(--term-green)', fontSize: '1.2rem' }}>{'>'}</span>

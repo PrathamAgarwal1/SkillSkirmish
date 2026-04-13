@@ -298,11 +298,33 @@ const DashboardPage = () => {
                     <div className={`dashboard-sidebar ${isSidebarOpen ? 'expanded' : 'collapsed'}`}>
 
                         <div className="sidebar-icon-bar">
-                            <i className="fas fa-chart-line" title="Activity">📊</i>
-                            <i className="fas fa-bell" title="Notifications">🔔</i>
-                            <i className="fas fa-bolt" title="Quick Match">⚡</i>
-                            <i className="fas fa-search" title="Find Room">🔍</i>
-                            <i className="fas fa-heartbeat" title="Platform Pulse">💓</i>
+                            <span title="Activity" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--term-green)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                                </svg>
+                            </span>
+                            <span title="Notifications" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--term-gold)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                                    <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                                </svg>
+                            </span>
+                            <span title="Quick Match" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--term-blue)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                                </svg>
+                            </span>
+                            <span title="Find Room" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--term-cyan, #00d4ff)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <circle cx="11" cy="11" r="8"/>
+                                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                                </svg>
+                            </span>
+                            <span title="Platform Pulse" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--term-purple, #b388ff)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                                </svg>
+                            </span>
                         </div>
 
                         <div className="sidebar-content-wrapper">
@@ -456,18 +478,19 @@ const DashboardPage = () => {
                                     </div>
 
                                     {/* Discoverable Toggle */}
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', margin: '0.4rem 0' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', margin: '0.4rem 0' }}>
                                         <label style={{
                                             display: 'flex', alignItems: 'center', gap: '0.5rem',
                                             cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: '0.8rem',
-                                            color: roomDiscoverable ? 'var(--term-green)' : 'var(--text-muted)'
+                                            color: roomDiscoverable ? 'var(--term-green)' : 'var(--text-muted)',
+                                            whiteSpace: 'nowrap'
                                         }}>
                                             <input type="checkbox" checked={roomDiscoverable}
                                                 onChange={(e) => { setRoomDiscoverable(e.target.checked); setShowAdvanced(e.target.checked); }}
-                                                style={{ accentColor: 'var(--term-green)' }} />
-                                            🔍 Make Discoverable
+                                                style={{ accentColor: 'var(--term-green)', width: '14px', height: '14px' }} />
+                                            Make Discoverable
                                         </label>
-                                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                                             (appears in room recommendations)
                                         </span>
                                     </div>
@@ -543,7 +566,11 @@ const DashboardPage = () => {
                                 {myRooms.length > 0 ? (
                                     myRooms.map(room => (
                                         <div key={room._id} className="room-card-mini">
-                                            <div className="room-icon">📁</div>
+                                            <div className="room-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--term-gold)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" fill="rgba(210,153,34,0.1)"/>
+                                                </svg>
+                                            </div>
                                             <div className="room-info">
                                                 <Link to={`/rooms/${room._id}`} className="room-title">{room.name}</Link>
                                                 <span className="room-desc">{room.description || 'No description'}</span>

@@ -28,6 +28,14 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
     const [showPackageModal, setShowPackageModal] = useState(false);
     const [showBrowserWindow, setShowBrowserWindow] = useState(false);
 
+    // Collapsible panel state
+    const [panelCollapsed, setPanelCollapsed] = useState({
+        explorer: false,
+        console: false,
+        terminal: false
+    });
+    const togglePanel = (panel) => setPanelCollapsed(prev => ({ ...prev, [panel]: !prev[panel] }));
+
     // Collaborative editing presence
     const [collabPresence, setCollabPresence] = useState([]);
 
@@ -799,39 +807,56 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
             {/* Main Window Container */}
             <div className="window-container">
                 {/* Left Column: File Explorer (Full Height) */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', minWidth: '250px', flex: 0, position: 'relative' }}>
-                    <FileExplorerWindow
-                        files={files}
-                        onSelectFile={handleSelectFile}
-                        selectedFile={currentFile?.path}
-                        onCreateFile={handleCreateFile}
-                        onDeleteFile={handleDeleteFile}
-                        onRenameFile={handleRenameFile}
-                        onUploadFiles={handleUploadFiles}
-                    />
-                    {/* Package Library Toggle Button */}
-                    <button
-                        onClick={() => setShowPackageModal(!showPackageModal)}
-                        style={{
-                            position: 'absolute',
-                            bottom: '10px',
-                            left: '10px',
-                            padding: '8px 14px',
-                            background: '#007acc',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontSize: '12px',
-                            fontWeight: '600',
-                            zIndex: 50,
-                            transition: 'background 0.2s'
-                        }}
-                        onMouseEnter={(e) => e.target.style.background = '#005a9e'}
-                        onMouseLeave={(e) => e.target.style.background = '#007acc'}
-                    >
-                        📦 Packages
-                    </button>
+                <div style={{
+                    display: 'flex', flexDirection: 'column', gap: '5px',
+                    width: panelCollapsed.explorer ? '40px' : '250px',
+                    minWidth: panelCollapsed.explorer ? '40px' : '250px',
+                    flex: 0, position: 'relative',
+                    transition: 'width 0.25s ease, min-width 0.25s ease'
+                }}>
+                    {panelCollapsed.explorer ? (
+                        <div className="ide-window" style={{ flex: 1, cursor: 'pointer' }} onClick={() => togglePanel('explorer')}>
+                            <div className="window-header" style={{ padding: '8px 4px', justifyContent: 'center' }}>
+                                <span style={{ fontSize: '14px', writingMode: 'vertical-rl', textOrientation: 'mixed', color: '#ccc', letterSpacing: '2px', fontSize: '11px' }}>EXPLORER</span>
+                            </div>
+                        </div>
+                    ) : (
+                        <>
+                            <FileExplorerWindow
+                                files={files}
+                                onSelectFile={handleSelectFile}
+                                selectedFile={currentFile?.path}
+                                onCreateFile={handleCreateFile}
+                                onDeleteFile={handleDeleteFile}
+                                onRenameFile={handleRenameFile}
+                                onUploadFiles={handleUploadFiles}
+                                onCollapse={() => togglePanel('explorer')}
+                            />
+                            {/* Package Library Toggle Button */}
+                            <button
+                                onClick={() => setShowPackageModal(!showPackageModal)}
+                                style={{
+                                    position: 'absolute',
+                                    bottom: '10px',
+                                    left: '10px',
+                                    padding: '8px 14px',
+                                    background: '#007acc',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontSize: '12px',
+                                    fontWeight: '600',
+                                    zIndex: 50,
+                                    transition: 'background 0.2s'
+                                }}
+                                onMouseEnter={(e) => e.target.style.background = '#005a9e'}
+                                onMouseLeave={(e) => e.target.style.background = '#007acc'}
+                            >
+                                📦 Packages
+                            </button>
+                        </>
+                    )}
                 </div>
 
                 {/* Middle Column: Code Editor */}
@@ -849,16 +874,27 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
                 {/* Right Column: Console & Terminal Split */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', flex: 1 }}>
                     {/* Top: Project Console */}
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                    <div style={{
+                        flex: panelCollapsed.console ? '0 0 36px' : 1,
+                        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+                        transition: 'flex 0.25s ease'
+                    }}>
                         <ConsoleWindow
                             logs={consoleLogs}
                             onClearLogs={handleClearLogs}
                             isRunning={isProjectRunning}
+                            collapsed={panelCollapsed.console}
+                            onToggleCollapse={() => togglePanel('console')}
                         />
                     </div>
 
                     {/* Bottom: Interactive Terminal */}
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderTop: '2px solid #333' }}>
+                    <div style={{
+                        flex: panelCollapsed.terminal ? '0 0 36px' : 1,
+                        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+                        borderTop: '2px solid #333',
+                        transition: 'flex 0.25s ease'
+                    }}>
                         <TerminalWindow
                             logs={terminalLogs}
                             onInput={handleTerminalInput}
@@ -866,6 +902,8 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
                             isRunning={!!activeFileProcessId}
                             onCommand={handleCommandExec}
                             projectId={projectId}
+                            collapsed={panelCollapsed.terminal}
+                            onToggleCollapse={() => togglePanel('terminal')}
                         />
                     </div>
                 </div>
