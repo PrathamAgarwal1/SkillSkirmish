@@ -38,6 +38,8 @@ const AssessmentSessionSchema = new Schema(
         questionPlan: [{ type: String }],
         // Randomized difficulty plan (Easy/Medium/Hard)
         difficultyPlan: [{ type: String }],
+        // Randomized difficulty numeric targets
+        difficultyPlanElos: [{ type: Number }],
 
         // Current question fields
         currentQuestionText: { type: String, default: '' },
@@ -47,6 +49,7 @@ const AssessmentSessionSchema = new Schema(
         currentCodeTemplate: { type: String, default: '' },
         currentTestCases: [{ input: String, output: String }],
         currentDifficulty: { type: String, enum: ['Easy', 'Medium', 'Hard'], default: 'Medium' },
+        currentDifficultyElo: { type: Number, default: 1200 },
         currentType: { type: String, default: 'subjective' },
 
         // All answered questions

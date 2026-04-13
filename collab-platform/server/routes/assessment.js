@@ -69,25 +69,52 @@ function buildQuestionPlan() {
 }
 
 /**
- * Build a difficulty plan: mix of Easy, Medium, Hard
- * 20 questions: 6 Easy, 8 Medium, 6 Hard (shuffled)
+ * Convert dynamic ELO to a UI difficulty label.
  */
-function buildDifficultyPlan() {
+function getDynamicLabel(questionElo, userElo) {
+  if (questionElo < userElo - 75) return 'Easy';
+  if (questionElo > userElo + 75) return 'Hard';
+  return 'Medium';
+}
+
+/**
+ * Build a dynamic difficulty plan: mix of numerical ELO targets
+ * 20 questions: 
+ * - 60% growth (12 questions): userElo + 50 to userElo + 150
+ * - 30% stability (6 questions): userElo - 50 to userElo + 50
+ * - 10% confidence (2 questions): userElo - 150 to userElo - 50
+ * Returns array of targets sorted to ensure smooth progression.
+ */
+function buildDynamicDifficultyPlan(userElo) {
+  const baseElo = userElo || 1200;
   let plan = [];
-  plan.push(...Array(6).fill('Easy'));
-  plan.push(...Array(8).fill('Medium'));
-  plan.push(...Array(6).fill('Hard'));
-  return shuffleArray(plan);
+  
+  // 10% confidence (2 questions)
+  for(let i=0; i<2; i++) {
+    plan.push(baseElo - 50 - Math.random() * 100); // -150 to -50
+  }
+  // 30% stability (6 questions)
+  for(let i=0; i<6; i++) {
+    plan.push(baseElo - 50 + Math.random() * 100); // -50 to +50
+  }
+  // 60% growth (12 questions)
+  for(let i=0; i<12; i++) {
+    plan.push(baseElo + 50 + Math.random() * 100); // +50 to +150
+  }
+  
+  // Add randomness ±30, then sort for smooth progression
+  plan = plan.map(elo => elo + (Math.random() * 60 - 30));
+  return plan.map(Math.round).sort((a, b) => a - b);
 }
 
 /**
  * Generate a question of a requiredType while avoiding duplicates.
  */
-async function generateQuestion(skill, currentElo, requiredType, avoidList = [], targetDifficulty = null) {
+async function generateQuestion(skill, currentElo, requiredType, avoidList = [], targetElo = null) {
   const effectiveElo = currentElo || 1200;
   let lastErr = null;
-  const diffLabel = targetDifficulty || 'Medium';
-  const diffElo = difficultyToElo(diffLabel);
+  const qElo = targetElo || effectiveElo;
+  const diffLabel = getDynamicLabel(qElo, effectiveElo);
 
   for (let attempt = 0; attempt < GENERATE_RETRY_LIMIT; attempt++) {
     try {
@@ -96,7 +123,7 @@ async function generateQuestion(skill, currentElo, requiredType, avoidList = [],
       const prompt = `
         Task: Generate 1 unique technical interview question.
         Topic: ${skill}
-        Difficulty: ${diffLabel} (ELO ~${diffElo})
+        Difficulty: ${diffLabel} (ELO ~${qElo})
         Type: ${requiredType} — ${typeLabel}
         
         CRITICAL RULES:
@@ -139,7 +166,8 @@ async function generateQuestion(skill, currentElo, requiredType, avoidList = [],
         answer: aiData.answer || 'Refer to documentation',
         difficulty: aiData.difficulty || diffLabel,
         codeTemplate: requiredType === 'coding' ? (aiData.codeTemplate || `// Write your ${skill} solution here\n`) : '',
-        testCases: requiredType === 'coding' && Array.isArray(aiData.testCases) ? aiData.testCases : []
+        testCases: requiredType === 'coding' && Array.isArray(aiData.testCases) ? aiData.testCases : [],
+        difficultyElo: qElo
       };
     } catch (err) {
       lastErr = err;
@@ -153,19 +181,19 @@ async function generateQuestion(skill, currentElo, requiredType, avoidList = [],
     return {
       type: 'mcq', question: `Which of the following best describes ${skill}?`, title: 'Fallback MCQ',
       options: ["Core framework", "Utility library", "Design pattern", "All of the above"],
-      answer: "All of the above", difficulty: 'Easy', codeTemplate: '', testCases: []
+      answer: "All of the above", difficulty: diffLabel, codeTemplate: '', testCases: [], difficultyElo: qElo
     };
   } else if (requiredType === 'coding') {
     return {
       type: 'coding', question: `Write a function that demonstrates a core concept of ${skill}.`,
       title: 'Fallback Coding', options: [], answer: '// Solution code',
-      difficulty: 'Easy', codeTemplate: `// Write your ${skill} solution here\n`, testCases: [{ input: 'test', output: 'test' }]
+      difficulty: diffLabel, codeTemplate: `// Write your ${skill} solution here\n`, testCases: [{ input: 'test', output: 'test' }], difficultyElo: qElo
     };
   } else {
     return {
       type: 'subjective', question: `Explain the core concepts of ${skill} and when you would use it.`,
       title: 'Fallback Subjective', options: [], answer: 'Refer to documentation',
-      difficulty: 'Easy', codeTemplate: '', testCases: []
+      difficulty: diffLabel, codeTemplate: '', testCases: [], difficultyElo: qElo
     };
   }
 }
@@ -191,23 +219,24 @@ router.post('/start', auth, async (req, res) => {
 
     // Build randomized plans
     const plan = buildQuestionPlan();
-    const diffPlan = buildDifficultyPlan();
+    const diffPlanElos = buildDynamicDifficultyPlan(currentRating);
     const firstType = plan[0];
-    const firstDifficulty = diffPlan[0];
+    const firstDifficultyElo = diffPlanElos[0];
 
     // Generate first question (this can fail — fallback is built into generateQuestion)
     let aiData;
     try {
-      aiData = await generateQuestion(skill, currentRating, firstType, [], firstDifficulty);
+      aiData = await generateQuestion(skill, currentRating, firstType, [], firstDifficultyElo);
     } catch (genErr) {
       console.error('[Assessment][start] Question generation failed:', genErr.message);
       // Use a hardcoded fallback so the session can still start
       aiData = {
         type: firstType, question: `Explain a core concept of ${skill}.`,
         title: 'Getting Started', options: firstType === 'mcq' ? ['Option A', 'Option B', 'Option C', 'Option D'] : [],
-        answer: 'Refer to documentation', difficulty: 'Easy',
+        answer: 'Refer to documentation', difficulty: getDynamicLabel(firstDifficultyElo, currentRating || 1200),
         codeTemplate: firstType === 'coding' ? `// Write your ${skill} solution here\n` : '',
-        testCases: firstType === 'coding' ? [{ input: 'test', output: 'test' }] : []
+        testCases: firstType === 'coding' ? [{ input: 'test', output: 'test' }] : [],
+        difficultyElo: firstDifficultyElo
       };
     }
 
@@ -225,10 +254,11 @@ router.post('/start', auth, async (req, res) => {
       currentCodeTemplate: aiData.codeTemplate || '',
       currentTestCases: aiData.testCases || [],
       currentDifficulty: aiData.difficulty || 'Medium',
+      currentDifficultyElo: aiData.difficultyElo || firstDifficultyElo,
       currentType: firstType,
       askedQuestions: [aiData.question],
       questionPlan: plan,
-      difficultyPlan: diffPlan,
+      difficultyPlanElos: diffPlanElos,
       questionsLog: [],
       completed: false
     });
@@ -295,7 +325,7 @@ router.post('/submit', auth, async (req, res) => {
       questionText: session.currentQuestionText,
       questionType: qType,
       difficulty: session.currentDifficulty || 'Medium',
-      difficultyElo: difficultyToElo(session.currentDifficulty),
+      difficultyElo: session.currentDifficultyElo || 1200,
       userAnswer,
       correctAnswer: session.currentAnswer,
       scorePercentage,
@@ -322,14 +352,14 @@ router.post('/submit', auth, async (req, res) => {
         nextType = session.questionPlan[nextIndex];
       }
 
-      // Get difficulty from plan
-      let nextDifficulty = 'Medium';
-      if (Array.isArray(session.difficultyPlan) && nextIndex < session.difficultyPlan.length) {
-        nextDifficulty = session.difficultyPlan[nextIndex];
+      // Get difficulty from dynamic plan
+      let nextDifficultyElo = session.startRating || 1200;
+      if (Array.isArray(session.difficultyPlanElos) && nextIndex < session.difficultyPlanElos.length) {
+        nextDifficultyElo = session.difficultyPlanElos[nextIndex];
       }
 
       const effectiveRating = session.startRating || 1200;
-      const nextAiQ = await generateQuestion(session.skill, effectiveRating, nextType, session.askedQuestions || [], nextDifficulty);
+      const nextAiQ = await generateQuestion(session.skill, effectiveRating, nextType, session.askedQuestions || [], nextDifficultyElo);
 
       session.currentQuestionText = nextAiQ.question;
       session.currentOptions = nextAiQ.options || [];
@@ -338,6 +368,7 @@ router.post('/submit', auth, async (req, res) => {
       session.currentCodeTemplate = nextAiQ.codeTemplate || '';
       session.currentTestCases = nextAiQ.testCases || [];
       session.currentDifficulty = nextAiQ.difficulty || 'Medium';
+      session.currentDifficultyElo = nextAiQ.difficultyElo || nextDifficultyElo;
       session.currentType = nextType;
       session.questionCount = nextIndex + 1;
 
@@ -399,13 +430,13 @@ router.post('/skip', auth, async (req, res) => {
       nextType = session.questionPlan[nextIndex];
     }
 
-    let nextDifficulty = 'Medium';
-    if (Array.isArray(session.difficultyPlan) && nextIndex < session.difficultyPlan.length) {
-      nextDifficulty = session.difficultyPlan[nextIndex];
+    let nextDifficultyElo = session.startRating || 1200;
+    if (Array.isArray(session.difficultyPlanElos) && nextIndex < session.difficultyPlanElos.length) {
+      nextDifficultyElo = session.difficultyPlanElos[nextIndex];
     }
 
     const effectiveRating = session.startRating || 1200;
-    const nextAiQ = await generateQuestion(session.skill, effectiveRating, nextType, session.askedQuestions || [], nextDifficulty);
+    const nextAiQ = await generateQuestion(session.skill, effectiveRating, nextType, session.askedQuestions || [], nextDifficultyElo);
 
     session.currentQuestionText = nextAiQ.question;
     session.currentOptions = nextAiQ.options || [];
@@ -414,6 +445,7 @@ router.post('/skip', auth, async (req, res) => {
     session.currentCodeTemplate = nextAiQ.codeTemplate || '';
     session.currentTestCases = nextAiQ.testCases || [];
     session.currentDifficulty = nextAiQ.difficulty || 'Medium';
+    session.currentDifficultyElo = nextAiQ.difficultyElo || nextDifficultyElo;
     session.currentType = nextType;
     session.questionCount = nextIndex + 1;
 
@@ -495,7 +527,9 @@ router.post('/finish', auth, async (req, res) => {
     const newRating = Math.max(0, effectiveOldRating + ratingChange);
 
     skillObj.elo = newRating;
-    skillObj.mastery = Math.max(0, Math.min(100, (skillObj.mastery || 0) + Math.round((accuracy / 100) * 10)));
+    // Rescaled mastery: a perfect assessment now grants +30 mastery instead of +10
+    const masteryGain = Math.round((accuracy / 100) * 30);
+    skillObj.mastery = Math.max(0, Math.min(100, (skillObj.mastery || 0) + masteryGain));
     skillObj.matchesPlayed = matchesPlayed + attempted;
     skillObj.isProvisional = skillObj.matchesPlayed < 30;
 

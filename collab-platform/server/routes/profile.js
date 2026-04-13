@@ -149,12 +149,15 @@ router.put('/skill-elo', auth, async (req, res) => {
 
         if (skillIndex > -1) {
             user.skills[skillIndex].elo = newElo;
-            user.skills[skillIndex].mastery = Math.min(100, Math.max(0, Math.round((newElo / 2400) * 100)));
+            // Retain current mastery or default to 50
+            if (user.skills[skillIndex].mastery === undefined) {
+                user.skills[skillIndex].mastery = 50;
+            }
         } else {
             user.skills.push({ 
                 name: skillName, 
                 elo: newElo,
-                mastery: Math.min(100, Math.max(0, Math.round((newElo / 2400) * 100)))
+                mastery: 50
             });
         }
         await user.save();
