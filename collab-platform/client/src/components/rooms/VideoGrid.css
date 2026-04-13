@@ -1,0 +1,135 @@
+/* VideoGrid Flat Architecture */
+
+.premium-video-grid {
+    flex: 1;
+    display: grid;
+    gap: 8px;
+    padding: 16px;
+    align-content: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+}
+
+.layout-full { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+.layout-split { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; }
+.layout-grid { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.layout-scale { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+
+.premium-video-tile {
+    position: relative;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.premium-video-tile.active-speaker {
+    border-color: var(--accent-primary);
+}
+
+.premium-video-el {
+    width: 100%;
+    height: 100%;
+    background-color: var(--bg-primary);
+}
+
+.premium-tile-overlay {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    background: rgba(13, 17, 23, 0.8);
+    backdrop-filter: blur(4px);
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.identity-name {
+    color: var(--text-primary);
+    font-size: 12px;
+    font-weight: 500;
+}
+
+/* Control Bar */
+.discord-control-bar {
+    position: absolute;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    padding: 8px 16px;
+    border-radius: 4px;
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    z-index: 100;
+}
+
+.discord-control-group {
+    display: flex;
+    gap: 8px;
+}
+
+.discord-btn, .discord-btn-leave {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    width: 48px;
+    height: 48px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.discord-btn:hover {
+    background: var(--border-color);
+}
+
+.discord-btn-off {
+    color: var(--accent-danger);
+}
+
+.discord-btn-leave {
+    background: transparent;
+    color: var(--accent-danger);
+    border-color: var(--accent-danger);
+}
+.discord-btn-leave:hover {
+    background: rgba(239, 68, 68, 0.1);
+}
+
+/* Fallback Avatars */
+.premium-avatar-tray {
+    display: flex;
+    gap: 8px;
+    padding: 8px 16px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.avatar-bubble {
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+}
+.avatar-bubble.active-speaker-ring {
+    border-color: var(--accent-primary);
+}

@@ -3,8 +3,11 @@ const Groq = require('groq-sdk');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { HfInference } = require('@huggingface/inference');
 
-// Initialize AI Clients (reusing existing env vars)
-const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
+// Initialize Groq Clients (supports rotation with GROQ_API_KEYS=key1,key2)
+const groqKeys = (process.env.GROQ_API_KEYS ? process.env.GROQ_API_KEYS.split(',') : (process.env.GROQ_API_KEY ? [process.env.GROQ_API_KEY] : [])).map(k => k.trim());
+const groqClients = groqKeys.map(apiKey => new Groq({ apiKey }));
+let currentGroqIndex = 0;
+
 const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
 const hf = process.env.HF_API_KEY ? new HfInference(process.env.HF_API_KEY) : null;
 
@@ -13,7 +16,7 @@ const hf = process.env.HF_API_KEY ? new HfInference(process.env.HF_API_KEY) : nu
 --------------------------------------------------------- */
 const MODELS = {
     AUTOCOMPLETE: 'llama-3.1-8b-instant',           // 14.4K RPD, fast
-    CHAT: 'llama-3.3-70b-versatile', // 500K TPD, smart
+    CHAT: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'], // Tiered Groq fallbacks
     EVALUATION: 'llama-3.3-70b-versatile',
     GENERATION: 'llama-3.3-70b-versatile',
 };
@@ -141,35 +144,51 @@ async function callAI(messages, options = {}) {
 
     let lastError = null;
 
-    // --- 1. GROQ (fastest) ---
-    if (groq) {
-        try {
-            console.log(`🤖 [${taskLabel}] Attempting Groq (${model})...`);
-            const params = {
-                messages,
-                model,
-                temperature,
-                max_tokens: maxTokens
-            };
-            if (jsonMode) params.response_format = { type: "json_object" };
+    // --- 1. GROQ (fastest, with rotation) ---
+    if (groqClients.length > 0) {
+        const groqModels = Array.isArray(model) ? model : [model];
+        
+        for (const groqModel of groqModels) {
+            // Try all available keys starting from the current one
+            for (let i = 0; i < groqClients.length; i++) {
+                const keyIndex = (currentGroqIndex + i) % groqClients.length;
+                const client = groqClients[keyIndex];
 
-            const completion = await groq.chat.completions.create(params);
+                try {
+                    console.log(`🤖 [${taskLabel}] Attempting Groq (${groqModel}) with key #${keyIndex + 1}...`);
+                    const params = {
+                        messages,
+                        model: groqModel,
+                        temperature,
+                        max_tokens: maxTokens
+                    };
+                    if (jsonMode) params.response_format = { type: "json_object" };
 
-            // Log token usage
-            logTokenUsage('Groq', model, completion.usage, taskLabel);
+                    const completion = await client.chat.completions.create(params);
 
-            return completion.choices[0].message.content;
-        } catch (err) {
-            const isRateLimit = err.status === 429 || err.message?.includes('rate_limit');
-            console.error(`⚠️ Groq Failed (${isRateLimit ? 'RATE LIMITED' : 'ERROR'}):`, err.message?.substring(0, 100));
-            lastError = err;
-            // Fall through to Gemini
+                    // If success, keep using this key
+                    currentGroqIndex = keyIndex;
+                    logTokenUsage('Groq', groqModel, completion.usage, taskLabel);
+                    return completion.choices[0].message.content;
+                } catch (err) {
+                    const isRateLimit = err.status === 429 || err.message?.includes('rate_limit');
+                    console.error(`⚠️ Groq Key #${keyIndex + 1} (${groqModel}) Failed (${isRateLimit ? 'RATE LIMITED' : 'ERROR'}):`, err.message?.substring(0, 100));
+                    
+                    if (isRateLimit) {
+                        lastError = err;
+                        continue; // Try next key
+                    } else {
+                        throw err; // For other errors (auth, etc.), stop and fail or let it fall through
+                    }
+                }
+            }
         }
     }
 
     // --- 2. GEMINI (fallback) ---
     if (genAI) {
-        const geminiModels = ["gemini-2.0-flash", "gemini-1.5-flash-latest"];
+        // Try these model names specifically
+        const geminiModels = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"];
         for (const modelName of geminiModels) {
             try {
                 console.log(`🤖 [${taskLabel}] Falling back to Gemini (${modelName})...`);
@@ -402,6 +421,65 @@ Rules:
 }
 
 /* ---------------------------------------------------------
+   5) EVALUATE RESPONSE
+--------------------------------------------------------- */
+async function evaluateResponse(question, userAnswer, correctAnswer, language = "general") {
+    const messages = [
+        {
+            role: 'system',
+            content: `You are an expert evaluator. Evaluate the user's answer against the correct answer. Provide a score from 0-100 and brief feedback.
+Respond EXACTLY with a JSON format like: { "score": 85, "feedback": "Good understanding." }`
+        },
+        {
+            role: 'user',
+            content: `Language: ${language}\nQuestion: ${question}\nCorrect Answer: ${correctAnswer}\nUser Answer: ${userAnswer}`
+        }
+    ];
+
+    try {
+        const result = await callAI(messages, { temperature: 0.1, maxTokens: 500, jsonMode: true, model: MODELS.EVALUATION, taskLabel: 'Evaluate' });
+        let cleaned = result.trim().replace(/^```json?\n?/i, '').replace(/\n?```$/i, '').trim();
+        return JSON.parse(cleaned);
+    } catch (err) {
+        console.error('Evaluate Error:', err);
+        return { score: 0, feedback: "Evaluation failed due to AI API error." };
+    }
+}
+
+/* ---------------------------------------------------------
+   6) GENERATE QUESTION
+--------------------------------------------------------- */
+async function generateQuestion(topic, difficulty = "medium", type = "mcq", existingQuestions = []) {
+    const messages = [
+        {
+            role: 'system',
+            content: `You are an expert assessment generator. Generate a challenging question on the given topic.
+Respond EXACTLY in this JSON format:
+{
+  "question": "The question text",
+  "type": "mcq",
+  "options": ["A", "B", "C", "D"],
+  "correctAnswer": "A",
+  "difficulty": "medium"
+}`
+        },
+        {
+            role: 'user',
+            content: `Generate a ${difficulty} ${type} question about ${topic}. Avoid these questions: ${JSON.stringify(existingQuestions)}.`
+        }
+    ];
+
+    try {
+        const result = await callAI(messages, { temperature: 0.7, maxTokens: 1000, jsonMode: true, model: MODELS.GENERATION, taskLabel: 'Generate Question' });
+        let cleaned = result.trim().replace(/^```json?\n?/i, '').replace(/\n?```$/i, '').trim();
+        return JSON.parse(cleaned);
+    } catch (err) {
+        console.error('Generate Question Error:', err);
+        return null;
+    }
+}
+
+/* ---------------------------------------------------------
    EXPORTS
 --------------------------------------------------------- */
 module.exports = {
@@ -409,5 +487,9 @@ module.exports = {
     explainCode,
     autocompleteCode,
     analyzeProject,
+    evaluateResponse,
+    generateQuestion,
+    getUsageStats,
+    resetUsageStats,
     callAI
 };

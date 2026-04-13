@@ -231,8 +231,9 @@ const ProfilePage = () => {
                 <AIAssessmentModal onClose={handleModalClose} userSkills={profile.skills} />
             )}
 
-            {/* HEADER CARD */}
-            <div className="term-card" style={{ marginBottom: '1.5rem' }}>
+            <div style={{ flexGrow: 1, overflowY: 'auto', paddingRight: '0.5rem', minHeight: 0 }}>
+                {/* HEADER CARD */}
+                <div className="term-card" style={{ marginBottom: '1.5rem' }}>
                 <div className="term-header">
                     <div className="window-dots">
                         <div className="dot dot-red"></div>
@@ -462,6 +463,7 @@ const ProfilePage = () => {
                         </div>
                     </div>
                 </div>
+            </div>
             </div>
             {showInviteModal && (
                 <InviteModal
