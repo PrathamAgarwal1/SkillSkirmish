@@ -10,6 +10,7 @@ const WEIGHTS = {
     SKILL_SIMILARITY: 40,     // max points from cosine skill similarity
     RATING_SIMILARITY: 20,    // max points from ELO proximity
     GROWTH_BONUS: 10,         // max points from growth-based matching
+    MASTERY_WEIGHT: 15,       // max points from mastery freshness
     QUEUE_TIME_CAP: 15,       // hard cap on queue-time bonus
     RECENT_OPPONENT_PENALTY: 30, // flat penalty for recently matched opponents
     MIN_MATCH_SCORE: 15,      // minimum acceptable match quality
@@ -132,6 +133,43 @@ function recentOpponentPenalty(candidateId, recentOpponents) {
     return recentOpponents.includes(candidateId) ? WEIGHTS.RECENT_OPPONENT_PENALTY : 0;
 }
 
+/**
+ * Mastery-based quality multiplier.
+ * Candidates with higher mastery (skill freshness) are prioritized.
+ * Low mastery (from skill decay) signals stale/inactive skills.
+ *
+ * Uses sqrt curve: mastery 100% → 1.0,  50% → 0.71,  0% → 0.3 (floor)
+ *
+ * @param {Array<{name: string, mastery?: number}>} candidateSkills - Candidate's skill objects.
+ * @param {string[]} requiredSkills - Skills being evaluated.
+ * @returns {{ multiplier: number, avgMastery: number }}
+ */
+function masteryMultiplier(candidateSkills, requiredSkills) {
+    const skillsToCheck = (requiredSkills && requiredSkills.length > 0)
+        ? requiredSkills
+        : candidateSkills.map(s => s.name);
+
+    let totalMastery = 0;
+    let count = 0;
+
+    for (const skillName of skillsToCheck) {
+        const s = candidateSkills.find(sk => sk.name.toLowerCase() === skillName.toLowerCase());
+        if (s) {
+            totalMastery += (s.mastery != null ? s.mastery : 50); // default 50 if never set
+            count++;
+        }
+    }
+
+    if (count === 0) return { multiplier: 0.3, avgMastery: 0 };
+
+    const avgMastery = totalMastery / count;
+    // sqrt curve: 100→1.0, 50→0.71, 25→0.5, 0→0.3 (floor)
+    const raw = Math.sqrt(avgMastery / 100);
+    const multiplier = Math.max(0.3, raw);
+
+    return { multiplier, avgMastery: Math.round(avgMastery) };
+}
+
 // ─── Composite Scoring ───────────────────────────────────────────────────────
 
 /**
@@ -242,6 +280,19 @@ function computeMatchScore({
 
     // ── 3. Combine & Apply RD Penalty ──
     let score = (skillScore + ratingScore + growthScore) * avgRd;
+
+    // ── 3b. Mastery freshness bonus ──
+    const mastery = masteryMultiplier(candidateSkills, requiredSkills);
+    const masteryScore = mastery.multiplier * WEIGHTS.MASTERY_WEIGHT;
+    score += masteryScore;
+
+    if (mastery.avgMastery >= 80) {
+        reasoning.push(`High skill freshness (${mastery.avgMastery}% mastery)`);
+    } else if (mastery.avgMastery >= 50) {
+        reasoning.push(`Moderate skill freshness (${mastery.avgMastery}% mastery)`);
+    } else if (mastery.avgMastery > 0) {
+        reasoning.push(`Low skill freshness (${mastery.avgMastery}% mastery — inactive)`);
+    }
 
     // ── 4. Queue-time bonus ──
     const qtBonus = queueTimeBonus(waitTimeMs);
@@ -414,6 +465,7 @@ module.exports = {
     rdPenalty,
     queueTimeBonus,
     recentOpponentPenalty,
+    masteryMultiplier,
     computeMatchScore,
     computeRoomScore
 };

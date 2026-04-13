@@ -19,6 +19,9 @@ const mediasoupManager = require('./mediasoup/mediasoupManager');
 const collabManager = require('./services/collabManager');
 const Project = require('./models/Project');
 
+// Import skill decay worker
+const { runSkillDecay } = require('./workers/skillDecay');
+
 const app = express();
 const server = http.createServer(app);
 
@@ -577,5 +580,25 @@ const PORT = process.env.PORT || 5000;
     } catch (err) {
         console.error('[mediasoup] Failed to create worker:', err);
     }
-    server.listen(PORT, '0.0.0.0', () => console.log(`Server started on port ${PORT}`));
+    server.listen(PORT, '0.0.0.0', () => {
+        console.log(`Server started on port ${PORT}`);
+
+        // Schedule skill decay: run once after 30s (wait for DB), then every 24 hours
+        const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+        setTimeout(async () => {
+            try {
+                await runSkillDecay();
+            } catch (e) {
+                console.error('[SkillDecay] Initial run failed:', e.message);
+            }
+        }, 30000);
+        setInterval(async () => {
+            try {
+                await runSkillDecay();
+            } catch (e) {
+                console.error('[SkillDecay] Scheduled run failed:', e.message);
+            }
+        }, TWENTY_FOUR_HOURS);
+        console.log('[SkillDecay] Scheduled: runs every 24 hours');
+    });
 })();
