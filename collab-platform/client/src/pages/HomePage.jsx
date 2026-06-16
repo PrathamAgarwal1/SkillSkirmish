@@ -12,58 +12,7 @@ const HomePage = () => {
     const [inviteLoading, setInviteLoading] = useState(false);
     const [inviteError, setInviteError] = useState('');
 
-    // Stats counter animation state
-    const [counts, setCounts] = useState({ lines: 0 });
 
-    useEffect(() => {
-        let isMounted = true;
-        let timer = null;
-
-        const fetchStats = async () => {
-            try {
-                const res = await axios.get('/api/dashboard/public-stats');
-                if (!isMounted) return;
-
-                const targetLines = res.data.lines || 0;
-
-                const duration = 1500; // 1.5 seconds animation
-                const frameRate = 1000 / 60; // 60 fps
-                const totalFrames = Math.round(duration / frameRate);
-                let frame = 0;
-
-                timer = setInterval(() => {
-                    if (!isMounted) {
-                        clearInterval(timer);
-                        return;
-                    }
-                    frame++;
-                    const progress = frame / totalFrames;
-                    
-                    // easeOutQuad
-                    const easeOutQuad = x => x * (2 - x);
-                    const currentProgress = easeOutQuad(progress);
-
-                    setCounts({
-                        lines: Math.round(targetLines * currentProgress)
-                    });
-
-                    if (frame >= totalFrames) {
-                        clearInterval(timer);
-                        setCounts({ lines: targetLines });
-                    }
-                }, frameRate);
-
-            } catch (err) {
-                console.error('Error fetching public stats:', err);
-            }
-        };
-
-        fetchStats();
-        return () => {
-            isMounted = false;
-            if (timer) clearInterval(timer);
-        };
-    }, []);
 
     const handleInviteLinkJoin = async (e) => {
         e.preventDefault();
@@ -188,15 +137,7 @@ const HomePage = () => {
                 </div>
             </div>
 
-            {/* --- STATS SECTION --- */}
-            <div className="stats-section">
-                <div className="container stats-grid">
-                    <div className="stat-item">
-                        <h3>{counts.lines.toLocaleString()}+</h3>
-                        <p>Lines of Code</p>
-                    </div>
-                </div>
-            </div>
+
 
             {/* --- FEATURES SECTION --- */}
             <section className="features-section">
