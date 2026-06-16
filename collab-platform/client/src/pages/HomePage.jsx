@@ -13,18 +13,56 @@ const HomePage = () => {
     const [inviteError, setInviteError] = useState('');
 
     // Stats counter animation state
-    const [counts, setCounts] = useState({ devs: 0, lines: 0, rooms: 0 });
+    const [counts, setCounts] = useState({ lines: 0 });
 
     useEffect(() => {
-        // Simple count-up animation
-        const interval = setInterval(() => {
-            setCounts(prev => ({
-                devs: Math.min(prev.devs + 50, 12000),
-                lines: Math.min(prev.lines + 10000, 5000000),
-                rooms: Math.min(prev.rooms + 10, 8500)
-            }));
-        }, 20);
-        return () => clearInterval(interval);
+        let isMounted = true;
+        let timer = null;
+
+        const fetchStats = async () => {
+            try {
+                const res = await axios.get('/api/dashboard/public-stats');
+                if (!isMounted) return;
+
+                const targetLines = res.data.lines || 0;
+
+                const duration = 1500; // 1.5 seconds animation
+                const frameRate = 1000 / 60; // 60 fps
+                const totalFrames = Math.round(duration / frameRate);
+                let frame = 0;
+
+                timer = setInterval(() => {
+                    if (!isMounted) {
+                        clearInterval(timer);
+                        return;
+                    }
+                    frame++;
+                    const progress = frame / totalFrames;
+                    
+                    // easeOutQuad
+                    const easeOutQuad = x => x * (2 - x);
+                    const currentProgress = easeOutQuad(progress);
+
+                    setCounts({
+                        lines: Math.round(targetLines * currentProgress)
+                    });
+
+                    if (frame >= totalFrames) {
+                        clearInterval(timer);
+                        setCounts({ lines: targetLines });
+                    }
+                }, frameRate);
+
+            } catch (err) {
+                console.error('Error fetching public stats:', err);
+            }
+        };
+
+        fetchStats();
+        return () => {
+            isMounted = false;
+            if (timer) clearInterval(timer);
+        };
     }, []);
 
     const handleInviteLinkJoin = async (e) => {
@@ -154,16 +192,8 @@ const HomePage = () => {
             <div className="stats-section">
                 <div className="container stats-grid">
                     <div className="stat-item">
-                        <h3>{counts.devs.toLocaleString()}+</h3>
-                        <p>Developers</p>
-                    </div>
-                    <div className="stat-item">
                         <h3>{counts.lines.toLocaleString()}+</h3>
                         <p>Lines of Code</p>
-                    </div>
-                    <div className="stat-item">
-                        <h3>{counts.rooms.toLocaleString()}+</h3>
-                        <p>Active Rooms</p>
                     </div>
                 </div>
             </div>

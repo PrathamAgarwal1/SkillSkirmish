@@ -7,12 +7,57 @@ const Room = require('../models/Room');
 const AssessmentSession = require('../models/AssessmentSession');
 const Notification = require('../models/Notification');
 const { getUsageStats } = require('../services/aiService');
+const File = require('../models/File');
+const Project = require('../models/Project');
 
 /* ---------------------------------------------------------
    SERVER-SIDE CACHE for platform metrics (60s TTL)
 --------------------------------------------------------- */
 let platformCache = { data: null, expiry: 0 };
 const PLATFORM_CACHE_TTL = 60 * 1000; // 60 seconds
+
+let publicStatsCache = { data: null, expiry: 0 };
+const PUBLIC_STATS_CACHE_TTL = 60 * 1000; // 60 seconds
+
+/* ---------------------------------------------------------
+   GET /api/dashboard/public-stats
+   Public platform metrics for the homepage (cached 60s)
+   --------------------------------------------------------- */
+router.get('/public-stats', async (req, res) => {
+    try {
+        if (publicStatsCache.data && Date.now() < publicStatsCache.expiry) {
+            return res.json(publicStatsCache.data);
+        }
+
+        // Run queries in parallel
+        const [totalUsers, totalRooms, totalProjects, files] = await Promise.all([
+            User.countDocuments(),
+            Room.countDocuments(),
+            Project.countDocuments(),
+            File.find({ isFolder: { $ne: true } }).select('content').lean()
+        ]);
+
+        let totalLines = 0;
+        for (const file of files) {
+            if (file.content) {
+                totalLines += file.content.split('\n').length;
+            }
+        }
+
+        const data = {
+            devs: totalUsers,
+            rooms: totalRooms,
+            projects: totalProjects,
+            lines: totalLines
+        };
+
+        publicStatsCache = { data, expiry: Date.now() + PUBLIC_STATS_CACHE_TTL };
+        res.json(data);
+    } catch (err) {
+        console.error('Public stats error:', err.message);
+        res.status(500).json({ msg: 'Failed to load public stats' });
+    }
+});
 
 /* ---------------------------------------------------------
    GET /api/dashboard/stats
