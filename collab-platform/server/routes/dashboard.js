@@ -30,19 +30,18 @@ router.get('/public-stats', async (req, res) => {
         }
 
         // Run queries in parallel
-        const [totalUsers, totalRooms, totalProjects, files] = await Promise.all([
+        // Count lines inside MongoDB instead of pulling every file's content into memory
+        const [totalUsers, totalRooms, totalProjects, lineAgg] = await Promise.all([
             User.countDocuments(),
             Room.countDocuments(),
             Project.countDocuments(),
-            File.find({ isFolder: { $ne: true } }).select('content').lean()
+            File.aggregate([
+                { $match: { isFolder: { $ne: true }, content: { $type: 'string', $ne: '' } } },
+                { $group: { _id: null, lines: { $sum: { $size: { $split: ['$content', '\n'] } } } } }
+            ])
         ]);
 
-        let totalLines = 0;
-        for (const file of files) {
-            if (file.content) {
-                totalLines += file.content.split('\n').length;
-            }
-        }
+        const totalLines = lineAgg[0]?.lines || 0;
 
         const data = {
             devs: totalUsers,

@@ -10,8 +10,11 @@ SkillSkirmish combines a powerful IDE, real-time video/audio communication, coll
 ## 🌟 Features
 
 - **🚀 Real-Time Collaboration**: Edit code and documents simultaneously with your team using robust `Yjs` synchronization and WebSockets.
-- **🎥 Integrated Video Conferencing**: Seamless, low-latency video and audio calls powered by `Mediasoup` (WebRTC) directly within your workspace. No external tools needed.
-- **⚡ Live Code Execution**: Write, compile, and execute your code instantly within the built-in browser IDE.
+- **🎧 Discord-style Voice & Video**: Persistent voice channels in every room with live presence (who's talking, muted, deafened, on camera, LIVE screen sharing). Camera, screen share with audio, per-user volume, push-to-talk and noise suppression. You stay connected while you code in the IDE. Calls are peer-to-peer WebRTC (free to host), with an optional mediasoup server relay for big calls.
+- **⚡ Sandboxed Code Execution**: Every run, terminal command and package install happens in a locked-down Docker container. Environments: Node.js 22, Python 3.12, and Machine Learning (Jupyter, pandas, scikit-learn, PyTorch, Kaggle CLI).
+- **🌐 Live Browser Preview**: Web apps open in a built-in browser with back/forward, device sizes, and console output streamed into the IDE.
+- **🚀 One-Click Deploy**: Publish any project to `https://<name>.apps.<your-domain>`, with versions, rollback, and encrypted environment variables.
+- **🧩 Project Templates**: React, MERN, Next.js, Node API, Express + EJS, Vanilla Web, FastAPI, Python Script, Machine Learning (Jupyter + Streamlit) and Android (Expo / React Native).
 - **🏆 Matchmaking & Competitive Coding**: Challenge peers, improve your algorithmic skills, and dynamically adjust your rating based on performance.
 - **📁 Project & Room Management**: Organize your codebases into distinct projects and invite friends to collaborative real-time rooms.
 - **🔐 Secure Authentication**: Quick and secure onboarding with Google OAuth 2.0 (via Auth0).
@@ -36,7 +39,7 @@ SkillSkirmish combines a powerful IDE, real-time video/audio communication, coll
 ## 🚀 Getting Started
 
 ### Prerequisites
-Make sure you have [Node.js](https://nodejs.org/) and [MongoDB](https://www.mongodb.com/) installed on your machine. You will also need API keys for Google OAuth (Auth0) and Gemini/Groq for AI features.
+Make sure you have [Node.js](https://nodejs.org/) 22+, [MongoDB](https://www.mongodb.com/) and [Docker](https://www.docker.com/) (for the code sandbox) installed on your machine. You will also need API keys for Google OAuth (Auth0) and Gemini/Groq for AI features.
 
 ### 1. Clone the repository
 ```bash
@@ -88,6 +91,18 @@ npm run dev
 ```
 
 Your application should now be running! The frontend will be available at `http://localhost:5173` and the API at `http://localhost:5000`.
+
+Without Docker running, the server starts in **browser mode** and code runs in your browser instead (Chrome, Edge or Firefox).
+
+With Docker, the first time a project runs its sandbox image is built (a few minutes; the ML image takes longest). To build them ahead of time run `npm run sandbox:build` in `/server`. Previews open at `http://<id>.preview.localhost:5000` and deployed apps at `http://<name>.apps.localhost:5000`. `*.localhost` works in browsers with no DNS setup.
+
+Run the server tests with `npm test` in `/server`.
+
+## 🌍 Deploying
+- **Free:** Vercel (client) + Render (API) + MongoDB Atlas. Code runs in each user's browser: WebContainers for JavaScript, Pyodide for Python and notebooks, stlite for Streamlit. `render.yaml` sets up the API in one click.
+- **Full:** a VPS with Docker for server-side sandboxes, PyTorch/JupyterLab, and hosting of server apps.
+
+[DEPLOYMENT.md](DEPLOYMENT.md) has step-by-step guides for both and what each one supports.
 
 ---
 

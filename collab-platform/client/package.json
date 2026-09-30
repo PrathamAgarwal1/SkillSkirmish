@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
+    "@webcontainer/api": "^1.6.4",
     "axios": "^1.12.2",
     "buffer": "^6.0.3",
     "framer-motion": "^12.38.0",

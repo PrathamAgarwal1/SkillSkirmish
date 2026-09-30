@@ -37,6 +37,7 @@ const IDEPage = () => {
         <WindowManager 
             projectId={projectId}
             projectType={project.projectType || 'React App'}
+            projectName={project.name}
             roomId={roomId}
             user={user}
         />

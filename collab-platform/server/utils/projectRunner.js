@@ -1,657 +1,338 @@
-const { spawn, execSync } = require('child_process');
+// utils/projectRunner.js — runs projects, files and terminal commands inside the sandbox.
+//
+// Nothing here executes user code on the host: every process is a sandbox exec (see sandbox/).
+// Output is broadcast to the project's socket room (`project:<id>`), which every open IDE joins.
 const path = require('path');
-const fs = require('fs');
-const net = require('net');
+const http = require('http');
 const Project = require('../models/Project');
-const File = require('../models/File');
-const { syncAllFilesToDisk, installDependencies } = require('./templateManager');
-const { analyzeProject } = require('../services/aiService');
+const sandbox = require('../sandbox');
+const { detectRunConfig, needsInstall, markInstalled, listFiles } = require('../sandbox/runConfig');
+const { browserPlan } = require('../sandbox/browserPlan');
+const { reconcileProject } = require('../sandbox/fileSync');
+const { getProjectDir, resolveProjectPath, sanitizeRelPath } = require('./access');
+const { decryptEnv } = require('./secrets');
 
-// Store running processes
-const runningProcesses = new Map();
+const { driver } = sandbox;
 
-/* ---------------------------------------------------------
-   PORT UTILITIES — find an available port automatically
---------------------------------------------------------- */
-const isPortAvailable = (port) => {
-    return new Promise((resolve) => {
-        const server = net.createServer();
-        server.once('error', () => resolve(false));
-        server.once('listening', () => {
-            server.close();
+// processId -> { projectId, kind: 'run'|'install'|'file'|'cmd', handle, logs, startedAt, userId, target, port }
+const processes = new Map();
+// projectId -> { phase, target, previewUrl, startedAt, error }
+const runState = new Map();
+
+const MAX_LOG_ENTRIES = 1000;
+const pushLog = (logs, entry) => {
+    logs.push(entry);
+    if (logs.length > MAX_LOG_ENTRIES) logs.splice(0, logs.length - MAX_LOG_ENTRIES);
+};
+
+const projectRoom = (projectId) => `project:${projectId}`;
+
+const emitter = (io, projectId) => ({
+    console: (message, type = 'info') => io && io.to(projectRoom(projectId)).emit('project-console', { projectId: String(projectId), message, type }),
+    terminal: (processId, message, type = 'info') => io && io.to(projectRoom(projectId)).emit('terminal-output', { projectId: String(projectId), processId, message, type }),
+    event: (name, payload = {}) => io && io.to(projectRoom(projectId)).emit(name, { projectId: String(projectId), ...payload })
+});
+
+const setState = (io, projectId, patch) => {
+    const id = String(projectId);
+    const next = { ...(runState.get(id) || {}), ...patch };
+    runState.set(id, next);
+    emitter(io, id).event('project-status', next);
+    return next;
+};
+
+/** Environment every sandbox process gets: the app port + the project's own env vars. Never server secrets. */
+const buildEnv = async (projectId, project) => {
+    const doc = project || await Project.findById(projectId).select('envVars');
+    return {
+        ...decryptEnv(doc?.envVars),
+        PORT: String(driver.appPortInside(projectId) || 3000),
+        HOST: '0.0.0.0'
+    };
+};
+
+const withPort = (cmd, projectId) => cmd.replace(/\$PORT\b/g, String(driver.appPortInside(projectId) || 3000));
+
+/** Loads the project, syncs files both ways and detects how to run it. */
+const loadRunConfig = async (projectId, io) => {
+    const project = await Project.findById(projectId);
+    if (!project) throw Object.assign(new Error('Project not found'), { status: 404 });
+
+    const sync = await reconcileProject(projectId);
+    if (sync.imported || sync.toDb) emitter(io, projectId).event('files-changed', sync);
+
+    const dir = getProjectDir(projectId);
+    return { project, dir, config: detectRunConfig(dir, project.projectType) };
+};
+
+/** Runs a command to completion inside the workspace, streaming output. Resolves with the exit code. */
+const execToCompletion = (projectId, execId, cmd, { cwd = '', env, onLine }) => new Promise((resolve) => {
+    driver.exec({
+        projectId, execId, cmd, cwd, env,
+        onData: (chunk) => chunk.split(/\r?\n/).filter(l => l.trim()).forEach(l => onLine(l)),
+        onExit: (code) => resolve(code)
+    });
+});
+
+/** Starts the sandbox (if needed) and installs dependencies whose manifests changed. */
+const prepareWorkspace = async (projectId, io, { config, dir, env }) => {
+    const out = emitter(io, projectId);
+    await driver.ensureWorkspace(String(projectId), config.env, dir, (line) => out.console(line, 'info'));
+    sandbox.touch(projectId);
+
+    for (const [i, step] of config.install.entries()) {
+        if (!needsInstall(dir, step)) continue;
+        const where = step.dir || 'project root';
+        // A broken package.json makes npm print a wall of errors: point at the exact spot instead
+        const manifest = path.join(dir, step.dir || '', 'package.json');
+        if (step.cmd.startsWith('npm ')) {
+            try {
+                JSON.parse(require('fs').readFileSync(manifest, 'utf8'));
+            } catch (err) {
+                if (err instanceof SyntaxError) {
+                    out.console(`❌ ${step.dir ? step.dir + '/' : ''}package.json has a syntax error: ${err.message}. Fix it in the editor and run again.`, 'error');
+                    return false;
+                }
+            }
+        }
+        out.console(`📦 Installing dependencies in ${where}: ${step.cmd}`, 'info');
+        setState(io, projectId, { phase: 'installing' });
+        const code = await execToCompletion(String(projectId), `install-${i}-${Date.now()}`, step.cmd, {
+            cwd: step.dir, env, onLine: (l) => out.console(l, 'info')
+        });
+        if (code !== 0) {
+            out.console(`❌ Dependency install failed in ${where} (exit ${code}). Fix the manifest and run again.`, 'error');
+            return false;
+        }
+        markInstalled(dir, step);
+        out.console(`✅ Dependencies ready in ${where}`, 'success');
+    }
+    return true;
+};
+
+/** Resolves once the app answers HTTP (any status), or false after `timeoutMs`. */
+const waitForHttp = (getPort, timeoutMs = 180000) => new Promise((resolve) => {
+    const started = Date.now();
+    const attempt = () => {
+        const port = getPort();
+        if (!port) return retry();
+        const req = http.get({ host: '127.0.0.1', port, path: '/', timeout: 3000 }, (res) => {
+            res.resume();
             resolve(true);
         });
-        server.listen(port, '127.0.0.1');
-    });
-};
+        req.on('timeout', () => req.destroy());
+        req.on('error', retry);
+    };
+    const retry = () => (Date.now() - started > timeoutMs ? resolve(false) : setTimeout(attempt, 1500));
+    attempt();
+});
 
-const findAvailablePort = async (startPort = 3001) => {
-    // Ports to avoid: main server port, Vite dev, and common conflicts
-    const serverPort = parseInt(process.env.PORT || '5000', 10);
-    const blockedPorts = [serverPort, 5000, 5173];
-    let port = startPort;
-    const maxPort = startPort + 100;
-
-    while (port < maxPort) {
-        if (!blockedPorts.includes(port) && await isPortAvailable(port)) {
-            return port;
-        }
-        port++;
+/* ---------------------------------------------------------
+   RUN PROJECT (dev server / Jupyter / Streamlit / script)
+--------------------------------------------------------- */
+const runProject = async (projectId, { targetId, userId, io } = {}) => {
+    const id = String(projectId);
+    if (processes.has(`run-${id}`)) {
+        return { success: false, message: 'Project is already running. Stop it first.' };
     }
-    return startPort; // fallback
-};
+    const out = emitter(io, id);
 
-/**
- * Wait for a port to start accepting connections.
- * Retries up to `maxRetries` times with `intervalMs` delay between attempts.
- * Returns true if the port became reachable, false if all retries exhausted.
- */
-const waitForPort = (port, maxRetries = 30, intervalMs = 1000) => {
-    return new Promise((resolve) => {
-        let attempts = 0;
-        const tryConnect = () => {
-            attempts++;
-            const client = net.createConnection({ port, host: '127.0.0.1' }, () => {
-                client.destroy();
-                resolve(true);
-            });
-            client.on('error', () => {
-                client.destroy();
-                if (attempts >= maxRetries) {
-                    resolve(false);
+    try {
+        setState(io, id, { phase: 'preparing', target: null, previewUrl: null, error: null, startedAt: Date.now() });
+        const { project, dir, config } = await loadRunConfig(id, io);
+
+        if (config.targets.length === 0) {
+            setState(io, id, { phase: 'stopped' });
+            return { success: false, message: 'Nothing to run yet — add some code first.' };
+        }
+        const target = config.targets.find(t => t.id === targetId) || config.targets[0];
+
+        out.console(`📋 ${config.label} · environment: ${sandbox.config.ENVIRONMENTS[config.env].label}`, 'info');
+        const env = await buildEnv(id, project);
+
+        if (!(await prepareWorkspace(id, io, { config, dir, env }))) {
+            setState(io, id, { phase: 'error', error: 'Dependency install failed' });
+            return { success: false, message: 'Dependency install failed — see the console.' };
+        }
+
+        const previewUrl = target.preview ? sandbox.config.previewUrl(sandbox.issuePreviewToken(id)) : null;
+        const cmd = withPort(target.cmd, id);
+        out.console(`🚀 ${target.label}: ${cmd}`, 'info');
+
+        const processId = `run-${id}`;
+        const logs = [];
+        const handle = driver.exec({
+            projectId: id,
+            execId: 'run',
+            cmd,
+            cwd: config.root,
+            env,
+            onData: (chunk, stream) => {
+                sandbox.touch(id);
+                for (const line of chunk.split(/\r?\n/)) {
+                    if (!line.trim()) continue;
+                    // Many dev servers log normal progress to stderr; only flag real errors
+                    const type = stream === 'stderr' && /\berror\b|exception|traceback/i.test(line) ? 'error' : 'info';
+                    pushLog(logs, { message: line, type, timestamp: Date.now() });
+                    out.console(line, type);
+                }
+            },
+            onExit: (code) => {
+                processes.delete(processId);
+                sandbox.revokePreviewToken(id);
+                out.console(code === 0 || code === 137 ? '⏹ Process stopped' : `Process exited with code ${code}`, code === 0 || code === 137 ? 'info' : 'error');
+                out.event('project-stopped', { exitCode: code });
+                setState(io, id, { phase: 'stopped', previewUrl: null });
+            }
+        });
+
+        processes.set(processId, { projectId: id, kind: 'run', handle, logs, startedAt: Date.now(), userId, target: target.id });
+        setState(io, id, { phase: 'starting', target: target.id, previewUrl });
+
+        if (target.preview) {
+            // Tell everyone once the app actually answers
+            waitForHttp(() => driver.getHostPort(id)).then((ready) => {
+                if (!processes.has(processId)) return;
+                if (ready) {
+                    out.console(`✅ Live at ${previewUrl}`, 'success');
+                    out.event('project-preview-url', { url: previewUrl });
+                    setState(io, id, { phase: 'running' });
                 } else {
-                    setTimeout(tryConnect, intervalMs);
+                    out.console('⚠️ The app did not answer on its port within 3 minutes — check the logs above.', 'warning');
+                    setState(io, id, { phase: 'running' });
                 }
             });
-        };
-        tryConnect();
-    });
-};
-
-/* ---------------------------------------------------------
-   ENSURE PROJECT READY — sync files + install deps
---------------------------------------------------------- */
-const ensureProjectReady = async (projectId, projectPath, io, roomId) => {
-    const emitToRoom = (message, type = 'info') => {
-        if (io && roomId) {
-            io.to(roomId).emit('project-console', { projectId, message, type });
-        }
-    };
-
-    emitToRoom('📂 Syncing project files to disk...', 'info');
-    await syncAllFilesToDisk(projectId);
-    emitToRoom('✅ Files synced', 'success');
-
-    if (!fs.existsSync(projectPath)) return;
-
-    // Helper to recursively find all package.jsons (ignore node_modules/.git)
-    const findPackageJsons = (dir, pkgList) => {
-        try {
-            const items = fs.readdirSync(dir, { withFileTypes: true });
-            for (const item of items) {
-                if (item.name === 'node_modules' || item.name.startsWith('.')) continue;
-                const fullPath = path.join(dir, item.name);
-                if (item.isDirectory()) {
-                    findPackageJsons(fullPath, pkgList);
-                } else if (item.name === 'package.json') {
-                    pkgList.push(fullPath);
-                }
-            }
-        } catch (err) {
-            console.error(`Error reading directory ${dir}:`, err);
-        }
-    };
-
-    const packageJsons = [];
-    findPackageJsons(projectPath, packageJsons);
-
-    if (packageJsons.length === 0) return;
-
-    // Install dependencies in every directory that has a package.json
-    for (const pkgJsonPath of packageJsons) {
-        const installDir = path.dirname(pkgJsonPath);
-        const nodeModulesPath = path.join(installDir, 'node_modules');
-        
-        let relativeDir = path.relative(projectPath, installDir);
-        if (!relativeDir) relativeDir = 'root';
-
-        if (!fs.existsSync(nodeModulesPath)) {
-            emitToRoom(`📦 Installing dependencies in /${relativeDir}...`, 'info');
-            const result = await installDependencies(installDir);
-            if (result.success) {
-                emitToRoom(`✅ Dependencies installed successfully in /${relativeDir}`, 'success');
-            } else {
-                emitToRoom(`⚠️ Dependency install issue in /${relativeDir}: ${result.message}`, 'warning');
-            }
-        }
-    }
-};
-
-/* ---------------------------------------------------------
-   LOCAL PROJECT ANALYSIS — deterministic fallback when AI fails
-   Parses package.json scripts + file structure directly
---------------------------------------------------------- */
-const analyzeProjectLocally = (fileList, packageJsonContent, projectPath) => {
-    const filePaths = fileList.map(f => (typeof f === 'string' ? f : f.path) || '');
-    const hasFile = (name) => filePaths.some(p => p === name || p.endsWith('/' + name));
-    const hasExt = (ext) => filePaths.some(p => p.endsWith(ext));
-
-    let pkgJson = null;
-    try {
-        if (packageJsonContent) pkgJson = JSON.parse(packageJsonContent);
-    } catch (e) { /* ignore */ }
-
-    const scripts = pkgJson?.scripts || {};
-    const deps = { ...(pkgJson?.dependencies || {}), ...(pkgJson?.devDependencies || {}) };
-
-    // ── Vite project ──
-    if (deps['vite'] || deps['@vitejs/plugin-react'] || scripts.dev?.includes('vite')) {
-        return {
-            installCmd: 'npm install',
-            runCmd: `npx vite --port PORT --host`,
-            defaultPort: 3001,
-            projectType: 'vite',
-            needsInstall: true,
-            entryFile: 'index.html',
-            notes: 'Vite dev server detected'
-        };
-    }
-
-    // ── Next.js ──
-    if (deps['next'] || scripts.dev?.includes('next')) {
-        return {
-            installCmd: 'npm install',
-            runCmd: `npx next dev -p PORT`,
-            defaultPort: 3001,
-            projectType: 'nextjs',
-            needsInstall: true,
-            entryFile: 'pages/index.js',
-            notes: 'Next.js project detected'
-        };
-    }
-
-    // ── Create React App ──
-    if (deps['react-scripts']) {
-        return {
-            installCmd: 'npm install',
-            runCmd: `npx react-scripts start`,
-            defaultPort: 3001,
-            projectType: 'react-cra',
-            needsInstall: true,
-            entryFile: 'src/index.js',
-            notes: 'Create React App detected'
-        };
-    }
-
-    // ── Express / Node server ──
-    if (deps['express'] || deps['fastify'] || deps['koa']) {
-        const entryFile = pkgJson?.main ||
-            (scripts.start?.match(/node\s+(\S+)/)?.[1]) ||
-            (hasFile('server.js') ? 'server.js' :
-             hasFile('app.js') ? 'app.js' : 'index.js');
-        const runCmd = scripts.dev ? 'npm run dev' :
-                       scripts.start ? 'npm start' : `node ${entryFile}`;
-        return {
-            installCmd: 'npm install',
-            runCmd,
-            defaultPort: 4000,
-            projectType: 'express',
-            needsInstall: true,
-            entryFile,
-            notes: `Express/Node server → ${runCmd}`
-        };
-    }
-
-    // ── Generic Node.js with package.json ──
-    if (pkgJson) {
-        const entryFile = pkgJson.main ||
-            (scripts.start?.match(/node\s+(\S+)/)?.[1]) || 'index.js';
-        const runCmd = scripts.dev ? 'npm run dev' :
-                       scripts.start ? 'npm start' : `node ${entryFile}`;
-        return {
-            installCmd: Object.keys(deps).length > 0 ? 'npm install' : '',
-            runCmd,
-            defaultPort: 3001,
-            projectType: 'node',
-            needsInstall: Object.keys(deps).length > 0,
-            entryFile,
-            notes: `Node.js project → ${runCmd}`
-        };
-    }
-
-    // ── Python ──
-    if (hasExt('.py')) {
-        const mainPy = hasFile('main.py') ? 'main.py' :
-                       hasFile('app.py') ? 'app.py' :
-                       filePaths.find(p => p.endsWith('.py')) || 'main.py';
-        return {
-            installCmd: hasFile('requirements.txt') ? 'pip install -r requirements.txt' : '',
-            runCmd: `python ${mainPy}`,
-            defaultPort: 8000, projectType: 'python', needsInstall: hasFile('requirements.txt'),
-            entryFile: mainPy, notes: `Python → ${mainPy}`
-        };
-    }
-
-    // ── Static HTML ──
-    if (hasFile('index.html') || hasExt('.html')) {
-        return {
-            installCmd: '', runCmd: `npx http-server . -p PORT -c-1`,
-            defaultPort: 8080, projectType: 'static', needsInstall: false,
-            entryFile: 'index.html', notes: 'Static HTML → http-server'
-        };
-    }
-
-    // ── Last resort ──
-    const firstJs = filePaths.find(p => p.endsWith('.js') && !p.includes('/'));
-    return {
-        installCmd: '', runCmd: firstJs ? `node ${firstJs}` : 'echo No runnable files found',
-        defaultPort: 3001, projectType: 'unknown', needsInstall: false,
-        entryFile: firstJs || '', notes: firstJs ? `Running ${firstJs}` : 'Unknown project type'
-    };
-};
-
-/* ---------------------------------------------------------
-   SMART RUN PROJECT — AI analyzes, then executes
---------------------------------------------------------- */
-const runProject = async (projectId, projectType, userId, io, roomId) => {
-    try {
-        if (runningProcesses.has(projectId)) {
-            return { success: false, message: 'Project is already running' };
-        }
-
-        const project = await Project.findById(projectId).populate('room');
-        if (!project) {
-            return { success: false, message: 'Project not found' };
-        }
-
-        const projectPath = path.join(process.env.PROJECTS_DIR || path.join(process.cwd(), 'projects'), projectId.toString());
-        if (!fs.existsSync(projectPath)) {
-            fs.mkdirSync(projectPath, { recursive: true });
-        }
-
-        const emitToRoom = (message, type = 'info') => {
-            if (io && roomId) {
-                io.to(roomId).emit('project-console', { projectId, message, type });
-            }
-            // Also emit to terminal for visibility
-            if (io && roomId) {
-                io.to(roomId).emit('terminal-output', { processId: 'system', message, type });
-            }
-        };
-
-        // ── STEP 1: Sync files and install deps ──
-        await ensureProjectReady(projectId, projectPath, io, roomId);
-
-        // ── STEP 2: Find package.json and determine execution directory ──
-        const dbFiles = await File.find({ project: projectId });
-        const fileList = dbFiles.map(f => ({ path: f.path, isFolder: f.isFolder }));
-
-        let packageJsonContent = '';
-        let executeDir = projectPath;
-        
-        // Find the best package.json (root preferred, then shallowest nested)
-        const pkgFiles = dbFiles.filter(f => f.path.endsWith('package.json'));
-        if (pkgFiles.length > 0) {
-            pkgFiles.sort((a, b) => a.path.split('/').length - b.path.split('/').length);
-            const bestPkg = pkgFiles[0];
-            packageJsonContent = bestPkg.content || '';
-            const dirName = path.dirname(bestPkg.path);
-            if (dirName && dirName !== '.') {
-                executeDir = path.join(projectPath, dirName);
-            }
         } else {
-            // Check disk just in case
-            const items = fs.readdirSync(projectPath, { withFileTypes: true });
-            const firstFolder = items.find(item => item.isDirectory() && !item.name.startsWith('.'));
-            if (firstFolder) {
-                const nestedPkgJson = path.join(projectPath, firstFolder.name, 'package.json');
-                if (fs.existsSync(nestedPkgJson)) {
-                    packageJsonContent = fs.readFileSync(nestedPkgJson, 'utf-8');
-                    executeDir = path.join(projectPath, firstFolder.name);
-                }
-            } else if (fs.existsSync(path.join(projectPath, 'package.json'))) {
-                packageJsonContent = fs.readFileSync(path.join(projectPath, 'package.json'), 'utf-8');
-            }
+            setState(io, id, { phase: 'running' });
         }
-
-        // ── STEP 3: Smart Analysis (AI → local fallback) ──
-        let analysis;
-        try {
-            emitToRoom('🤖 AI is analyzing your project...', 'info');
-            analysis = await analyzeProject(fileList, packageJsonContent);
-            
-            // If AI returned 'unknown' or clearly wrong, override with local
-            if (analysis.projectType === 'unknown' || analysis.notes?.includes('failed')) {
-                emitToRoom('🔄 AI was unsure, using smart local analysis...', 'info');
-                analysis = analyzeProjectLocally(fileList, packageJsonContent, projectPath);
-            }
-        } catch (aiErr) {
-            emitToRoom('🔄 Using smart local analysis...', 'info');
-            analysis = analyzeProjectLocally(fileList, packageJsonContent, projectPath);
-        }
-        
-        emitToRoom(`📋 Detected: ${analysis.projectType} project — ${analysis.notes}`, 'info');
-        
-        // Show any AI-identified errors that need fixing!
-        if (analysis.errorsToFix && analysis.errorsToFix.length > 0) {
-            emitToRoom(`⚠️ AI found potential issues needing fixing:`, 'warning');
-            analysis.errorsToFix.forEach(err => {
-                emitToRoom(`  - ${err}`, 'warning');
-            });
-        }
-        
-        console.log('[Project Analysis]:', JSON.stringify(analysis, null, 2));
-
-        // ── STEP 4: Find available port ──
-        const desiredPort = analysis.defaultPort || 3001;
-        const port = await findAvailablePort(desiredPort);
-        emitToRoom(`🔌 Using port ${port}${port !== desiredPort ? ` (${desiredPort} was busy)` : ''}`, 'info');
-
-        // ── STEP 5: Install dependencies if needed ──
-        if (analysis.needsInstall && analysis.installCmd) {
-            const nodeModulesPath = path.join(executeDir, 'node_modules');
-            if (!fs.existsSync(nodeModulesPath)) {
-                emitToRoom(`📦 Running: ${analysis.installCmd} (in ${path.relative(projectPath, executeDir) || 'root'})`, 'info');
-                const installResult = await installDependencies(executeDir);
-                if (installResult.success) {
-                    emitToRoom('✅ Dependencies ready', 'success');
-                } else {
-                    emitToRoom(`⚠️ Install warning: ${installResult.message}`, 'warning');
-                }
-            }
-        }
-
-        // ── STEP 6: Build the run command with correct port ──
-        let runCmd = analysis.runCmd || 'node index.js';
-        // Replace PORT placeholder with actual port
-        runCmd = runCmd.replace(/PORT/g, port.toString());
-        // Also replace hard-coded ports in the command
-        runCmd = runCmd.replace(/--port \d+/, `--port ${port}`);
-        runCmd = runCmd.replace(/-p \d+/, `-p ${port}`);
-
-        emitToRoom(`🚀 Running: ${runCmd} (in ${path.relative(projectPath, executeDir) || 'root'})`, 'info');
-
-        // ── STEP 7: Spawn the process ──
-        const env = { ...process.env, PORT: port.toString(), HOST: '0.0.0.0' };
-        // Build relative preview URL so production clients can reliably resolve it using VITE_SERVER_URL
-        const previewUrl = `/api/preview/${port}`;
-
-        const childProcess = spawn(runCmd, {
-            cwd: executeDir,
-            stdio: ['pipe', 'pipe', 'pipe'],
-            shell: true,
-            env
-        });
-
-        const processId = projectId.toString();
-        const consoleOutput = [];
-
-        // Capture stdout
-        // Regex to dynamically detect locally running dev servers like Vite
-        const urlRegex = /(http:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):\d+)/i;
-
-        childProcess.stdout.on('data', (data) => {
-            const message = data.toString().trim();
-            if (message) {
-                consoleOutput.push({ message, type: 'info', timestamp: Date.now() });
-                if (io && roomId) {
-                    io.to(roomId).emit('project-console', { projectId, message, type: 'info' });
-                    
-                    // Emitting dynamic preview URL update if matched
-                    const match = message.match(urlRegex);
-                    if (match) {
-                        io.to(roomId).emit('project-preview-url', { projectId, url: match[1] });
-                    }
-                }
-            }
-        });
-
-        // Capture stderr
-        childProcess.stderr.on('data', (data) => {
-            const message = data.toString().trim();
-            if (message) {
-                // Vite/webpack output goes to stderr but isn't actually errors
-                const isActualError = message.toLowerCase().includes('error') && 
-                                     !message.includes('localhost') && 
-                                     !message.includes('ready in');
-                const type = isActualError ? 'error' : 'info';
-                consoleOutput.push({ message, type, timestamp: Date.now() });
-                if (io && roomId) {
-                    io.to(roomId).emit('project-console', { projectId, message, type });
-                    
-                    // Emitting dynamic preview URL update if matched
-                    const match = message.match(urlRegex);
-                    if (match) {
-                        io.to(roomId).emit('project-preview-url', { projectId, url: match[1] });
-                    }
-                }
-            }
-        });
-
-        // Handle process close
-        childProcess.on('close', (code) => {
-            runningProcesses.delete(processId);
-            const msg = code === 0 ? 'Process completed successfully' : `Process exited with code ${code}`;
-            consoleOutput.push({ message: msg, type: code === 0 ? 'success' : 'error', timestamp: Date.now() });
-            if (io && roomId) {
-                io.to(roomId).emit('project-stopped', { projectId, exitCode: code });
-            }
-        });
-
-        childProcess.on('error', (err) => {
-            runningProcesses.delete(processId);
-            console.error(`Project execution error: ${err.message}`);
-            if (io && roomId) {
-                io.to(roomId).emit('project-error', { projectId, error: err.message });
-                io.to(roomId).emit('project-console', { projectId, message: `❌ Error: ${err.message}`, type: 'error' });
-            }
-        });
-
-        // Store process info
-        runningProcesses.set(processId, {
-            process: childProcess,
-            projectType: analysis.projectType,
-            userId,
-            roomId,
-            port,
-            previewUrl,
-            startedAt: Date.now(),
-            consoleOutput,
-            analysis
-        });
-
-        // Return the HTTP response IMMEDIATELY so the client gets the preview URL
-        // Then check port readiness in the background via Socket.IO
-        emitToRoom(`⏳ Waiting for project to become ready on port ${port}...`, 'info');
-
-        // Fire-and-forget: poll port readiness & emit live status via Socket.IO
-        waitForPort(port, 40, 1500).then((portReady) => {
-            if (portReady) {
-                emitToRoom(`✅ Project is live on port ${port}!`, 'success');
-                // Re-emit the preview URL so any late-joining members get it too
-                if (io && roomId) {
-                    io.to(roomId).emit('project-preview-url', { projectId, url: previewUrl });
-                }
-            } else {
-                emitToRoom(`⚠️ Port ${port} did not respond in 60s — the project may have crashed. Check console output above for errors.`, 'warning');
-            }
-        });
 
         return {
             success: true,
-            previewUrl,
             processId,
-            port,
-            analysis,
-            message: `${analysis.projectType} project started on port ${port}`
+            previewUrl,
+            target: target.id,
+            config: summarizeConfig(config),
+            message: `${config.label} starting (${target.label})`
         };
-
     } catch (err) {
         console.error('Run project error:', err);
-        // Emit error to console
-        if (io && roomId) {
-            io.to(roomId).emit('project-console', {
-                projectId,
-                message: `❌ Failed to start project: ${err.message}`,
-                type: 'error'
-            });
-        }
+        out.console(`❌ Failed to start project: ${err.message}`, 'error');
+        setState(io, id, { phase: 'error', error: err.message });
         return { success: false, message: err.message };
     }
 };
 
-/* ---------------------------------------------------------
-   STOP PROJECT
---------------------------------------------------------- */
-const kill = require('tree-kill'); // Guarantees orphaned processes actually die!
-
-const stopProject = (projectId) => {
-    const processId = projectId.toString();
-    const info = runningProcesses.get(processId);
-
+const stopProject = async (projectId, io) => {
+    const id = String(projectId);
+    const info = processes.get(`run-${id}`);
     if (!info) {
+        setState(io, id, { phase: 'stopped', previewUrl: null });
         return { success: false, message: 'Project is not running' };
     }
-
-    try {
-        // Force-kill the parent shell AND every descendant subprocess it spawned (like Vite, nodemon)
-        kill(info.process.pid, 'SIGKILL', (err) => {
-            if (err) {
-                console.error(`Error terminating process tree ${info.process.pid}:`, err);
-            }
-        });
-        runningProcesses.delete(processId);
-        return { success: true, message: 'Project stopped' };
-    } catch (err) {
-        return { success: false, message: err.message };
-    }
+    await info.handle.kill();
+    return { success: true, message: 'Project stopped' };
 };
 
-/* ---------------------------------------------------------
-   CONSOLE OUTPUT
---------------------------------------------------------- */
 const getConsoleOutput = (projectId) => {
-    const processId = projectId.toString();
-    const info = runningProcesses.get(processId);
-    return { logs: info ? info.consoleOutput : [] };
+    const info = processes.get(`run-${projectId}`);
+    return { logs: info ? info.logs : [] };
 };
 
-const isProjectRunning = (projectId) => {
-    return runningProcesses.has(projectId.toString());
-};
+const isProjectRunning = (projectId) => processes.has(`run-${projectId}`);
 
-/* ---------------------------------------------------------
-   STATUS OUTPUT
---------------------------------------------------------- */
 const getProjectStatus = (projectId) => {
-    const processId = projectId.toString();
-    const info = runningProcesses.get(processId);
-    if (!info) return { running: false };
+    const id = String(projectId);
+    const state = runState.get(id) || {};
     return {
-        running: true,
-        projectType: info.projectType,
-        port: info.port,
-        previewUrl: info.previewUrl,
-        startedAt: info.startedAt
+        running: isProjectRunning(id),
+        phase: isProjectRunning(id) ? (state.phase || 'running') : (state.phase === 'error' ? 'error' : 'stopped'),
+        target: state.target || null,
+        previewUrl: isProjectRunning(id) ? sandbox.getPreviewUrl(id) : null,
+        startedAt: state.startedAt || null,
+        error: state.error || null,
+        sandbox: { driver: driver.name, isolated: driver.isolated }
+    };
+};
+
+const summarizeConfig = (config) => ({
+    label: config.label,
+    env: config.env,
+    envLabel: sandbox.config.ENVIRONMENTS[config.env]?.label,
+    targets: config.targets.map(({ id, label, preview }) => ({ id, label, preview })),
+    deploy: { kind: config.deploy.kind, reason: config.deploy.reason || null }
+});
+
+/** How this project will run & deploy (for the IDE toolbar and the deploy panel). */
+const getRunConfig = async (projectId, io) => {
+    const { config, dir } = await loadRunConfig(projectId, io);
+    if (sandbox.getMode() !== 'browser') return { mode: sandbox.getMode(), ...summarizeConfig(config) };
+
+    // Browser mode: the IDE runs the project itself, so it gets the full plan (commands included)
+    const plan = browserPlan(config, dir, listFiles(dir));
+    return {
+        mode: 'browser',
+        label: config.label,
+        env: config.env,
+        envLabel: plan.runtime === 'python' ? 'Python in your browser (Pyodide)' : 'Node.js in your browser (WebContainer)',
+        targets: plan.targets,
+        deploy: plan.deploy,
+        plan
     };
 };
 
 /* ---------------------------------------------------------
-   RUN FILE — uses project root as cwd
+   RUN A SINGLE FILE
 --------------------------------------------------------- */
-const runFile = async (projectId, filePath, userId, io, roomId, userSocketMap) => {
+const FILE_RUNNERS = {
+    '.js': (f) => `node ${f}`, '.mjs': (f) => `node ${f}`, '.cjs': (f) => `node ${f}`,
+    '.ts': (f) => `npx --yes tsx ${f}`,
+    '.py': (f) => `python3 ${f}`,
+    '.sh': (f) => `sh ${f}`
+};
+
+const runFile = async (projectId, rawFilePath, userId, io) => {
+    const id = String(projectId);
+    const out = emitter(io, id);
     try {
-        const projectRoot = path.join(process.env.PROJECTS_DIR || path.join(process.cwd(), 'projects'), projectId.toString());
-        const fullPath = path.join(projectRoot, filePath);
-        const fileExt = path.extname(filePath);
-        const fileName = path.basename(filePath);
+        const filePath = sanitizeRelPath(rawFilePath);
+        if (!filePath) return { success: false, message: 'Invalid file path' };
+        resolveProjectPath(id, filePath);
 
-        // ALWAYS sync this singular file to disk before running so it reflects the latest edits
-        const dbFile = await File.findOne({ project: projectId, path: filePath });
-        if (!dbFile) {
-            return { success: false, message: 'File not found in database' };
-        }
-        
-        const dir = path.dirname(fullPath);
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-        }
-        fs.writeFileSync(fullPath, dbFile.content || '');
-
-        let command, args;
-
-        if (fileExt === '.js') {
-            command = 'node';
-            args = [fullPath];
-        } else if (fileExt === '.py') {
-            command = 'python';
-            args = [fullPath];
-        } else if (fileExt === '.html') {
-            // For HTML files, serve them
-            const port = await findAvailablePort(8080);
-            command = 'npx';
-            args = ['http-server', projectRoot, '-p', port.toString(), '-c-1', '-o', filePath];
-            // Return immediately with preview URL
-            const childProcess = spawn(command, args, {
-                cwd: projectRoot, stdio: ['pipe', 'pipe', 'pipe'], shell: true
-            });
-            const processId = `file-${Date.now()}`;
-            runningProcesses.set(processId, {
-                process: childProcess, type: 'file', filePath, userId, roomId,
-                startedAt: Date.now(), consoleOutput: []
-            });
-            return { success: true, processId, previewUrl: `/api/preview/${port}/${filePath}`, message: `Serving ${fileName} on port ${port}` };
-        } else {
-            return { success: false, message: 'Unsupported file type for direct execution' };
+        const ext = path.extname(filePath).toLowerCase();
+        const runner = FILE_RUNNERS[ext];
+        if (!runner) {
+            return { success: false, message: `Can't run ${ext || 'this'} files directly — use ▶ Run Project for web apps.` };
         }
 
-        const childProcess = spawn(command, args, {
-            cwd: projectRoot,
-            stdio: ['pipe', 'pipe', 'pipe'],
-            shell: true
-        });
+        const { project, dir, config } = await loadRunConfig(id, io);
+        if (ext === '.js' && config.env !== 'node') {
+            return { success: false, message: 'This project uses a Python environment — JavaScript files cannot run here.' };
+        }
+        const env = await buildEnv(id, project);
+        if (!(await prepareWorkspace(id, io, { config, dir, env }))) {
+            return { success: false, message: 'Dependency install failed — see the console.' };
+        }
 
-        const processId = `file-${Date.now()}`;
-        const consoleOutput = [];
-
-        const emitOutput = (eventName, data) => {
-            if (!io) return;
-            if (roomId) {
-                io.to(roomId).emit(eventName, data);
-            } else if (userSocketMap && userSocketMap[userId]) {
-                io.to(userSocketMap[userId]).emit(eventName, data);
-            }
-        };
-
-        childProcess.stdout.on('data', (data) => {
-            const message = data.toString();
-            if (message) {
-                consoleOutput.push({ message, type: 'info', timestamp: Date.now() });
-                emitOutput('terminal-output', { processId, message, type: 'info' });
-            }
-        });
-
-        childProcess.stderr.on('data', (data) => {
-            const message = data.toString();
-            if (message) {
-                consoleOutput.push({ message, type: 'error', timestamp: Date.now() });
-                emitOutput('terminal-output', { processId, message, type: 'error' });
+        const processId = `file-${id}-${Date.now()}`;
+        const quoted = `'${filePath.replace(/'/g, `'\\''`)}'`;
+        const logs = [];
+        const handle = driver.exec({
+            projectId: id,
+            execId: processId,
+            cmd: runner(quoted),
+            env,
+            onData: (chunk, stream) => {
+                pushLog(logs, { message: chunk, type: stream === 'stderr' ? 'error' : 'info', timestamp: Date.now() });
+                out.terminal(processId, chunk, stream === 'stderr' ? 'error' : 'info');
+            },
+            onExit: (code) => {
+                processes.delete(processId);
+                out.terminal(processId, `\nProcess exited with code ${code}`, code === 0 ? 'success' : 'error');
+                out.event('file-process-ended', { processId, exitCode: code });
             }
         });
-
-        childProcess.on('close', (code) => {
-            runningProcesses.delete(processId);
-            const exitMessage = `\nProcess exited with code ${code}`;
-            consoleOutput.push({ message: exitMessage, type: code === 0 ? 'success' : 'error', timestamp: Date.now() });
-            emitOutput('terminal-output', { processId, message: exitMessage, type: code === 0 ? 'success' : 'error' });
-        });
-
-        runningProcesses.set(processId, {
-            process: childProcess, type: 'file', filePath, userId, roomId,
-            startedAt: Date.now(), consoleOutput
-        });
-
-        return { success: true, processId, message: `Running ${fileName}...` };
+        processes.set(processId, { projectId: id, kind: 'file', handle, logs, startedAt: Date.now(), userId });
+        return { success: true, processId, message: `Running ${filePath}...` };
     } catch (err) {
         console.error('Run file error:', err);
         return { success: false, message: err.message };
@@ -659,112 +340,148 @@ const runFile = async (projectId, filePath, userId, io, roomId, userSocketMap) =
 };
 
 /* ---------------------------------------------------------
-   WRITE TO PROCESS STDIN
+   TERMINAL COMMANDS
 --------------------------------------------------------- */
-const writeToProcess = (processId, input) => {
-    const info = runningProcesses.get(processId);
-    if (!info || !info.process) {
-        return { success: false, message: 'Process not running' };
-    }
-    try {
-        info.process.stdin.write(input + '\n');
-        return { success: true };
-    } catch (err) {
-        return { success: false, message: err.message };
-    }
-};
+const executeCommand = async (projectId, command, io, subDir = '', userId) => {
+    const id = String(projectId);
+    const out = emitter(io, id);
 
-/* ---------------------------------------------------------
-   STOP PROCESS
---------------------------------------------------------- */
-const stopProcess = (processId) => {
-    const info = runningProcesses.get(processId);
-    if (!info) {
-        return { success: false, message: 'Process not running' };
+    let cwd = '';
+    if (subDir) {
+        const clean = sanitizeRelPath(subDir);
+        if (!clean) return { success: false, output: 'Cannot run commands outside the project root', exitCode: 1 };
+        cwd = clean;
     }
-    try {
-        info.process.kill('SIGTERM');
-        runningProcesses.delete(processId);
-        return { success: true, message: 'Process stopped' };
-    } catch (err) {
-        return { success: false, message: err.message };
-    }
-};
 
-/* ---------------------------------------------------------
-   EXECUTE SHELL/GIT COMMAND
---------------------------------------------------------- */
-const executeCommand = (projectId, command, io, roomId, subDir = '') => {
+    let prepared;
+    try {
+        prepared = await loadRunConfig(id, io);
+        await driver.ensureWorkspace(id, prepared.config.env, prepared.dir, (line) => out.console(line, 'info'));
+    } catch (err) {
+        return { success: false, output: err.message, exitCode: 1 };
+    }
+    sandbox.touch(id);
+    const env = await buildEnv(id, prepared.project);
+
     return new Promise((resolve) => {
-        const projectRoot = path.join(process.env.PROJECTS_DIR || path.join(process.cwd(), 'projects'), projectId.toString());
-        if (!fs.existsSync(projectRoot)) {
-            fs.mkdirSync(projectRoot, { recursive: true });
-        }
-
-        // Calculate the actual execution directory
-        let executeDir = projectRoot;
-        if (subDir) {
-            // Prevent directory traversal attacks outside the project
-            const resolvedPath = path.resolve(projectRoot, subDir);
-            if (resolvedPath.startsWith(projectRoot)) {
-                executeDir = resolvedPath;
-            }
-        }
-        
-        if (!fs.existsSync(executeDir)) {
-             resolve({ success: false, output: `Directory not found: ${subDir}`, exitCode: 1 });
-             return;
-        }
-
-        const childProcess = spawn(command, {
-            cwd: executeDir,
-            stdio: ['pipe', 'pipe', 'pipe'],
-            shell: true
-        });
-
+        const processId = `cmd-${id}-${Date.now()}`;
         let output = '';
-        let errorOutput = '';
-
-        const emitToRoom = (message, type = 'info') => {
-            if (io && roomId) {
-                io.to(roomId).emit('terminal-output', { processId: 'cmd', message, type });
-            }
+        let settled = false;
+        const finish = (result) => {
+            if (settled) return;
+            settled = true;
+            resolve(result);
         };
 
-        childProcess.stdout.on('data', (data) => {
-            const msg = data.toString();
-            output += msg;
-            emitToRoom(msg, 'info');
+        const handle = driver.exec({
+            projectId: id,
+            execId: processId,
+            cmd: command,
+            cwd,
+            env,
+            onData: (chunk) => {
+                if (output.length < 200000) output += chunk;
+                if (settled) out.terminal(processId, chunk, 'info'); // streamed once the HTTP call returned
+            },
+            onExit: async (code) => {
+                processes.delete(processId);
+                out.event('file-process-ended', { processId, exitCode: code });
+                // Commands like `git clone`, `npm init` or `touch` create files — show them in the explorer
+                try {
+                    const sync = await reconcileProject(id);
+                    if (sync.imported || sync.toDb) out.event('files-changed', sync);
+                } catch { /* best effort */ }
+                finish({ success: code === 0, output, exitCode: code });
+            }
         });
+        processes.set(processId, { projectId: id, kind: 'cmd', handle, logs: [], startedAt: Date.now(), userId });
 
-        childProcess.stderr.on('data', (data) => {
-            const msg = data.toString();
-            errorOutput += msg;
-            emitToRoom(msg, 'info');
-        });
-
-        childProcess.on('close', (code) => {
-            resolve({ success: code === 0, output: output + errorOutput, exitCode: code });
-        });
-
-        childProcess.on('error', (err) => {
-            resolve({ success: false, output: err.message, exitCode: 1 });
-        });
-
-        // Don't kill long-running processes! Just release the HTTP request 
-        // after 1.5 seconds so the UI terminal doesn't hang. The process will
-        // continue to stream output to the socket.
-        const timeout = setTimeout(() => {
-            childProcess.unref(); // Detach from parent
-            resolve({ success: true, output: '\n[Process detached to background and continuing to run...]\n', exitCode: 0 });
-        }, 1500);
-
-        // Clear timeout if process finishes quickly before 1.5s
-        childProcess.on('exit', () => {
-            clearTimeout(timeout);
-        });
+        // Long-running commands (servers, watchers) keep streaming to the terminal after 3s
+        setTimeout(() => finish({
+            success: true,
+            processId,
+            output: `${output}\n[still running in the background — output continues below; use Stop to end it]\n`,
+            exitCode: 0
+        }), 3000);
     });
 };
+
+const getProcessInfo = (processId) => processes.get(String(processId)) || null;
+
+const writeToProcess = (processId, input) => {
+    const info = processes.get(processId);
+    if (!info) return { success: false, message: 'Process not running' };
+    info.handle.write(`${String(input ?? '')}\n`);
+    return { success: true };
+};
+
+const stopProcess = async (processId) => {
+    const info = processes.get(processId);
+    if (!info) return { success: false, message: 'Process not running' };
+    await info.handle.kill();
+    processes.delete(processId);
+    return { success: true, message: 'Process stopped' };
+};
+
+/** Installs one package inside the sandbox (npm or pip depending on the environment). */
+const installPackage = async (projectId, packageName, io) => {
+    const id = String(projectId);
+    const { project, dir, config } = await loadRunConfig(id, io);
+    await driver.ensureWorkspace(id, config.env, dir);
+    const cmd = config.env === 'node'
+        ? `npm install --no-audit --no-fund --save '${packageName}'`
+        : `pip install --user --no-warn-script-location '${packageName}'`;
+    const out = emitter(io, id);
+    out.console(`📦 ${cmd}`, 'info');
+    const code = await execToCompletion(id, `pkg-${Date.now()}`, cmd, {
+        cwd: config.env === 'node' ? config.root : '',
+        env: await buildEnv(id, project),
+        onLine: (l) => out.console(l, 'info')
+    });
+    if (config.env !== 'node' && code === 0) {
+        // Remember it so deploys and teammates get it too
+        const reqPath = path.join(dir, 'requirements.txt');
+        const fs = require('fs');
+        const current = fs.existsSync(reqPath) ? fs.readFileSync(reqPath, 'utf8') : '';
+        if (!current.split('\n').some(l => l.trim().split(/[=<>~!]/)[0] === packageName.split(/[=<>~!]/)[0])) {
+            fs.writeFileSync(reqPath, `${current.trimEnd()}${current.trim() ? '\n' : ''}${packageName}\n`);
+        }
+    }
+    const sync = await reconcileProject(id);
+    if (sync.imported || sync.toDb) out.event('files-changed', sync);
+    return code === 0
+        ? { success: true, message: `✓ ${packageName} installed` }
+        : { success: false, message: `Failed to install ${packageName} (exit ${code})` };
+};
+
+/** Syncs files both ways on request (e.g. after editing a notebook in JupyterLab). */
+const syncFiles = async (projectId, io) => {
+    const sync = await reconcileProject(String(projectId));
+    if (sync.imported || sync.toDb) emitter(io, projectId).event('files-changed', sync);
+    return sync;
+};
+
+/** Kills everything for a project and removes its workspace (project/room deletion). */
+const stopAllForProject = async (projectId) => {
+    const id = String(projectId);
+    for (const [processId, info] of processes.entries()) {
+        if (info.projectId === id) {
+            try { await info.handle.kill(); } catch { /* already gone */ }
+            processes.delete(processId);
+        }
+    }
+    sandbox.revokePreviewToken(id);
+    runState.delete(id);
+    try { await driver.removeWorkspace(id); } catch { /* not running */ }
+};
+
+// When the idle reaper stops a workspace, forget its processes
+sandbox.setIdleHandler(async (projectId) => {
+    for (const [processId, info] of processes.entries()) {
+        if (info.projectId === projectId) processes.delete(processId);
+    }
+    runState.set(projectId, { phase: 'stopped', previewUrl: null });
+});
 
 module.exports = {
     runProject,
@@ -775,6 +492,11 @@ module.exports = {
     getConsoleOutput,
     isProjectRunning,
     getProjectStatus,
+    getRunConfig,
+    getProcessInfo,
+    installPackage,
+    syncFiles,
+    stopAllForProject,
     executeCommand,
-    findAvailablePort
+    buildEnv
 };

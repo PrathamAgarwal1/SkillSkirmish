@@ -24,7 +24,7 @@ const LoginPage = () => {
             const inviteRoomId = sessionStorage.getItem('inviteRoomId');
             if (inviteRoomId) {
                 sessionStorage.removeItem('inviteRoomId');
-                navigate(`/room/${inviteRoomId}`);
+                navigate(`/rooms/${inviteRoomId}`);
             } else {
                 navigate('/dashboard');
             }
@@ -36,7 +36,12 @@ const LoginPage = () => {
 
     const onSubmit = async e => {
         e.preventDefault();
-        await login(formData);
+        setError(null);
+        try {
+            await login(formData);
+        } catch (err) {
+            setError(err.message);
+        }
     };
 
     // Redirect to backend Google auth route (full page redirect)

@@ -1,3 +1,5 @@
+// routes/execute.js — run projects, files and terminal commands. All execution happens inside the
+// project's sandbox (see sandbox/ and utils/projectRunner.js); nothing here runs user code on the host.
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
@@ -5,11 +7,13 @@ const path = require('path');
 const fs = require('fs');
 const archiver = require('archiver');
 const multer = require('multer');
-const { spawn } = require('child_process');
-const { runProject, stopProject, getConsoleOutput, runFile, writeToProcess, stopProcess, executeCommand } = require('../utils/projectRunner');
-const { installPackage, getPackageList } = require('../utils/packageManager');
-const { installDependencies, syncAllFilesToDisk } = require('../utils/templateManager');
+const runner = require('../utils/projectRunner');
+const { getPackageList, isValidPackageName } = require('../utils/packageManager');
+const { getProjectDir, resolveProjectPath, sanitizeRelPath, getProjectAccess, requireProjectAccess } = require('../utils/access');
 const File = require('../models/File');
+const Project = require('../models/Project');
+const sandbox = require('../sandbox');
+const { decryptEnv } = require('../utils/secrets');
 
 // Multer config for file/folder uploads (store in temp, then process)
 const upload = multer({
@@ -17,622 +21,353 @@ const upload = multer({
     limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
 });
 
-// Original: Execute single code snippet
-router.post('/', auth, (req, res) => {
-    const { code } = req.body;
+const fromBody = (req) => req.body.projectId;
+const fromParams = (req) => req.params.projectId;
+const io = (req) => req.app.get('socketio');
 
-    // Use 'spawn' to create an isolated process
-    const nodeProcess = spawn('node', ['-e', code], { shell: true });
-
-    let output = '';
-    let error = '';
-
-    // Capture standard output
-    nodeProcess.stdout.on('data', (data) => {
-        output += data.toString();
-    });
-
-    // Capture error output
-    nodeProcess.stderr.on('data', (data) => {
-        error += data.toString();
-    });
-
-    // Handle process exit
-    nodeProcess.on('close', (code) => {
-        if (code !== 0) { // If the process crashed
-            res.json({ output: error || `Process exited with code ${code}` });
-        } else {
-            res.json({ output: output });
-        }
-    });
-
-    // Handle process errors
-    nodeProcess.on('error', (err) => {
-        res.json({ output: `Failed to start process: ${err.message}` });
-    });
-});
-
-// Run a full project
-router.post('/run-project', auth, async (req, res) => {
+const handle = (fn) => async (req, res) => {
     try {
-        const { projectId, projectType, roomId } = req.body;
-        const io = req.app.get('socketio');
-
-        const result = await runProject(projectId, projectType, req.user.id, io, roomId);
-        res.json(result);
+        await fn(req, res);
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        console.error(`[execute] ${req.path}:`, err.message);
+        res.status(err.status || 500).json({ success: false, message: err.message });
     }
+};
+
+// In browser mode there is no server sandbox: the IDE runs code itself (WebContainer / Pyodide)
+const serverSandboxOnly = (req, res, next) => {
+    if (sandbox.getMode() !== 'browser') return next();
+    res.status(409).json({ success: false, browserMode: true, message: 'Code runs in your browser on this server. Reload the IDE to switch to the in-browser runtime.' });
+};
+for (const route of ['/run-project', '/run-file', '/write-terminal', '/stop-process', '/run-command', '/install-package']) {
+    router.post(route, serverSandboxOnly);
+}
+
+// ─── In-browser runtime support ─────────────────────────────
+const MAX_SNAPSHOT_BYTES = 40 * 1024 * 1024;
+
+// Every file of the project, to mount into the browser runtime
+router.get('/snapshot/:projectId', auth, requireProjectAccess(fromParams), handle(async (req, res) => {
+    const docs = await File.find({ project: req.params.projectId }).select('path content isFolder').lean();
+    let total = 0;
+    const files = [];
+    const folders = [];
+    for (const d of docs) {
+        if (d.isFolder) { folders.push(d.path); continue; }
+        total += (d.content || '').length;
+        if (total > MAX_SNAPSHOT_BYTES) return res.status(413).json({ success: false, message: 'Project is too large to run in the browser (40 MB limit).' });
+        files.push({ path: d.path, content: d.content || '' });
+    }
+    res.json({ success: true, files, folders });
+}));
+
+// The project's environment variables, for code the member runs in their own browser
+router.get('/runtime-env/:projectId', auth, requireProjectAccess(fromParams), handle(async (req, res) => {
+    const project = await Project.findById(req.params.projectId).select('envVars');
+    res.json({ success: true, env: decryptEnv(project?.envVars) });
+}));
+
+// ─── Run / stop the whole project ───────────────────────────
+router.post('/run-project', auth, requireProjectAccess(fromBody), handle(async (req, res) => {
+    res.json(await runner.runProject(req.body.projectId, { targetId: req.body.target, userId: req.user.id, io: io(req) }));
+}));
+
+router.post('/stop-project', auth, requireProjectAccess(fromBody), handle(async (req, res) => {
+    res.json(await runner.stopProject(req.body.projectId, io(req)));
+}));
+
+router.get('/console-output/:projectId', auth, requireProjectAccess(fromParams), (req, res) => {
+    res.json(runner.getConsoleOutput(req.params.projectId));
 });
 
-// Stop a running project
-router.post('/stop-project', auth, (req, res) => {
-    try {
-        const { projectId } = req.body;
-        const result = stopProject(projectId);
-        res.json(result);
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
-    }
+router.get('/status/:projectId', auth, requireProjectAccess(fromParams), (req, res) => {
+    const status = runner.getProjectStatus(req.params.projectId);
+    res.json(status.running ? { ...status, logs: runner.getConsoleOutput(req.params.projectId).logs } : status);
 });
 
-// Get console output
-router.get('/console-output/:projectId', auth, (req, res) => {
-    try {
-        const { projectId } = req.params;
-        const result = getConsoleOutput(projectId);
-        res.json(result);
-    } catch (err) {
-        res.status(500).json({ logs: [] });
+// How the project runs & deploys: environment, run targets, deploy kind
+router.get('/config/:projectId', auth, requireProjectAccess(fromParams), handle(async (req, res) => {
+    res.json(await runner.getRunConfig(req.params.projectId, io(req)));
+}));
+
+// Two-way file sync (e.g. pick up notebooks saved from JupyterLab)
+router.post('/sync', auth, requireProjectAccess(fromBody), handle(async (req, res) => {
+    res.json({ success: true, ...(await runner.syncFiles(req.body.projectId, io(req))) });
+}));
+
+// ─── Packages ───────────────────────────────────────────────
+router.post('/install-package', auth, requireProjectAccess(fromBody), handle(async (req, res) => {
+    const packageName = typeof req.body.packageName === 'string' ? req.body.packageName.trim() : '';
+    if (!isValidPackageName(packageName)) {
+        return res.status(400).json({ success: false, message: 'Invalid package name' });
     }
-});
+    res.json(await runner.installPackage(req.body.projectId, packageName, io(req)));
+}));
 
-// Debug: check running processes (helps diagnose production preview issues)
-router.get('/debug-status/:projectId', auth, (req, res) => {
-    try {
-        const { projectId } = req.params;
-        const { isProjectRunning, getConsoleOutput, getProjectStatus } = require('../utils/projectRunner');
-        const running = isProjectRunning(projectId);
-        const status = getProjectStatus(projectId);
-        const { logs } = getConsoleOutput(projectId);
-        const lastLogs = logs.slice(-20); // Last 20 log entries
-        res.json({
-            projectId,
-            running,
-            logCount: logs.length,
-            recentLogs: lastLogs,
-            serverPort: process.env.PORT || '5000',
-            serverUrl: process.env.SERVER_URL || 'not set',
-            previewUrl: status.previewUrl || ''
-        });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Get project running status, preview URL, and port
-router.get('/status/:projectId', auth, (req, res) => {
-    try {
-        const { projectId } = req.params;
-        const { getProjectStatus, getConsoleOutput } = require('../utils/projectRunner');
-        const status = getProjectStatus(projectId);
-        if (status.running) {
-            const { logs } = getConsoleOutput(projectId);
-            res.json({ ...status, logs });
-        } else {
-            res.json(status);
-        }
-    } catch (err) {
-        res.status(500).json({ running: false, error: err.message });
-    }
-});
-
-// Install a specific package
-router.post('/install-package', auth, async (req, res) => {
-    try {
-        const { projectId, packageName, projectType } = req.body;
-        const projectPath = path.join(process.env.PROJECTS_DIR || path.join(process.cwd(), 'projects'), projectId.toString());
-
-        const result = await installPackage(projectId, packageName, projectType, projectPath);
-        res.json(result);
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
-    }
-});
-
-// Get available packages
 router.get('/packages/:projectType', auth, (req, res) => {
-    try {
-        const { projectType } = req.params;
-        const packages = getPackageList(projectType);
-        res.json({ packages });
-    } catch (err) {
-        res.status(500).json({ packages: [] });
-    }
+    res.json({ packages: getPackageList(req.params.projectType) });
 });
 
-// Run a single file
-router.post('/run-file', auth, async (req, res) => {
-    try {
-        const { projectId, filePath, roomId } = req.body;
-        const io = req.app.get('socketio');
-        const userSocketMap = req.app.get('userSocketMap');
+// ─── Single files & processes ──────────────────────────────
+router.post('/run-file', auth, requireProjectAccess(fromBody), handle(async (req, res) => {
+    res.json(await runner.runFile(req.body.projectId, req.body.filePath, req.user.id, io(req)));
+}));
 
-        const result = await runFile(projectId, filePath, req.user.id, io, roomId, userSocketMap);
-        res.json(result);
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
-    }
+// Processes are addressed by id; only members of the owning project may touch them.
+const requireProcessAccess = async (req, res, next) => {
+    const info = runner.getProcessInfo(req.body.processId);
+    if (!info) return res.json({ success: false, message: 'Process not running' });
+    const access = await getProjectAccess(info.projectId, req.user.id);
+    if (!access) return res.status(403).json({ success: false, message: 'Not allowed to control this process' });
+    next();
+};
+
+router.post('/write-terminal', auth, requireProcessAccess, (req, res) => {
+    res.json(runner.writeToProcess(req.body.processId, req.body.input));
 });
 
-// Write to process stdin
-router.post('/write-terminal', auth, (req, res) => {
-    try {
-        const { processId, input } = req.body;
-        const result = writeToProcess(processId, input);
-        res.json(result);
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
-    }
-});
+router.post('/stop-process', auth, requireProcessAccess, handle(async (req, res) => {
+    res.json(await runner.stopProcess(req.body.processId));
+}));
 
-// Stop generic process
-router.post('/stop-process', auth, (req, res) => {
-    try {
-        const { processId } = req.body;
-        const io = req.app.get('socketio');
-        const roomId = req.body.roomId || null;
-        const result = stopProcess(processId, io, roomId);
-        res.json(result);
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
-    }
-});
+// ─── Terminal commands ─────────────────────────────────────
+router.post('/run-command', auth, requireProjectAccess(fromBody), handle(async (req, res) => {
+    const { projectId, cwd = '' } = req.body;
+    const command = typeof req.body.command === 'string' ? req.body.command.trim() : '';
+    if (!command) return res.json({ success: false, output: '' });
+    if (command.length > 4000) return res.status(400).json({ success: false, output: 'Command is too long' });
 
-// ─── NEW: Install all dependencies for a project ─────────────────
-router.post('/install-deps', auth, async (req, res) => {
-    try {
-        const { projectId } = req.body;
-        const io = req.app.get('socketio');
-        const roomId = req.body.roomId || null;
-        const projectPath = path.join(process.env.PROJECTS_DIR || path.join(process.cwd(), 'projects'), projectId.toString());
+    const cmdLower = command.toLowerCase();
 
-        // First sync all files from DB to disk
-        await syncAllFilesToDisk(projectId);
+    // `cd` is handled here so the terminal keeps a working directory between commands
+    if (cmdLower === 'cd' || cmdLower.startsWith('cd ')) {
+        const dest = command.substring(2).trim().replace(/^["']|["']$/g, '');
+        let newCwd = '';
 
-        if (!fs.existsSync(projectPath)) {
-            return res.status(404).json({ success: false, message: 'Project directory not found' });
-        }
-
-        // Helper to find all package.jsons recursively
-        const findPackageJsons = (dir, pkgList) => {
+        if (dest && dest !== '~' && dest !== '/') {
+            let targetAbsolute;
             try {
-                const items = fs.readdirSync(dir, { withFileTypes: true });
-                for (const item of items) {
-                    if (item.name === 'node_modules' || item.name.startsWith('.')) continue;
-                    const fullPath = path.join(dir, item.name);
-                    if (item.isDirectory()) {
-                        findPackageJsons(fullPath, pkgList);
-                    } else if (item.name === 'package.json') {
-                        pkgList.push(fullPath);
-                    }
-                }
-            } catch (err) {
-                console.error(`Error reading directory ${dir}:`, err);
+                const currentAbsolute = resolveProjectPath(projectId, cwd);
+                targetAbsolute = path.resolve(currentAbsolute, dest);
+                resolveProjectPath(projectId, path.relative(getProjectDir(projectId), targetAbsolute));
+            } catch {
+                return res.json({ success: false, output: 'Cannot navigate outside project root' });
             }
-        };
-
-        const packageJsons = [];
-        findPackageJsons(projectPath, packageJsons);
-
-        if (packageJsons.length === 0) {
-            return res.json({ success: true, message: 'No package.json files found' });
+            if (!fs.existsSync(targetAbsolute) || !fs.statSync(targetAbsolute).isDirectory()) {
+                return res.json({ success: false, output: `No such directory: ${dest}` });
+            }
+            newCwd = path.relative(getProjectDir(projectId), targetAbsolute).replace(/\\/g, '/');
         }
-
-        let overallSuccess = true;
-        let messages = [];
-
-        for (const pkgJsonPath of packageJsons) {
-            const installDir = path.dirname(pkgJsonPath);
-            let relativeDir = path.relative(projectPath, installDir);
-            if (!relativeDir) relativeDir = 'root';
-
-            // Emit progress
-            if (io && roomId) {
-                io.to(roomId).emit('project-console', {
-                    projectId,
-                    message: `📦 Installing dependencies in /${relativeDir}...`,
-                    type: 'info'
-                });
-            }
-
-            const result = await installDependencies(installDir);
-
-            if (io && roomId) {
-                io.to(roomId).emit('project-console', {
-                    projectId,
-                    message: result.success ? `✅ Dependencies installed in /${relativeDir}` : `⚠️ Failed in /${relativeDir}: ${result.message}`,
-                    type: result.success ? 'success' : 'warning'
-                });
-            }
-
-            if (!result.success) overallSuccess = false;
-            messages.push(`/${relativeDir}: ` + (result.success ? 'Success' : result.message));
-        }
-
-        res.json({ success: overallSuccess, message: messages.join(' | ') });
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        return res.json({ success: true, output: '', newCwd });
     }
-});
 
-// ─── NEW: Execute a shell/git command in project directory ───────
-router.post('/run-command', auth, async (req, res) => {
-    try {
-        const { projectId, command, roomId, cwd = '' } = req.body;
-        const io = req.app.get('socketio');
-        const cmdLower = command.trim().toLowerCase();
+    res.json(await runner.executeCommand(projectId, command, io(req), cwd, req.user.id));
+}));
 
-        // Special handling for CD commands to create a stateful terminal!
-        if (cmdLower.startsWith('cd ') || cmdLower === 'cd') {
-            const dest = command.substring(2).trim();
-            const projectRoot = path.join(process.env.PROJECTS_DIR || path.join(process.cwd(), 'projects'), projectId.toString());
-            let newCwd = ''; // root default
-
-            if (dest && dest !== '~' && dest !== '/') {
-                // If it's something like `cd backend` from root, or `cd ..` from backend
-                const currentAbsolute = path.resolve(projectRoot, cwd);
-                const targetAbsolute = path.resolve(currentAbsolute, dest);
-
-                // Prevent traversing outside project root
-                if (!targetAbsolute.startsWith(projectRoot)) {
-                    return res.json({ success: false, output: 'Cannot navigate outside project root' });
-                }
-
-                if (!fs.existsSync(targetAbsolute) || !fs.statSync(targetAbsolute).isDirectory()) {
-                    return res.json({ success: false, output: `The system cannot find the path specified: ${dest}` });
-                }
-
-                // Make relative to project root again
-                newCwd = path.relative(projectRoot, targetAbsolute);
-                // Windows path normalize (replace \ with /)
-                newCwd = newCwd.replace(/\\/g, '/');
-            }
-            
-            return res.json({ success: true, output: '', newCwd });
-        }
-
-        // Special handling for git clone - initiate async download
-        if (cmdLower.startsWith('git clone')) {
-            const gitUrl = command.substring('git clone'.length).trim();
-            if (!gitUrl) {
-                return res.json({ success: false, output: 'Error: Please provide a git URL. Usage: git clone <url>' });
-            }
-
-            // Extract repo name from URL
-            const repoNameMatch = gitUrl.match(/\/([^\/]+?)(\.git)?$/);
-            const repoName = repoNameMatch ? repoNameMatch[1] : 'cloned-repo';
-            
-            // Execute clone in background and send flag for download
-            const result = await executeCommand(projectId, command, io, roomId, cwd);
-            if (result.success) {
-                // Include download token so client can request the download
-                result.downloadPath = repoName;
-                result.isGitClone = true;
-            }
-            return res.json(result);
-        }
-
-        const result = await executeCommand(projectId, command, io, roomId, cwd);
-        res.json(result);
-    } catch (err) {
-        res.status(500).json({ success: false, output: err.message });
-    }
-});
-
-// ─── NEW: Download git cloned project as ZIP ─────────────────────
-router.post('/download-git-clone', auth, async (req, res) => {
+// ─── Download a folder of the project as ZIP ───────────────
+router.post('/download-git-clone', auth, requireProjectAccess(fromBody), async (req, res) => {
     try {
         const { projectId, pathToClone } = req.body;
-        
-        if (!projectId || !pathToClone) {
-            return res.status(400).json({ success: false, message: 'Missing projectId or pathToClone' });
+        const relPath = sanitizeRelPath(pathToClone);
+        if (!relPath) {
+            return res.status(400).json({ success: false, message: 'Missing or invalid pathToClone' });
         }
 
-        const projectRoot = path.join(process.env.PROJECTS_DIR || path.join(process.cwd(), 'projects'), projectId.toString());
-        const sourceDir = path.join(projectRoot, pathToClone);
-
-        // Validate path to prevent directory traversal
-        if (!sourceDir.startsWith(projectRoot)) {
-            console.error(`[Download] Path traversal attempt: ${sourceDir} not in ${projectRoot}`);
-            return res.status(400).json({ success: false, message: 'Invalid path' });
+        const sourceDir = resolveProjectPath(projectId, relPath);
+        if (!fs.existsSync(sourceDir) || !fs.statSync(sourceDir).isDirectory()) {
+            return res.status(404).json({ success: false, message: `Directory not found: ${relPath}` });
         }
 
-        if (!fs.existsSync(sourceDir)) {
-            console.error(`[Download] Source directory not found: ${sourceDir}`);
-            return res.status(404).json({ success: false, message: `Cloned directory not found: ${pathToClone}` });
-        }
-
-        const stats = fs.statSync(sourceDir);
-        if (!stats.isDirectory()) {
-            console.error(`[Download] Path is not a directory: ${sourceDir}`);
-            return res.status(400).json({ success: false, message: 'Path is not a directory' });
-        }
-
-        // Use temp directory for zip files
         const tempDir = path.join(process.cwd(), 'temp_uploads');
-        if (!fs.existsSync(tempDir)) {
-            fs.mkdirSync(tempDir, { recursive: true });
-        }
-
+        fs.mkdirSync(tempDir, { recursive: true });
         const zipName = `${path.basename(sourceDir)}-${Date.now()}.zip`;
         const zipPath = path.join(tempDir, zipName);
-
-        console.log(`[Download] Creating zip: ${zipPath} from source: ${sourceDir}`);
 
         return new Promise((resolve) => {
             const output = fs.createWriteStream(zipPath);
             const archive = archiver('zip', { zlib: { level: 6 } });
-
-            // Handle write stream errors
-            output.on('error', (err) => {
-                console.error('[Download] Write stream error:', err);
-                res.status(500).json({ success: false, message: 'Failed to write zip file' });
+            const fail = (message, err) => {
+                console.error(`[Download] ${message}:`, err?.message);
+                if (!res.headersSent) res.status(500).json({ success: false, message });
                 resolve();
-            });
+            };
 
-            // Handle archive errors
-            archive.on('error', (err) => {
-                console.error('[Download] Archive error:', err);
-                res.status(500).json({ success: false, message: 'Failed to create archive' });
-                resolve();
-            });
-
-            // When archive finishes writing
+            output.on('error', (err) => fail('Failed to write zip file', err));
+            archive.on('error', (err) => fail('Failed to create archive', err));
             output.on('close', () => {
-                console.log(`[Download] Zip created successfully: ${zipPath} (${archive.pointer()} bytes)`);
-                
-                // Send the file
-                res.download(zipPath, zipName, (err) => {
-                    if (err) {
-                        console.error('[Download] Download error:', err);
-                    }
-                    
-                    // Clean up zip file after a delay
-                    setTimeout(() => {
-                        try {
-                            if (fs.existsSync(zipPath)) {
-                                fs.unlinkSync(zipPath);
-                                console.log(`[Download] Cleaned up zip: ${zipPath}`);
-                            }
-                        } catch (err) {
-                            console.error('[Download] Cleanup error:', err);
-                        }
-                    }, 2000);
+                res.download(zipPath, zipName, () => {
+                    setTimeout(() => fs.rm(zipPath, { force: true }, () => {}), 2000);
                 });
                 resolve();
             });
 
-            // Pipe archive to output
             archive.pipe(output);
-            
-            // Add directory to archive
-            const repoName = path.basename(sourceDir);
-            archive.directory(sourceDir, repoName);
-            
-            // Finalize archive
-            archive.finalize().catch((err) => {
-                console.error('[Download] Finalize error:', err);
-                res.status(500).json({ success: false, message: 'Failed to finalize archive' });
-                resolve();
-            });
+            archive.glob('**/*', { cwd: sourceDir, ignore: ['node_modules/**', '.pydeps/**'], dot: true }, { prefix: path.basename(sourceDir) });
+            archive.finalize().catch((err) => fail('Failed to finalize archive', err));
         });
     } catch (err) {
         console.error('[Download] Unexpected error:', err);
-        res.status(500).json({ success: false, message: err.message });
+        res.status(err.status || 500).json({ success: false, message: err.message });
     }
 });
 
-// ─── NEW: Upload files/folders to a project ──────────────────────
-router.post('/upload-files', auth, upload.array('files', 100), async (req, res) => {
+// ─── Uploads ───────────────────────────────────────────────
+// Creates missing parent folders (DB + disk) for a project-relative file path.
+const ensureParentFolders = async (projectId, relPath) => {
+    const parts = relPath.split('/');
+    let currentPath = '';
+    for (let i = 0; i < parts.length - 1; i++) {
+        currentPath = currentPath ? `${currentPath}/${parts[i]}` : parts[i];
+        await File.findOneAndUpdate(
+            { project: projectId, path: currentPath },
+            { $setOnInsert: { name: parts[i], isFolder: true, content: '' } },
+            { upsert: true }
+        );
+        fs.mkdirSync(resolveProjectPath(projectId, currentPath), { recursive: true });
+    }
+};
+
+// Creates or overwrites a file (DB + disk).
+const upsertFile = async (projectId, relPath, content) => {
+    await File.findOneAndUpdate(
+        { project: projectId, path: relPath },
+        { $set: { name: path.posix.basename(relPath), isFolder: false, content } },
+        { upsert: true }
+    );
+    const diskPath = resolveProjectPath(projectId, relPath);
+    fs.mkdirSync(path.dirname(diskPath), { recursive: true });
+    fs.writeFileSync(diskPath, content);
+};
+
+// Dependencies of uploaded projects install inside the sandbox on the next Run.
+router.post('/upload-files', auth, upload.array('files', 100), requireProjectAccess(fromBody), async (req, res) => {
+    const uploadedFiles = req.files || [];
     try {
         const { projectId } = req.body;
-        const uploadedFiles = req.files;
-
-        if (!uploadedFiles || uploadedFiles.length === 0) {
+        if (uploadedFiles.length === 0) {
             return res.status(400).json({ success: false, message: 'No files uploaded' });
         }
 
-        const Project = require('../models/Project');
-        const project = await Project.findById(projectId);
-        if (!project) {
-            return res.status(404).json({ success: false, message: 'Project not found' });
-        }
-
-        const projectPath = path.join(process.env.PROJECTS_DIR || path.join(process.cwd(), 'projects'), projectId.toString());
         const results = [];
-
         for (const file of uploadedFiles) {
             // originalname contains the relative path from upload (webkitRelativePath)
-            const relativePath = req.body[`path_${file.originalname}`] || file.originalname;
-            const content = fs.readFileSync(file.path, 'utf-8');
-
-            // Create parent folders in DB if needed
-            const parts = relativePath.split('/');
-            let currentPath = '';
-            for (let i = 0; i < parts.length - 1; i++) {
-                currentPath = currentPath ? `${currentPath}/${parts[i]}` : parts[i];
-                const existingFolder = await File.findOne({ project: projectId, path: currentPath });
-                if (!existingFolder) {
-                    const folder = new File({
-                        name: parts[i],
-                        path: currentPath,
-                        isFolder: true,
-                        content: '',
-                        project: projectId
-                    });
-                    await folder.save();
-
-                    // Sync folder to disk
-                    const folderDiskPath = path.join(projectPath, currentPath);
-                    if (!fs.existsSync(folderDiskPath)) {
-                        fs.mkdirSync(folderDiskPath, { recursive: true });
-                    }
-                }
+            const relativePath = sanitizeRelPath(req.body[`path_${file.originalname}`] || file.originalname);
+            if (!relativePath) {
+                results.push({ path: file.originalname, status: 'rejected_invalid_path' });
+                continue;
             }
-
-            // Create or update the file in DB
-            const fileName = parts[parts.length - 1];
-            const existingFile = await File.findOne({ project: projectId, path: relativePath });
-            
-            if (existingFile) {
-                existingFile.content = content;
-                await existingFile.save();
-            } else {
-                const newFile = new File({
-                    name: fileName,
-                    path: relativePath,
-                    isFolder: false,
-                    content: content,
-                    project: projectId
-                });
-                await newFile.save();
-            }
-
-            // Write to disk
-            const diskPath = path.join(projectPath, relativePath);
-            const diskDir = path.dirname(diskPath);
-            if (!fs.existsSync(diskDir)) {
-                fs.mkdirSync(diskDir, { recursive: true });
-            }
-            fs.writeFileSync(diskPath, content);
-
+            await ensureParentFolders(projectId, relativePath);
+            await upsertFile(projectId, relativePath, fs.readFileSync(file.path, 'utf-8'));
             results.push({ path: relativePath, status: 'uploaded' });
-
-            // Clean up temp file
-            try { fs.unlinkSync(file.path); } catch (e) { }
         }
 
-        // Check if uploaded files include package.json — auto-install
-        const hasPackageJson = results.some(r => r.path === 'package.json' || r.path.endsWith('/package.json'));
-        if (hasPackageJson) {
-            const installResult = await installDependencies(projectPath);
-            results.push({ path: 'node_modules', status: installResult.success ? 'installed' : 'install_failed' });
-        }
-
-        res.json({
-            success: true,
-            message: `${results.length} files uploaded`,
-            files: results
-        });
+        res.json({ success: true, message: `${results.length} files uploaded`, files: results });
     } catch (err) {
         console.error('Upload error:', err);
         res.status(500).json({ success: false, message: err.message });
+    } finally {
+        // Always clean up multer temp files, even when the request is rejected
+        for (const file of uploadedFiles) fs.rm(file.path, { force: true }, () => {});
     }
 });
 
-// ─── NEW: Upload files with paths (JSON body, no multer) ─────────
-router.post('/upload-files-json', auth, async (req, res) => {
+router.post('/upload-files-json', auth, requireProjectAccess(fromBody), async (req, res) => {
     try {
         const { projectId, files: fileList } = req.body;
-
-        if (!fileList || fileList.length === 0) {
+        if (!Array.isArray(fileList) || fileList.length === 0) {
             return res.status(400).json({ success: false, message: 'No files provided' });
         }
 
-        const Project = require('../models/Project');
-        const project = await Project.findById(projectId);
-        if (!project) {
-            return res.status(404).json({ success: false, message: 'Project not found' });
-        }
-
-        const projectPath = path.join(process.env.PROJECTS_DIR || path.join(process.cwd(), 'projects'), projectId.toString());
         const results = [];
-
         for (const fileData of fileList) {
-            const { filePath, content, isFolder } = fileData;
-
-            if (isFolder) {
-                // Create folder
-                const existingFolder = await File.findOne({ project: projectId, path: filePath });
-                if (!existingFolder) {
-                    const folder = new File({
-                        name: path.basename(filePath),
-                        path: filePath,
-                        isFolder: true,
-                        content: '',
-                        project: projectId
-                    });
-                    await folder.save();
-                }
-                const folderDiskPath = path.join(projectPath, filePath);
-                if (!fs.existsSync(folderDiskPath)) {
-                    fs.mkdirSync(folderDiskPath, { recursive: true });
-                }
+            const filePath = sanitizeRelPath(fileData?.filePath);
+            if (!filePath) {
+                results.push({ path: String(fileData?.filePath), status: 'rejected_invalid_path' });
+                continue;
+            }
+            if (fileData.isFolder) {
+                await ensureParentFolders(projectId, `${filePath}/_`);
                 results.push({ path: filePath, status: 'created_folder' });
                 continue;
             }
-
-            // Create parent folders
-            const parts = filePath.split('/');
-            let currentPath = '';
-            for (let i = 0; i < parts.length - 1; i++) {
-                currentPath = currentPath ? `${currentPath}/${parts[i]}` : parts[i];
-                const existingFolder = await File.findOne({ project: projectId, path: currentPath });
-                if (!existingFolder) {
-                    const folder = new File({
-                        name: parts[i],
-                        path: currentPath,
-                        isFolder: true,
-                        content: '',
-                        project: projectId
-                    });
-                    await folder.save();
-                }
-            }
-
-            // Create or update file in DB
-            const existingFile = await File.findOne({ project: projectId, path: filePath });
-            if (existingFile) {
-                existingFile.content = content || '';
-                await existingFile.save();
-            } else {
-                const newFile = new File({
-                    name: path.basename(filePath),
-                    path: filePath,
-                    isFolder: false,
-                    content: content || '',
-                    project: projectId
-                });
-                await newFile.save();
-            }
-
-            // Write to disk
-            const diskPath = path.join(projectPath, filePath);
-            const diskDir = path.dirname(diskPath);
-            if (!fs.existsSync(diskDir)) {
-                fs.mkdirSync(diskDir, { recursive: true });
-            }
-            fs.writeFileSync(diskPath, content || '');
+            await ensureParentFolders(projectId, filePath);
+            await upsertFile(projectId, filePath, typeof fileData.content === 'string' ? fileData.content : '');
             results.push({ path: filePath, status: 'uploaded' });
         }
 
-        // Auto-install if package.json was uploaded
-        const hasPackageJson = results.some(r => r.path === 'package.json' || r.path.endsWith('/package.json'));
-        if (hasPackageJson) {
-            const installResult = await installDependencies(projectPath);
-            results.push({ path: 'node_modules', status: installResult.success ? 'installed' : 'install_failed' });
-        }
-
-        res.json({
-            success: true,
-            message: `${results.length} files processed`,
-            files: results
-        });
+        res.json({ success: true, message: `${results.length} files processed`, files: results });
     } catch (err) {
         console.error('Upload JSON error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
+
+// ─── Kaggle datasets ────────────────────────────────────────
+// Downloads a Kaggle dataset (or competition data) into the project. Public datasets work without
+// an account; competitions need the project's KAGGLE_USERNAME / KAGGLE_KEY env vars. Done on the server because Kaggle's API doesn't allow
+// browser requests, and it works in every mode. Text data files only (CSV, JSON, TXT...).
+const AdmZip = require('adm-zip');
+const KAGGLE_TEXT_EXTS = new Set(['.csv', '.tsv', '.json', '.jsonl', '.txt', '.md', '.xml', '.yaml', '.yml']);
+const KAGGLE_MAX_ZIP = 100 * 1024 * 1024;
+const KAGGLE_MAX_FILE = 15 * 1024 * 1024;
+const KAGGLE_MAX_TOTAL = 40 * 1024 * 1024;
+
+router.post('/kaggle', auth, requireProjectAccess(fromBody), handle(async (req, res) => {
+    const { projectId } = req.body;
+    const source = String(req.body.source || '').trim()
+        .replace(/^https?:\/\/(www\.)?kaggle\.com\//, '').replace(/^datasets\//, '').replace(/\/+$/, '');
+    const isCompetition = req.body.kind === 'competition' || source.startsWith('competitions/') || source.startsWith('c/');
+    const name = source.replace(/^(competitions|c)\//, '');
+    if (isCompetition ? !/^[a-z0-9-]{1,100}$/i.test(name) : !/^[a-z0-9_.-]{1,100}\/[a-z0-9_.-]{1,100}$/i.test(name)) {
+        return res.status(400).json({ success: false, message: 'Use a dataset like "owner/dataset-name" or a competition like "competitions/titanic".' });
+    }
+    const dest = sanitizeRelPath(req.body.dest || 'data') || 'data';
+
+    const project = await Project.findById(projectId).select('envVars');
+    const env = decryptEnv(project?.envVars);
+    const hasCredentials = env.KAGGLE_USERNAME && env.KAGGLE_KEY;
+    if (isCompetition && !hasCredentials) {
+        return res.status(400).json({ success: false, message: 'Competition data needs a Kaggle account: add KAGGLE_USERNAME and KAGGLE_KEY in Deploy → Environment (kaggle.com → Settings → Create New Token).' });
+    }
+
+    const url = isCompetition
+        ? `https://www.kaggle.com/api/v1/competitions/data/download-all/${encodeURIComponent(name)}`
+        : `https://www.kaggle.com/api/v1/datasets/download/${name.split('/').map(encodeURIComponent).join('/')}`;
+    const response = await fetch(url, {
+        headers: hasCredentials ? { Authorization: 'Basic ' + Buffer.from(`${env.KAGGLE_USERNAME}:${env.KAGGLE_KEY}`).toString('base64') } : {},
+        redirect: 'follow'
+    });
+    if (!response.ok) {
+        const hint = response.status === 401 ? (hasCredentials ? 'Kaggle rejected the credentials.' : 'This dataset needs a Kaggle account: add KAGGLE_USERNAME and KAGGLE_KEY in Deploy → Environment.')
+            : response.status === 403 ? 'Access denied. For competitions, accept the rules on kaggle.com first.'
+            : response.status === 404 ? 'Dataset not found.' : `Kaggle returned ${response.status}.`;
+        return res.status(400).json({ success: false, message: hint });
+    }
+    if (Number(response.headers.get('content-length')) > KAGGLE_MAX_ZIP) {
+        return res.status(413).json({ success: false, message: 'That dataset is larger than 100 MB, which is too big to import.' });
+    }
+    const buf = Buffer.from(await response.arrayBuffer());
+    if (buf.length > KAGGLE_MAX_ZIP) return res.status(413).json({ success: false, message: 'That dataset is larger than 100 MB, which is too big to import.' });
+
+    const imported = [];
+    const skipped = [];
+    let total = 0;
+    const isZip = buf.subarray(0, 2).toString() === 'PK';
+    const entries = isZip
+        ? new AdmZip(buf).getEntries().filter(e => !e.isDirectory).map(e => ({ name: e.entryName, size: e.header.size, read: () => e.getData() }))
+        : [{ name: `${name.split('/').pop()}.csv`, size: buf.length, read: () => buf }];
+
+    for (const entry of entries) {
+        const rel = sanitizeRelPath(`${dest}/${entry.name}`);
+        if (!rel || !KAGGLE_TEXT_EXTS.has(path.extname(rel).toLowerCase())) { skipped.push(`${entry.name} (not a text data file)`); continue; }
+        if (entry.size > KAGGLE_MAX_FILE || total + entry.size > KAGGLE_MAX_TOTAL) { skipped.push(`${entry.name} (too large)`); continue; }
+        total += entry.size;
+        await ensureParentFolders(projectId, rel);
+        await upsertFile(projectId, rel, entry.read().toString('utf8'));
+        imported.push(rel);
+    }
+    req.app.get('socketio')?.to(`project:${projectId}`).emit('files-changed', { projectId: String(projectId) });
+    res.json({ success: true, imported, skipped });
+}));
 
 module.exports = router;

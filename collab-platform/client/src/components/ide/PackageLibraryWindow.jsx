@@ -1,53 +1,21 @@
 import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 
-const PackageLibraryWindow = ({ projectType = 'React App', projectId, onPackageInstalled, installedPackages = [] }) => {
+/**
+ * Package browser. Suggestions come from the server for the project's stack; installs run inside
+ * the project's sandbox (npm for Node projects, pip for Python/ML) and are saved to
+ * package.json / requirements.txt so teammates and deploys get them too.
+ */
+const PackageLibraryWindow = ({ projectType = 'React App', projectId, onPackageInstalled, installedPackages = [], installer }) => {
     const [packages, setPackages] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [installing, setInstalling] = useState({});
+    const [message, setMessage] = useState('');
 
     useEffect(() => {
-        // Load popular packages based on project type
-        const loadPopularPackages = () => {
-            const popularPackages = {
-                'React App': [
-                    { name: 'react-router-dom', version: '6.x', description: 'Routing library for React', category: 'routing' },
-                    { name: 'axios', version: '1.x', description: 'HTTP client library', category: 'http' },
-                    { name: 'redux', version: '4.x', description: 'State management', category: 'state' },
-                    { name: 'tailwindcss', version: '3.x', description: 'Utility-first CSS framework', category: 'styling' },
-                    { name: 'react-query', version: '3.x', description: 'Data fetching & caching', category: 'data' },
-                    { name: 'zustand', version: '4.x', description: 'Lightweight state management', category: 'state' },
-                    { name: 'framer-motion', version: '10.x', description: 'Animation library', category: 'animation' },
-                    { name: 'react-hook-form', version: '7.x', description: 'Form state management', category: 'forms' },
-                ],
-                'Node.js API': [
-                    { name: 'express', version: '4.x', description: 'Web framework', category: 'framework' },
-                    { name: 'mongoose', version: '7.x', description: 'MongoDB ODM', category: 'database' },
-                    { name: 'cors', version: '2.x', description: 'CORS middleware', category: 'middleware' },
-                    { name: 'dotenv', version: '16.x', description: 'Environment variables', category: 'config' },
-                    { name: 'jsonwebtoken', version: '9.x', description: 'JWT authentication', category: 'auth' },
-                    { name: 'bcryptjs', version: '2.x', description: 'Password hashing', category: 'security' },
-                    { name: 'socket.io', version: '4.x', description: 'Real-time communication', category: 'realtime' },
-                    { name: 'multer', version: '1.x', description: 'File upload middleware', category: 'files' },
-                ],
-                'Python Script': [
-                    { name: 'requests', version: '2.x', description: 'HTTP library', category: 'http' },
-                    { name: 'flask', version: '2.x', description: 'Web framework', category: 'framework' },
-                    { name: 'django', version: '4.x', description: 'Full web framework', category: 'framework' },
-                    { name: 'pandas', version: '2.x', description: 'Data analysis', category: 'data' },
-                    { name: 'numpy', version: '1.x', description: 'Numerical computing', category: 'data' },
-                    { name: 'matplotlib', version: '3.x', description: 'Plotting library', category: 'visualization' },
-                    { name: 'beautifulsoup4', version: '4.x', description: 'Web scraping', category: 'scraping' },
-                    { name: 'sqlalchemy', version: '2.x', description: 'ORM library', category: 'database' },
-                ],
-                'Static HTML/CSS': [
-                    { name: 'bootstrap', version: '5.x', description: 'CSS framework', category: 'framework' },
-                    { name: 'animate.css', version: '4.x', description: 'Animation library', category: 'animation' },
-                    { name: 'font-awesome', version: '6.x', description: 'Icon library', category: 'icons' },
-                ]
-            };
-            setPackages(popularPackages[projectType] || []);
-        };
-        loadPopularPackages();
+        axios.get(`/api/execute/packages/${encodeURIComponent(projectType)}`)
+            .then(res => setPackages(res.data.packages || []))
+            .catch(() => setPackages([]));
     }, [projectType]);
 
     const filteredPackages = packages.filter(pkg =>
@@ -56,35 +24,32 @@ const PackageLibraryWindow = ({ projectType = 'React App', projectId, onPackageI
     );
 
     const handleInstallPackage = async (packageName) => {
-        setInstalling(prev => ({ ...prev, [packageName]: true }));
-
+        const name = packageName.trim();
+        if (!name) return;
+        setInstalling(prev => ({ ...prev, [name]: true }));
+        setMessage(`Installing ${name}… (output in the Console)`);
         try {
-            const response = await fetch('/api/execute/install-package', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    projectId,
-                    packageName,
-                    projectType
-                })
-            });
-
-            if (response.ok) {
-                onPackageInstalled && onPackageInstalled(packageName);
-                alert(`✓ ${packageName} installed successfully!`);
+            // In browser mode the IDE installs into its in-browser runtime instead of the server sandbox
+            const res = installer
+                ? { data: await installer(name) }
+                : await axios.post('/api/execute/install-package', { projectId, packageName: name });
+            if (res.data.success) {
+                onPackageInstalled && onPackageInstalled(name);
+                setMessage(`✓ ${name} installed`);
             } else {
-                alert(`Failed to install ${packageName}`);
+                setMessage(`✕ ${res.data.message}`);
             }
-        } catch (error) {
-            alert(`Error installing package: ${error.message}`);
+        } catch (err) {
+            setMessage(`✕ ${err.response?.data?.message || err.message}`);
         } finally {
-            setInstalling(prev => ({ ...prev, [packageName]: false }));
+            setInstalling(prev => ({ ...prev, [name]: false }));
         }
     };
 
-    const isInstalled = (packageName) => {
-        return installedPackages.includes(packageName);
-    };
+    const isInstalled = (packageName) => installedPackages.includes(packageName);
+    // Typing a name that isn't in the list offers a direct install
+    const customName = searchTerm.trim();
+    const showCustom = customName && !packages.some(p => p.name === customName);
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -92,63 +57,35 @@ const PackageLibraryWindow = ({ projectType = 'React App', projectId, onPackageI
                 <div className="package-search" style={{ flexShrink: 0 }}>
                     <input
                         type="text"
-                        placeholder="Search packages..."
+                        placeholder="Search, or type any package name to install…"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && showCustom && handleInstallPackage(customName)}
                     />
                 </div>
+                {message && (
+                    <div style={{ padding: '6px 12px', fontSize: 12, color: message.startsWith('✕') ? '#f48771' : message.startsWith('✓') ? '#6a9955' : '#ccc' }}>
+                        {message}
+                    </div>
+                )}
                 <div className="package-list" style={{ flex: 1, overflow: 'auto' }}>
-                    {/* Special Init Button for MERN Stack Empty Projects */}
-                    {projectType === 'MERN Stack' && (
-                        <div style={{ padding: '10px', borderBottom: '1px solid #3e3e42', marginBottom: '10px' }}>
-                            <button
-                                style={{
-                                    width: '100%',
-                                    padding: '10px',
-                                    background: '#238636',
-                                    color: 'white',
-                                    border: 'none',
-                                    borderRadius: '6px',
-                                    cursor: 'pointer',
-                                    fontSize: '14px',
-                                    fontWeight: 'bold'
-                                }}
-                                onClick={async () => {
-                                    if (window.confirm('Initialize MERN Template? This will add starter files.')) {
-                                        try {
-                                            const response = await fetch(`/api/projects/${projectId}/restore-template`, {
-                                                method: 'POST',
-                                                headers: {
-                                                    'Content-Type': 'application/json',
-                                                    'x-auth-token': localStorage.getItem('token') // Use token from storage for auth
-                                                },
-                                                body: JSON.stringify({ templateName: 'MERN-Template' })
-                                            });
-                                            if (response.ok) {
-                                                alert('Template Initialized! Refresh the IDE to see files.');
-                                                // Ideally trigger file refresh here
-                                                window.location.reload();
-                                            } else {
-                                                alert('Failed to initialize template');
-                                            }
-                                        } catch (e) {
-                                            alert('Error: ' + e.message);
-                                        }
-                                    }
-                                }}
-                            >
-                                ⚡ Initialize MERN Starter Files
-                            </button>
+                    {showCustom && (
+                        <div className="package-item">
+                            <div className="package-name">{customName}</div>
+                            <div className="package-description">Install this package by name</div>
+                            <div className="package-actions">
+                                <button className="package-btn" onClick={() => handleInstallPackage(customName)} disabled={installing[customName]}>
+                                    {installing[customName] ? 'Installing...' : 'Install'}
+                                </button>
+                            </div>
                         </div>
                     )}
 
-                    {filteredPackages.length === 0 ? (
-                        <div style={{ padding: '20px', textAlign: 'center', color: '#999' }}>
-                            No packages found
-                        </div>
+                    {filteredPackages.length === 0 && !showCustom ? (
+                        <div style={{ padding: '20px', textAlign: 'center', color: '#999' }}>No packages found</div>
                     ) : (
-                        filteredPackages.map((pkg, idx) => (
-                            <div key={idx} className="package-item">
+                        filteredPackages.map((pkg) => (
+                            <div key={pkg.name} className="package-item">
                                 <div className="package-name">{pkg.name}</div>
                                 <div className="package-version">Version: {pkg.version}</div>
                                 <div className="package-description">{pkg.description}</div>
@@ -158,11 +95,7 @@ const PackageLibraryWindow = ({ projectType = 'React App', projectId, onPackageI
                                         onClick={() => handleInstallPackage(pkg.name)}
                                         disabled={installing[pkg.name] || isInstalled(pkg.name)}
                                     >
-                                        {installing[pkg.name]
-                                            ? 'Installing...'
-                                            : isInstalled(pkg.name)
-                                                ? '✓ Installed'
-                                                : 'Install'}
+                                        {installing[pkg.name] ? 'Installing...' : isInstalled(pkg.name) ? '✓ Installed' : 'Install'}
                                     </button>
                                 </div>
                             </div>
