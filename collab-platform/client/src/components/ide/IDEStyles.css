@@ -3,7 +3,9 @@
 .ide-container {
     display: flex;
     flex-direction: column;
-    height: 100vh;
+    /* Fill the area below the site navbar (100vh overflowed it by the navbar's height and the
+       page scrolled the IDE toolbar underneath the navbar) */
+    height: 100%;
     background: #1e1e1e;
     color: #e0e0e0;
     font-family: 'Consolas', 'Monaco', monospace;
@@ -608,3 +610,27 @@
     }
 }
 
+
+/* Deploy panel buttons */
+.btn-primary-ide {
+    background: #238636;
+    color: #fff;
+    border: 1px solid #2ea043;
+    border-radius: 4px;
+    padding: 6px 14px;
+    font-size: 13px;
+    cursor: pointer;
+}
+.btn-primary-ide:hover:not(:disabled) { background: #2ea043; }
+.btn-primary-ide:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-secondary-ide {
+    background: #2d2d30;
+    color: #ccc;
+    border: 1px solid #3e3e42;
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+}
+.btn-secondary-ide:hover:not(:disabled) { background: #3e3e42; color: #fff; }

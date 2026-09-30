@@ -275,8 +275,13 @@ const ProfilePage = () => {
                                 </h1>
                                 <div style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                                     <span style={{ color: 'var(--term-blue)' }}>ID:</span> {profile._id}
-                                    <span style={{ margin: '0 10px', color: 'var(--border-subtle)' }}>|</span>
-                                    <span style={{ color: 'var(--term-blue)' }}>EMAIL:</span> {profile.email}
+                                    {/* The server only includes the email on your own profile */}
+                                    {profile.email && (
+                                        <>
+                                            <span style={{ margin: '0 10px', color: 'var(--border-subtle)' }}>|</span>
+                                            <span style={{ color: 'var(--term-blue)' }}>EMAIL:</span> {profile.email}
+                                        </>
+                                    )}
                                 </div>
                                 
                                 {/* SOCIAL LINKS */}

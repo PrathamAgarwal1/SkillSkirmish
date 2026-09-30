@@ -6,10 +6,17 @@ import ConsoleWindow from './ConsoleWindow';
 import TerminalWindow from './TerminalWindow';
 import BrowserPreviewWindow from './BrowserPreviewWindow';
 import PackageLibraryWindow from './PackageLibraryWindow';
+import DeployPanel from './DeployPanel';
+import NotebookWindow from './NotebookWindow';
+import ApiTesterWindow from './ApiTesterWindow';
+import useBrowserRuntime from './useBrowserRuntime';
+import KaggleImportModal from './KaggleImportModal';
 import { socket } from '../../socket'; // Import the global socket instance
 import './IDEStyles.css';
 
-const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) => {
+const RUNNABLE_EXTS = ['js', 'mjs', 'cjs', 'ts', 'py', 'sh'];
+
+const WindowManager = ({ projectId, projectType = 'React App', projectName, roomId, user }) => {
     const [currentFile, setCurrentFile] = useState(null);
     const [fileContent, setFileContent] = useState('');
     const [files, setFiles] = useState([]);
@@ -39,39 +46,23 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
     // Collaborative editing presence
     const [collabPresence, setCollabPresence] = useState([]);
 
-    const wsRef = useRef(null);
-    const isUnmountingRef = useRef(false);
+    // Sandbox run state (shared by everyone in the project via 'project-status')
+    const [runConfig, setRunConfig] = useState(null);     // { label, env, envLabel, targets, deploy }
+    const [runPhase, setRunPhase] = useState('stopped');  // preparing|installing|starting|running|stopped|error
+    const [selectedTarget, setSelectedTarget] = useState('');
+    const [showDeploy, setShowDeploy] = useState(false);
+    const [showKaggle, setShowKaggle] = useState(false);
+    const activeFileProcessRef = useRef(null);
 
-    // Convert preview URLs to go through backend proxy in production
-    const toPreviewUrl = (rawUrl) => {
-        if (!rawUrl) return '';
-        const serverBase = (import.meta.env?.VITE_SERVER_URL || 'http://localhost:5000').replace(/\/+$/, '');
-
-        // If it contains /api/preview/, strictly reuse it but with our known server base to ensure accessibility
-        const apiIndex = rawUrl.indexOf('/api/preview/');
-        if (apiIndex !== -1) {
-            return `${serverBase}${rawUrl.substring(apiIndex)}`;
-        }
-
-        // Raw localhost URL from stdout detection — convert to proxy
-        try {
-            const parsed = new URL(rawUrl);
-            if (['localhost', '127.0.0.1', '0.0.0.0'].includes(parsed.hostname)) {
-                const port = parsed.port;
-                if (port) return `${serverBase}/api/preview/${port}${parsed.pathname || '/'}`;
-            }
-        } catch { /* not a full URL */ }
-        return rawUrl;
-    };
-
-    const addLog = (message, type = 'info') => {
+    // Keep only the newest console lines so long-running dev servers don't bog down the UI
+    const addLog = useCallback((message, type = 'info') => {
         const timestamp = new Date().toLocaleTimeString();
-        setConsoleLogs(prev => [...prev, { message: `[${timestamp}] ${message}`, type }]);
-    };
+        setConsoleLogs(prev => [...prev.slice(-1500), { message: `[${timestamp}] ${message}`, type }]);
+    }, []);
 
-    const addTerminalLog = (message, type = 'info') => {
-        setTerminalLogs(prev => [...prev, { message, type }]);
-    };
+    const addTerminalLog = useCallback((message, type = 'info') => {
+        setTerminalLogs(prev => [...prev.slice(-2000), { message, type }]);
+    }, []);
 
     // Cleanup function to be called on unmount or stop
     const cleanupProcess = async (processId) => {
@@ -85,18 +76,16 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
         }
     };
 
-    // Cleanup on unmount
-    useEffect(() => {
-        return () => {
-            isUnmountingRef.current = true;
-            if (activeFileProcessId) {
-                cleanupProcess(activeFileProcessId);
-            }
-            if (isProjectRunning) {
-                handleStopProject();
-            }
-        };
-    }, [activeFileProcessId, isProjectRunning]);
+    useEffect(() => { activeFileProcessRef.current = activeFileProcessId; }, [activeFileProcessId]);
+
+    // On leaving the IDE, stop only *your own* file/terminal process. The project's dev server is
+    // shared with collaborators, so it keeps running (the sandbox stops it when idle).
+    // (This used to run on every state change and stop the project for everyone.)
+    useEffect(() => () => {
+        if (activeFileProcessRef.current) {
+            axios.post('/api/execute/stop-process', { processId: activeFileProcessRef.current }).catch(() => {});
+        }
+    }, []);
 
     // --- COLLABORATIVE EDITING: Join/Leave Project ---
     useEffect(() => {
@@ -221,30 +210,45 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
             }
         };
 
-        // Handle file process completion
-        const handleFileProcessEnded = ({ processId }) => {
-            if (processId === activeFileProcessId) {
+        // A file run / terminal command finished (read the ref: this listener is registered once)
+        const handleFileProcessEnded = ({ projectId: pid, processId }) => {
+            if (pid === projectId && processId === activeFileProcessRef.current) {
                 setActiveFileProcessId(null);
             }
         };
 
-        // Handle dynamic preview URLs (e.g. Vite starts on 5173)
+        // Preview became reachable
         const handlePreviewUrl = ({ projectId: pid, url }) => {
             if (pid === projectId) {
-                setPreviewUrl(toPreviewUrl(url));
+                setPreviewUrl(url);
                 setShowBrowserWindow(true);
-                addLog(`🌐 Auto-detected Frontend URL: ${url}`, 'success');
             }
         };
 
-        // Register all listeners
+        // Shared run state — keeps every collaborator's toolbar in sync
+        const handleStatus = (status) => {
+            if (status.projectId !== projectId) return;
+            setRunPhase(status.phase || 'stopped');
+            setIsProjectRunning(['preparing', 'installing', 'starting', 'running'].includes(status.phase));
+            if (status.previewUrl) setPreviewUrl(status.previewUrl);
+            if (status.phase === 'stopped') setPreviewUrl('');
+        };
+
+        // Files created/changed inside the sandbox (git clone, Jupyter saves, npm init...)
+        const handleFilesChanged = ({ projectId: pid }) => {
+            if (pid !== projectId) return;
+            axios.get(`/api/files/project/${projectId}`)
+                .then(res => setFiles(formatFilesForTree(res.data)))
+                .catch(() => {});
+        };
+
         socket.on('project-console', handleProjectConsole);
         socket.on('project-stopped', handleProjectStopped);
         socket.on('terminal-output', handleTerminalOutput);
         socket.on('file-process-ended', handleFileProcessEnded);
         socket.on('project-preview-url', handlePreviewUrl);
-
-        console.log('[IDE] Socket listeners registered for roomId:', roomId);
+        socket.on('project-status', handleStatus);
+        socket.on('files-changed', handleFilesChanged);
 
         return () => {
             socket.off('project-console', handleProjectConsole);
@@ -252,34 +256,42 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
             socket.off('terminal-output', handleTerminalOutput);
             socket.off('file-process-ended', handleFileProcessEnded);
             socket.off('project-preview-url', handlePreviewUrl);
+            socket.off('project-status', handleStatus);
+            socket.off('files-changed', handleFilesChanged);
         };
+    }, [projectId, addLog, formatFilesForTree]);
+
+    // How this project runs and deploys (environment, run targets)
+    const loadRunConfig = useCallback(async () => {
+        try {
+            const res = await axios.get(`/api/execute/config/${projectId}`);
+            setRunConfig(res.data);
+            setSelectedTarget(t => (res.data.targets.some(x => x.id === t) ? t : (res.data.targets[0]?.id || '')));
+        } catch (err) {
+            console.error('Failed to load run config', err);
+        }
     }, [projectId]);
 
-    // Browser Console Capture Listener
-    useEffect(() => {
-        const handleBrowserConsoleMessage = (event) => {
-            // Only accept messages from same origin
-            if (event.origin !== window.location.origin) return;
+    useEffect(() => { loadRunConfig(); }, [loadRunConfig]);
 
-            if (event.data.type === 'console-output' && event.data.source === 'browser-console') {
-                const { message, logType } = event.data;
-                const typeMap = {
-                    'log': 'info',
-                    'error': 'error',
-                    'warning': 'warning',
-                    'warn': 'warning',
-                    'info': 'info'
-                };
-                // Send browser console to PROJECT CONSOLE
-                addLog(`[Browser] ${message}`, typeMap[logType] || 'info');
-            }
-        };
+    const refreshFiles = useCallback(() => {
+        axios.get(`/api/files/project/${projectId}`)
+            .then(res => setFiles(formatFilesForTree(res.data)))
+            .catch(() => {});
+    }, [projectId, formatFilesForTree]);
 
-        window.addEventListener('message', handleBrowserConsoleMessage);
-        return () => {
-            window.removeEventListener('message', handleBrowserConsoleMessage);
-        };
-    }, []);
+    // Browser mode (no Docker on the server): code runs in this tab — WebContainer / Pyodide
+    const browserMode = runConfig?.mode === 'browser';
+    const openFileByPath = useCallback(async (filePath) => {
+        const res = await axios.get(`/api/files/project/${projectId}`);
+        const file = res.data.find(f => f.path === filePath);
+        if (file) handleSelectFile(file);
+    }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+    const rt = useBrowserRuntime({
+        enabled: browserMode, projectId, projectName, runConfig,
+        addLog, addTerminalLog, setPreviewUrl, setShowBrowserWindow, setRunPhase, setIsProjectRunning,
+        setActiveFileProcessId, refreshFiles, openFile: openFileByPath
+    });
 
     // Keyboard Shortcuts
     useEffect(() => {
@@ -296,7 +308,7 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
                 e.preventDefault();
                 if (currentFile && !activeFileProcessId) {
                     const ext = currentFile.path?.split('.').pop();
-                    if (['js', 'py'].includes(ext)) {
+                    if (RUNNABLE_EXTS.includes(ext)) {
                         handleRunFile();
                     }
                 }
@@ -328,10 +340,12 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
         const fetchStatus = async () => {
             try {
                 const response = await axios.get(`/api/execute/status/${projectId}`);
+                setRunPhase(response.data.phase || 'stopped');
+                if (response.data.target) setSelectedTarget(response.data.target);
                 if (response.data.running) {
                     setIsProjectRunning(true);
                     if (response.data.previewUrl) {
-                        setPreviewUrl(toPreviewUrl(response.data.previewUrl));
+                        setPreviewUrl(response.data.previewUrl);
                     }
                     if (response.data.logs) {
                         setConsoleLogs(response.data.logs);
@@ -370,6 +384,14 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
             const response = await axios.put(`/api/files/${currentFile._id}`, { content: contentToSave });
             setIsDirty(false);
             setFileContent(response.data.content);
+            if (browserMode) rt.onFileSaved(currentFile.path, response.data.content);
+            if (/.json$/i.test(currentFile.path) && !currentFile.path.endsWith('.ipynb')) {
+                try {
+                    JSON.parse(contentToSave);
+                } catch (jsonErr) {
+                    addLog(`⚠ ${currentFile.name} is not valid JSON: ${jsonErr.message}`, 'warning');
+                }
+            }
             addLog(`✓ Saved: ${currentFile.name}`, 'success');
         } catch (_err) {
             addLog(`Error saving file: ${_err.response?.data?.msg || _err.message}`, 'error');
@@ -419,6 +441,7 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
             const response = await axios.get(`/api/files/project/${projectId}`);
             const formattedFiles = formatFilesForTree(response.data);
             setFiles(formattedFiles);
+            if (browserMode && !isFolder) rt.onFileSaved(filename, '// New file');
             addLog(`✓ Created ${isFolder ? 'folder' : 'file'}: ${filename}`, 'success');
         } catch (_err) {
             addLog(`Error creating file: ${_err.response?.data?.msg || _err.message}`, 'error');
@@ -429,6 +452,7 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
         if (!window.confirm(`Delete ${filePath}?`)) return;
         try {
             await axios.delete(`/api/files/by-path`, { data: { filePath, projectId } });
+            if (browserMode) rt.onFileDeleted(filePath);
             const response = await axios.get(`/api/files/project/${projectId}`);
             const formattedFiles = formatFilesForTree(response.data);
             setFiles(formattedFiles);
@@ -488,38 +512,33 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
 
     // --- Run Whole Project ---
     const handleRunProject = async () => {
+        if (browserMode) {
+            if (currentFile && isDirty) await handleSaveFile(fileContent);
+            setConsoleLogs([]);
+            return rt.runProject(selectedTarget);
+        }
         setIsProjectRunning(true);
+        setRunPhase('preparing');
         setConsoleLogs([]);
-        addLog(`🚀 Starting project...`, 'info');
-        addLog(`🤖 AI is analyzing your project structure...`, 'info');
+        addLog(`🚀 Starting project in its sandbox...`, 'info');
 
-        if (currentFile) {
+        if (currentFile && isDirty) {
             await handleSaveFile(fileContent);
         }
 
         try {
             const response = await axios.post('/api/execute/run-project', {
                 projectId,
-                projectType,
-                roomId
+                target: selectedTarget || undefined
             });
 
             if (response.data.success) {
-                const { previewUrl: url, port, analysis, message } = response.data;
-                
+                const { previewUrl: url, message, config } = response.data;
                 addLog(`✓ ${message}`, 'success');
-                
-                if (analysis) {
-                    addLog(`📋 Type: ${analysis.projectType} | Port: ${port} | Entry: ${analysis.entryFile || 'auto'}`, 'info');
-                    if (analysis.notes) {
-                        addLog(`💡 ${analysis.notes}`, 'info');
-                    }
-                }
-
+                if (config) setRunConfig(config);
                 if (url) {
-                    setPreviewUrl(toPreviewUrl(url));
-                    addLog(`🌐 Preview: ${url}`, 'success');
-                    // Auto-open browser preview
+                    // The browser view shows a "starting…" page until the app answers
+                    setPreviewUrl(url);
                     setShowBrowserWindow(true);
                 }
             } else {
@@ -533,6 +552,7 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
     };
 
     const handleStopProject = async () => {
+        if (browserMode) return rt.stopProject();
         try {
             await axios.post('/api/execute/stop-project', { projectId });
             setIsProjectRunning(false);
@@ -551,17 +571,18 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
         }
 
         const ext = currentFile.path.split('.').pop();
-        if (!['js', 'py'].includes(ext)) {
-            addTerminalLog(`Only .js and .py files can be executed directly. (${ext} not supported)`, 'warning');
+        if (!RUNNABLE_EXTS.includes(ext)) {
+            addTerminalLog(`Only ${RUNNABLE_EXTS.map(e => '.' + e).join(', ')} files can be run directly — use ▶ Run for web apps.`, 'warning');
             return;
         }
 
         // Save before running
-        await handleSaveFile(fileContent);
+        if (isDirty) await handleSaveFile(fileContent);
 
         // Clear terminal logs and show running indicator
         setTerminalLogs([{ message: `$ Running ${currentFile.path}...`, type: 'info' }]);
         addLog(`▶ Running file: ${currentFile.path}`, 'info');
+        if (browserMode) return rt.runFile(currentFile.path);
 
         try {
             const response = await axios.post('/api/execute/run-file', {
@@ -583,6 +604,7 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
 
     const handleStopFile = async () => {
         if (!activeFileProcessId) return;
+        if (browserMode) return rt.stopFile();
         await cleanupProcess(activeFileProcessId);
     };
 
@@ -593,6 +615,7 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
         }
 
         addTerminalLog(input, 'input'); // Echo input
+        if (browserMode) { rt.writeInput(input); return; }
 
         try {
             await axios.post('/api/execute/write-terminal', {
@@ -612,6 +635,7 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
             return currentDir;
         }
 
+        if (browserMode) return rt.runCommand(command, currentDir);
         addTerminalLog(`$ ${command}`, 'command');
 
         try {
@@ -626,44 +650,11 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
                 addTerminalLog(response.data.output, response.data.success ? 'info' : 'error');
             }
             if (!response.data.success) {
-                addTerminalLog(`Command exited with code ${response.data.exitCode || 1}`, 'error');
-            } else if (response.data.isGitClone && response.data.downloadPath) {
-                // Handle git clone - trigger download with a small delay for server to finish zipping
-                addTerminalLog('✅ Git clone successful! Preparing download...', 'success');
-                
-                // Wait a bit for the server to complete zip creation
-                setTimeout(async () => {
-                    try {
-                        console.log(`[Download] Requesting: projectId=${projectId}, pathToClone=${response.data.downloadPath}`);
-                        const downloadRes = await axios.post('/api/execute/download-git-clone', {
-                            projectId,
-                            pathToClone: response.data.downloadPath
-                        }, { 
-                            responseType: 'blob',
-                            timeout: 30000 // 30 second timeout for zip creation
-                        });
-                        
-                        // Check if response is actually a blob/file
-                        if (downloadRes.data.size > 0) {
-                            // Create download link
-                            const url = window.URL.createObjectURL(new Blob([downloadRes.data]));
-                            const link = document.createElement('a');
-                            link.href = url;
-                            link.setAttribute('download', `${response.data.downloadPath}.zip`);
-                            document.body.appendChild(link);
-                            link.click();
-                            link.parentNode.removeChild(link);
-                            window.URL.revokeObjectURL(url);
-                            addTerminalLog(`📥 Downloaded: ${response.data.downloadPath}.zip`, 'success');
-                        } else {
-                            addTerminalLog(`⚠️ Download file is empty`, 'warning');
-                        }
-                    } catch (downloadErr) {
-                        const errMsg = downloadErr.response?.data?.message || downloadErr.message;
-                        console.error('[Download Error]', downloadErr);
-                        addTerminalLog(`⚠️ Clone succeeded but download failed: ${errMsg}`, 'warning');
-                    }
-                }, 500);
+                addTerminalLog(`Command exited with code ${response.data.exitCode ?? 1}`, 'error');
+            } else if (response.data.processId) {
+                // Still running (server, watcher, REPL): route typed input to it and allow Stop.
+                // Its output keeps streaming in; created files (e.g. git clone) appear in the explorer.
+                setActiveFileProcessId(response.data.processId);
             }
 
             // Return newCwd if provided by server (for `cd` commands)
@@ -708,10 +699,35 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
         setTerminalLogs([{ message: 'Terminal cleared', type: 'info' }]);
     };
 
-    const handleRefreshPreview = () => {
-        const event = new Event('refresh-preview');
-        window.dispatchEvent(event);
+    // Pull in files changed inside the sandbox (e.g. notebooks saved from JupyterLab)
+    const handleSyncFiles = async () => {
+        if (browserMode) {
+            try {
+                const r = await rt.sync();
+                addLog(`⇅ Synced files from the in-browser runtime (${r.uploaded} updated, ${r.deleted} removed)`, 'success');
+            } catch (err) {
+                addLog(`Sync failed: ${err.message}`, 'error');
+            }
+            return;
+        }
+        try {
+            const res = await axios.post('/api/execute/sync', { projectId });
+            const filesRes = await axios.get(`/api/files/project/${projectId}`);
+            setFiles(formatFilesForTree(filesRes.data));
+            addLog(`⇅ Synced files (${res.data.toDb} updated, ${res.data.imported} new)`, 'success');
+        } catch (err) {
+            addLog(`Sync failed: ${err.response?.data?.message || err.message}`, 'error');
+        }
     };
+
+    const phaseLabel = {
+        preparing: '⏳ Preparing sandbox…',
+        installing: '📦 Installing dependencies…',
+        starting: '🚀 Starting…',
+        running: '● Running',
+        error: '✕ Error'
+    }[runPhase];
+    const targets = runConfig?.targets || [];
 
     return (
         <div className="ide-container">
@@ -722,9 +738,14 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
                     Project IDE
                 </h2>
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                    <span style={{ color: '#999', fontSize: '13px' }}>
-                        {projectType} • {files.length} files
+                    <span style={{ color: '#999', fontSize: '13px' }} title={runConfig ? `Sandbox environment: ${runConfig.envLabel}` : ''}>
+                        {projectType}{runConfig ? ` • ${browserMode ? '🌐' : '🐳'} ${runConfig.envLabel.split(' (')[0]}` : ''}
                     </span>
+                    {phaseLabel && (
+                        <span style={{ fontSize: '12px', color: runPhase === 'running' ? '#3fb950' : runPhase === 'error' ? '#f85149' : '#d29922' }}>
+                            {phaseLabel}
+                        </span>
+                    )}
 
                     {/* Collaborators Presence Bar */}
                     {collabPresence.length > 0 && (
@@ -752,8 +773,19 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
 
                     {/* Run Project Controls */}
                     <div style={{ display: 'flex', gap: '4px', borderRight: '1px solid #444', paddingRight: '10px' }}>
-                        <button onClick={handleRunProject} disabled={isProjectRunning} title="Run entire project (server/client)">
-                            ▶ Run Project
+                        {targets.length > 1 && (
+                            <select
+                                value={selectedTarget}
+                                onChange={(e) => setSelectedTarget(e.target.value)}
+                                disabled={isProjectRunning}
+                                title="What to run"
+                                style={{ background: '#1e1e1e', color: '#ccc', border: '1px solid #3e3e42', borderRadius: 3, fontSize: 12 }}
+                            >
+                                {targets.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+                            </select>
+                        )}
+                        <button onClick={handleRunProject} disabled={isProjectRunning || (runConfig && targets.length === 0)} title={browserMode ? 'Run the project in your browser' : 'Run the project in its sandbox'}>
+                            ▶ Run
                         </button>
                         <button onClick={handleStopProject} disabled={!isProjectRunning} style={{ background: '#c74c3c' }} title="Stop project">
                             ◼ Stop
@@ -773,7 +805,7 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
                     {/* Run File Control */}
                     <button
                         onClick={handleRunFile}
-                        disabled={!currentFile || (currentFile.path && !['js', 'py'].includes(currentFile.path.split('.').pop())) || !!activeFileProcessId}
+                        disabled={!currentFile || (currentFile.path && !RUNNABLE_EXTS.includes(currentFile.path.split('.').pop())) || !!activeFileProcessId}
                         style={{
                             background: !!activeFileProcessId ? '#3c3c3c' : '#d7ba7d',
                             color: !!activeFileProcessId ? '#cccccc' : '#1e1e1e',
@@ -801,6 +833,22 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
                     >
                         🌐 Browser {showBrowserWindow ? 'Hide' : 'Show'}
                     </button>
+
+                    {['ml', 'python'].includes(runConfig?.env) && (
+                        <button onClick={() => setShowKaggle(true)} title="Import a Kaggle dataset into data/">📥 Kaggle</button>
+                    )}
+
+                    <button onClick={handleSyncFiles} title={browserMode ? 'Save files created or changed by terminal commands back to the project' : 'Sync files changed inside the sandbox (e.g. notebooks saved in JupyterLab)'}>
+                        ⇅ Sync
+                    </button>
+
+                    <button
+                        onClick={() => { loadRunConfig(); setShowDeploy(true); }}
+                        style={{ background: '#238636', color: 'white' }}
+                        title="Build and publish this project to a live URL"
+                    >
+                        🚀 Deploy
+                    </button>
                 </div>
             </div>
 
@@ -817,7 +865,7 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
                     {panelCollapsed.explorer ? (
                         <div className="ide-window" style={{ flex: 1, cursor: 'pointer' }} onClick={() => togglePanel('explorer')}>
                             <div className="window-header" style={{ padding: '8px 4px', justifyContent: 'center' }}>
-                                <span style={{ fontSize: '14px', writingMode: 'vertical-rl', textOrientation: 'mixed', color: '#ccc', letterSpacing: '2px', fontSize: '11px' }}>EXPLORER</span>
+                                <span style={{ fontSize: '11px', writingMode: 'vertical-rl', textOrientation: 'mixed', color: '#ccc', letterSpacing: '2px' }}>EXPLORER</span>
                             </div>
                         </div>
                     ) : (
@@ -859,7 +907,17 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
                     )}
                 </div>
 
-                {/* Middle Column: Code Editor */}
+                {/* Middle Column: Code Editor (notebooks get a runnable notebook view) */}
+                {currentFile?.path?.endsWith('.ipynb') ? (
+                    <NotebookWindow
+                        key={currentFile._id}
+                        projectId={projectId}
+                        file={currentFile}
+                        content={fileContent}
+                        onSave={handleSaveFile}
+                        requirements={rt.requirements}
+                    />
+                ) : (
                 <CodeEditorWindow
                     key={currentFile?._id || 'empty'}
                     currentFile={currentFile}
@@ -870,6 +928,7 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
                     user={user}
                     language="javascript"
                 />
+                )}
 
                 {/* Right Column: Console & Terminal Split */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', flex: 1 }}>
@@ -913,10 +972,43 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
             {showBrowserWindow && (
                 <BrowserPreviewWindow
                     previewUrl={previewUrl}
-                    onRefresh={handleRefreshPreview}
-                    isLoading={isProjectRunning}
+                    phase={runPhase}
+                    onConsole={addLog}
                     onClose={() => setShowBrowserWindow(false)}
+                    stlite={rt.stlite}
                 />
+            )}
+
+            {showDeploy && (
+                <DeployPanel projectId={projectId} projectName={projectName} runConfig={runConfig} onClose={() => setShowDeploy(false)} />
+            )}
+
+            {showKaggle && (
+                <KaggleImportModal
+                    projectId={projectId}
+                    onDone={(r) => { refreshFiles(); addLog(`📥 Imported from Kaggle: ${r.imported.join(', ')}`, 'success'); }}
+                    onClose={() => setShowKaggle(false)}
+                />
+            )}
+
+            {rt.apiTarget && (
+                <ApiTesterWindow projectId={projectId} target={rt.apiTarget} requirements={rt.requirements} onLog={addLog} onClose={rt.closeApi} />
+            )}
+
+            {rt.figures.length > 0 && (
+                <div style={{ position: 'fixed', right: 20, bottom: 20, width: 460, maxHeight: '70vh', overflow: 'auto', background: '#252526', border: '1px solid #3e3e42', borderRadius: 8, zIndex: 2500, boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', borderBottom: '1px solid #3e3e42', color: '#ccc', fontSize: 13 }}>
+                        <b style={{ flex: 1 }}>📊 Figures</b>
+                        <button onClick={rt.clearFigures} style={{ background: 'transparent', border: 'none', color: '#ccc', cursor: 'pointer', fontSize: 16 }}>✕</button>
+                    </div>
+                    {rt.figures.map((png, i) => <img key={i} alt={`figure ${i + 1}`} src={`data:image/png;base64,${png}`} style={{ width: '100%', background: '#fff', display: 'block', marginBottom: 4 }} />)}
+                </div>
+            )}
+
+            {browserMode && !rt.supported && (
+                <div style={{ position: 'fixed', left: '50%', bottom: 16, transform: 'translateX(-50%)', background: '#3d321a', color: '#d29922', border: '1px solid #d29922', borderRadius: 6, padding: '8px 14px', fontSize: 13, zIndex: 2500 }}>
+                    ⚠ This server runs code in your browser, which needs a recent Chrome, Edge or Firefox. Python and notebooks still work.
+                </div>
             )}
 
             {/* Package Library Modal */}
@@ -970,6 +1062,7 @@ const WindowManager = ({ projectId, projectType = 'React App', roomId, user }) =
                             <PackageLibraryWindow
                                 projectType={projectType}
                                 projectId={projectId}
+                                installer={browserMode ? rt.install : undefined}
                                 onPackageInstalled={(pkg) => {
                                     setInstalledPackages(prev => [...prev, pkg]);
                                     addLog(`✓ Installed: ${pkg}`, 'success');

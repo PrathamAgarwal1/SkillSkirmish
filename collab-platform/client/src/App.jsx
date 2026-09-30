@@ -1,4 +1,4 @@
-import React, { useContext, useEffect } from 'react';
+import React, { useContext, useEffect, useRef } from 'react';
 import { HashRouter as Router, Route, Routes, useNavigate } from 'react-router-dom';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -24,20 +24,31 @@ import GoogleCallbackPage from './pages/GoogleCallbackPage';
 import AuthContext from './context/AuthContext';
 import { socket } from './socket';
 
+// Voice & video (Discord-style channels; the call survives page changes)
+import VoiceProvider from './voice/VoiceProvider';
+import VoiceOverlay from './components/voice/VoiceOverlay';
+
 // We need an inner component to use the navigate hook inside the context of Router
 const AppContent = () => {
   const { user, isAuthenticated } = useContext(AuthContext);
   const navigate = useNavigate();
+  // useNavigate() returns a new function on every route change; reading it through a ref keeps the
+  // socket effect below from disconnecting/reconnecting on every navigation (which dropped calls)
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
+  const userId = user?._id;
 
   // Socket.io Connection Logic
   useEffect(() => {
-    if (isAuthenticated && user) {
-      // Connect socket when user logs in
+    if (isAuthenticated && userId) {
+      // Connect socket when user logs in. The server identifies the user from the
+      // JWT sent in the socket handshake (see socket.js).
       socket.connect();
-      socket.emit('register-user', user._id);
 
       // Listen for notifications
-      const handleNewNotification = ({ message }) => {
+      const handleNewNotification = (notification) => {
+        const message = notification?.message;
+        if (!message) return;
         toast.info(message, {
           position: "top-right",
           autoClose: 10000,
@@ -47,7 +58,7 @@ const AppContent = () => {
           draggable: true,
           progress: undefined,
           theme: "dark",
-          onClick: () => navigate('/dashboard')
+          onClick: () => navigateRef.current('/dashboard')
         });
       };
 
@@ -61,10 +72,10 @@ const AppContent = () => {
       // Disconnect if logged out
       socket.disconnect();
     }
-  }, [isAuthenticated, user, navigate]);
+  }, [isAuthenticated, userId]);
 
   return (
-    <>
+    <VoiceProvider>
       <div className="crt-overlay"></div>
       <Navbar />
       <main className="app-content">
@@ -95,7 +106,8 @@ const AppContent = () => {
         </Routes>
       </main>
       <AISidebar />
-    </>
+      <VoiceOverlay />
+    </VoiceProvider>
   );
 };
 

@@ -3,13 +3,13 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const http = require('http');
+const jwt = require('jsonwebtoken');
 const { Server } = require("socket.io");
 
 // Import Models
 const Message = require('./models/Message');
 const User = require('./models/User');
 const Room = require('./models/Room');
-const Notification = require('./models/Notification');
 const File = require('./models/File');
 
 // Import mediasoup manager
@@ -17,13 +17,21 @@ const mediasoupManager = require('./mediasoup/mediasoupManager');
 
 // Import collaboration manager
 const collabManager = require('./services/collabManager');
-const Project = require('./models/Project');
+const { getProjectAccess, isRoomMember, isValidId, idEquals } = require('./utils/access');
 
 // Import skill decay worker
 const { runSkillDecay } = require('./workers/skillDecay');
 
+if (!process.env.JWT_SECRET) {
+    console.error('CRITICAL: JWT_SECRET is not set. Authentication will not work.');
+}
+
 const app = express();
 const server = http.createServer(app);
+
+// Behind Render/Railway/Vercel proxies: needed for correct client IPs (rate limiting)
+app.set('trust proxy', 1);
+app.disable('x-powered-by');
 
 const rawClientUrl = process.env.CLIENT_URL || '';
 const clientUrl = rawClientUrl.replace(/\/+$/, '');
@@ -41,19 +49,19 @@ const allowedOrigins = [
 const corsOptions = {
     origin: function (origin, callback) {
         // allow requests with no origin (like mobile apps or curl requests)
-        if (!origin) return callback(null, true);
-
-        console.log('Incoming Origin:', origin); // --- DEBUG LOG ---
-
-        if (allowedOrigins.indexOf(origin) === -1) {
-            const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-            return callback(new Error(msg), false);
-        }
-        return callback(null, true);
+        if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+        return callback(new Error('The CORS policy for this site does not allow access from the specified Origin.'), false);
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true
 };
+
+// Static sites deployed from the browser (/apps/<slug>/) and pages used by the in-browser runtime.
+// Mounted before CORS: they are public pages, not API calls (module scripts send an Origin header).
+const { appsRouter, refererFallback } = require('./sandbox/siteServer');
+app.use(refererFallback);
+app.use('/apps', appsRouter);
+app.use('/runtime', require('./sandbox/runtimePages'));
 
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '50mb' }));
@@ -79,430 +87,344 @@ const io = new Server(server, {
         origin: allowedOrigins,
         methods: ["GET", "POST"],
         credentials: true
-    }
+    },
+    maxHttpBufferSize: 5e6 // Yjs updates can be large, but not unbounded
 });
+
+// Previews (<token>.preview.<domain>) and deployed apps (<slug>.apps.<domain>) are routed before
+// the API and Socket.IO see the request — see sandbox/hostRouter.js
+require('./sandbox/hostRouter').install(server);
 
 const userSocketMap = {};
 app.set('socketio', io);
 app.set('userSocketMap', userSocketMap);
 
 // Track which mediasoup room each socket is in (for cleanup on disconnect)
-const socketMediasoupRooms = {}; // { socketId: Set<roomId> }
+const socketMediasoupRooms = {}; // { socketId: Set<callId> }
+// Track which projects each socket joined (to rebroadcast presence on disconnect)
+const socketProjects = {}; // { socketId: Set<projectId> }
 
 const roomUsers = {}; // { roomId: [ { userId, username, socketId } ] }
 
-io.on('connection', (socket) => {
-    console.log('A user connected:', socket.id);
+const MAX_CHAT_LENGTH = 2000;
+const msRoomKey = (callId) => `ms:${callId}`;
 
-    socket.on('register-user', (userId) => {
+// Every socket must present the same JWT the REST API uses. The user id comes from the token,
+// never from event payloads, so clients can't act as someone else.
+io.use((socket, next) => {
+    const token = socket.handshake.auth?.token;
+    if (!token) return next(new Error('Authentication required'));
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        socket.userId = decoded.user.id;
+        next();
+    } catch (err) {
+        next(new Error('Invalid token'));
+    }
+});
+
+// Socket.IO acks are optional on the client side — never call an undefined callback.
+const ack = (callback) => (typeof callback === 'function' ? callback : () => {});
+
+// Wraps async socket handlers so a thrown error (bad ObjectId, missing doc, ...) is logged
+// instead of becoming an unhandled rejection that takes the whole server down.
+const safe = (name, handler) => async (...args) => {
+    try {
+        await handler(...args);
+    } catch (err) {
+        console.error(`[socket:${name}]`, err.message);
+        const maybeCallback = args[args.length - 1];
+        if (typeof maybeCallback === 'function') maybeCallback({ error: 'Request failed' });
+    }
+};
+
+const loadRoomIfMember = async (roomId, userId) => {
+    if (!isValidId(String(roomId || ''))) return null;
+    const room = await Room.findById(roomId);
+    return room && isRoomMember(room, userId) ? room : null;
+};
+
+// Discord-style voice channels: presence + WebRTC signaling (voice/voiceManager.js)
+const voice = require('./voice/voiceManager');
+voice.init(io);
+
+io.on('connection', (socket) => {
+    const userId = socket.userId;
+    userSocketMap[userId] = socket.id;
+    voice.register(socket, { safe, ack });
+
+    // Kept for older clients; identity is already known from the token.
+    socket.on('register-user', () => {
         userSocketMap[userId] = socket.id;
     });
 
     // --- ROOM LOGIC ---
-    socket.on('joinRoom', async ({ roomId, user }) => {
+    socket.on('joinRoom', safe('joinRoom', async ({ roomId } = {}) => {
+        const room = await loadRoomIfMember(roomId, userId);
+        if (!room) return socket.emit('room-error', { roomId, msg: 'You are not a member of this room' });
+
+        const user = await User.findById(userId).select('username');
+        if (!user) return;
+
         socket.join(roomId);
-
         if (!roomUsers[roomId]) roomUsers[roomId] = [];
-        
-        // Is this the first connection for this user in this room?
-        const isFirstJoin = !roomUsers[roomId].some(u => u.userId === user._id);
 
-        // Allow multiple tabs for same user (for testing)
-        // Only check if THIS socket is already added (which it shouldn't be on join)
+        // Is this the first connection for this user in this room? (multiple tabs are allowed)
+        const isFirstJoin = !roomUsers[roomId].some(u => u.userId === userId);
         if (!roomUsers[roomId].some(u => u.socketId === socket.id)) {
-            roomUsers[roomId].push({ userId: user._id, username: user.username, socketId: socket.id });
+            roomUsers[roomId].push({ userId, username: user.username, socketId: socket.id });
         }
 
-        // Broadcast updated user list to room
         io.to(roomId).emit('roomUsers', roomUsers[roomId]);
+        socket.emit('voice:state', await voice.roomState(String(roomId)));
 
-        // Broadcast entry message ONLY on first connection
         if (isFirstJoin) {
             socket.to(roomId).emit('message', {
                 text: `${user.username} has joined the room.`,
                 sender: { username: 'System' }
             });
         }
-    });
+    }));
 
-    socket.on('leaveRoom', ({ roomId, userId }) => {
+    socket.on('leaveRoom', ({ roomId } = {}) => {
         if (roomUsers[roomId]) {
-            roomUsers[roomId] = roomUsers[roomId].filter(u => u.userId !== userId);
+            // Only this socket leaves — other tabs of the same user stay connected
+            roomUsers[roomId] = roomUsers[roomId].filter(u => u.socketId !== socket.id);
             io.to(roomId).emit('roomUsers', roomUsers[roomId]);
         }
         socket.leave(roomId);
     });
 
-    socket.on('getRoomUsers', ({ roomId }) => {
-        if (roomUsers[roomId]) {
+    socket.on('getRoomUsers', ({ roomId } = {}) => {
+        if (socket.rooms.has(roomId) && roomUsers[roomId]) {
             socket.emit('roomUsers', roomUsers[roomId]);
         }
     });
 
-    // --- WEB-RTC SIGNALING ---
-    socket.on("callUser", (data) => {
-        io.to(data.userToCall).emit("callUser", { signal: data.signalData, from: data.from, name: data.name });
-    });
-
-    socket.on("answerCall", (data) => {
-        io.to(data.to).emit("callAccepted", { signal: data.signal, from: socket.id });
-    });
-
-    // --- VIDEO CALL SYNC (Multiple Calls) ---
-    socket.on('videoCallStarted', async ({ roomId, callId }) => {
-        const room = await Room.findById(roomId).populate('activeCalls.participants.userId', 'username');
-        const activeCalls = room.activeCalls.map(c => ({
-            callId: c._id,
-            startedBy: c.startedBy,
-            participants: c.participants.map(p => ({ userId: p.userId._id, username: p.userId.username })),
-            participantCount: c.participants.length
-        }));
-        socket.to(roomId).emit('multipleCallsUpdate', { activeCalls, canStartNewCall: activeCalls.length < 3 });
-    });
-
-    socket.on('videoCallJoin', async ({ roomId, callId, userId }) => {
-        const room = await Room.findById(roomId).populate('activeCalls.participants.userId', 'username');
-        const activeCalls = room.activeCalls.map(c => ({
-            callId: c._id,
-            startedBy: c.startedBy,
-            participants: c.participants.map(p => ({ userId: p.userId._id, username: p.userId.username })),
-            participantCount: c.participants.length
-        }));
-        socket.to(roomId).emit('multipleCallsUpdate', { activeCalls, canStartNewCall: activeCalls.length < 3 });
-    });
-
-    socket.on('videoCallLeave', async ({ roomId, callId, userId }) => {
-        const room = await Room.findById(roomId).populate('activeCalls.participants.userId', 'username');
-        const activeCalls = room.activeCalls.map(c => ({
-            callId: c._id,
-            startedBy: c.startedBy,
-            participants: c.participants.map(p => ({ userId: p.userId._id, username: p.userId.username })),
-            participantCount: c.participants.length
-        }));
-        socket.to(roomId).emit('multipleCallsUpdate', { activeCalls, canStartNewCall: activeCalls.length < 3 });
+    // Manual "refresh" button in the room UI
+    socket.on('room-update', () => {
+        socket.emit('room-update');
     });
 
     // --- CHAT ---
-    socket.on('chatMessage', async ({ roomId, senderId, text }) => {
-        try {
-            const message = new Message({ room: roomId, sender: senderId, text });
-            await message.save();
-            const sender = await User.findById(senderId).select('username');
-            io.to(roomId).emit('message', { ...message.toObject(), sender: { _id: sender._id, username: sender.username } });
-        } catch (error) {
-            console.error('Error handling chat message:', error);
-        }
-    });
+    socket.on('chatMessage', safe('chatMessage', async ({ roomId, text } = {}) => {
+        // Sender is always the authenticated user, and only sockets inside the room may post
+        if (!socket.rooms.has(roomId)) return;
+        const body = typeof text === 'string' ? text.trim().slice(0, MAX_CHAT_LENGTH) : '';
+        if (!body) return;
+
+        const message = await new Message({ room: roomId, sender: userId, text: body }).save();
+        const sender = await User.findById(userId).select('username');
+        io.to(roomId).emit('message', { ...message.toObject(), sender: { _id: userId, username: sender?.username || 'Unknown' } });
+    }));
 
     // --- PROFILE ALERTS ---
-    socket.on('profileUpdated', ({ userId, username }) => {
-        let updatedRooms = [];
+    socket.on('profileUpdated', safe('profileUpdated', async () => {
+        // Username is read from the DB, not trusted from the payload
+        const user = await User.findById(userId).select('username');
+        if (!user) return;
         for (const roomId in roomUsers) {
             let updated = false;
             roomUsers[roomId] = roomUsers[roomId].map(u => {
                 if (u.userId === userId) {
                     updated = true;
-                    return { ...u, username };
+                    return { ...u, username: user.username };
                 }
                 return u;
             });
-            if (updated) {
-                updatedRooms.push(roomId);
-                io.to(roomId).emit('roomUsers', roomUsers[roomId]); // Broadcast to specific rooms
-            }
+            if (updated) io.to(roomId).emit('roomUsers', roomUsers[roomId]);
         }
-        // Emit global state update so any listening components (like Dashboard) update their views
         io.emit('dashboard-update', { userId });
-        console.log(`Profile updated for user ${userId}. Updated rooms: ${updatedRooms.join(', ')}`);
-    });
+    }));
 
     // ========================================================
-    // MEDIASOUP SIGNALING EVENTS
+    // MEDIASOUP SIGNALING EVENTS (CALL_MODE=sfu)
+    // (the mediasoup "roomId" is the voice channel id)
     // ========================================================
+
+    const inMsRoom = (callId) => !!socketMediasoupRooms[socket.id]?.has(String(callId));
 
     // Join a mediasoup room (get router RTP capabilities)
-    socket.on('ms-joinRoom', async ({ roomId }, callback) => {
-        try {
-            const router = await mediasoupManager.getOrCreateRouter(roomId);
+    socket.on('ms-joinRoom', safe('ms-joinRoom', async ({ roomId: callId } = {}, callback) => {
+        const reply = ack(callback);
+        // Voice channel ids are random 16-char hex strings (see VoiceChannelSchema), not ObjectIds
+        if (typeof callId !== 'string' || !/^[0-9a-f]{16}$/i.test(callId)) return reply({ error: 'Invalid call' });
 
-            // Track this socket's mediasoup rooms
-            if (!socketMediasoupRooms[socket.id]) socketMediasoupRooms[socket.id] = new Set();
-            socketMediasoupRooms[socket.id].add(roomId);
+        // Join the voice channel first (voice:join checks room membership and capacity)
+        if (!voice.isInChannel(socket.id, callId)) return reply({ error: 'Join the voice channel first' });
 
-            callback({ rtpCapabilities: router.rtpCapabilities });
-        } catch (error) {
-            console.error('[mediasoup] ms-joinRoom error:', error);
-            callback({ error: error.message });
-        }
-    });
+        const router = await mediasoupManager.getOrCreateRouter(callId);
+
+        if (!socketMediasoupRooms[socket.id]) socketMediasoupRooms[socket.id] = new Set();
+        socketMediasoupRooms[socket.id].add(String(callId));
+        // Join the broadcast channel so this peer hears about new/closed producers
+        socket.join(msRoomKey(callId));
+
+        reply({ rtpCapabilities: router.rtpCapabilities });
+    }));
 
     // Create a WebRTC transport (send or recv)
-    socket.on('ms-createTransport', async ({ roomId, direction }, callback) => {
-        try {
-            const transportParams = await mediasoupManager.createWebRtcTransport(roomId, socket.id, direction);
-            callback(transportParams);
-        } catch (error) {
-            console.error('[mediasoup] ms-createTransport error:', error);
-            callback({ error: error.message });
-        }
-    });
+    socket.on('ms-createTransport', safe('ms-createTransport', async ({ roomId, direction } = {}, callback) => {
+        const reply = ack(callback);
+        if (!inMsRoom(roomId)) return reply({ error: 'Join the call first' });
+        reply(await mediasoupManager.createWebRtcTransport(roomId, socket.id, direction));
+    }));
 
     // Connect a transport with DTLS parameters
-    socket.on('ms-connectTransport', async ({ roomId, transportId, dtlsParameters }, callback) => {
-        try {
-            await mediasoupManager.connectTransport(roomId, socket.id, transportId, dtlsParameters);
-            callback({ connected: true });
-        } catch (error) {
-            console.error('[mediasoup] ms-connectTransport error:', error);
-            callback({ error: error.message });
-        }
-    });
+    socket.on('ms-connectTransport', safe('ms-connectTransport', async ({ roomId, transportId, dtlsParameters } = {}, callback) => {
+        const reply = ack(callback);
+        if (!inMsRoom(roomId)) return reply({ error: 'Join the call first' });
+        await mediasoupManager.connectTransport(roomId, socket.id, transportId, dtlsParameters);
+        reply({ connected: true });
+    }));
 
     // Produce (send a media track to the SFU)
-    socket.on('ms-produce', async ({ roomId, transportId, kind, rtpParameters, appData }, callback) => {
-        try {
-            const { producerId } = await mediasoupManager.produce(roomId, socket.id, transportId, kind, rtpParameters, appData);
+    socket.on('ms-produce', safe('ms-produce', async ({ roomId, transportId, kind, rtpParameters, appData } = {}, callback) => {
+        const reply = ack(callback);
+        if (!inMsRoom(roomId)) return reply({ error: 'Join the call first' });
+        const { producerId } = await mediasoupManager.produce(roomId, socket.id, transportId, kind, rtpParameters, appData);
 
-            // Notify all other peers in the room about the new producer
-            socket.to(roomId).emit('ms-newProducer', {
-                producerId,
-                socketId: socket.id,
-                kind,
-                appData,
-            });
-
-            callback({ producerId });
-        } catch (error) {
-            console.error('[mediasoup] ms-produce error:', error);
-            callback({ error: error.message });
-        }
-    });
+        // Notify all other peers in the call about the new producer
+        socket.to(msRoomKey(roomId)).emit('ms-newProducer', { producerId, socketId: socket.id, kind, appData });
+        reply({ producerId });
+    }));
 
     // Consume (receive a media track from the SFU)
-    socket.on('ms-consume', async ({ roomId, producerId, rtpCapabilities }, callback) => {
-        try {
-            const consumerParams = await mediasoupManager.consume(roomId, socket.id, producerId, rtpCapabilities);
-            callback(consumerParams);
-        } catch (error) {
-            console.error('[mediasoup] ms-consume error:', error);
-            callback({ error: error.message });
-        }
-    });
+    socket.on('ms-consume', safe('ms-consume', async ({ roomId, producerId, rtpCapabilities } = {}, callback) => {
+        const reply = ack(callback);
+        if (!inMsRoom(roomId)) return reply({ error: 'Join the call first' });
+        reply(await mediasoupManager.consume(roomId, socket.id, producerId, rtpCapabilities));
+    }));
 
     // Resume a paused consumer
-    socket.on('ms-resumeConsumer', async ({ roomId, consumerId }, callback) => {
-        try {
-            await mediasoupManager.resumeConsumer(roomId, socket.id, consumerId);
-            callback({ resumed: true });
-        } catch (error) {
-            console.error('[mediasoup] ms-resumeConsumer error:', error);
-            callback({ error: error.message });
-        }
-    });
+    socket.on('ms-resumeConsumer', safe('ms-resumeConsumer', async ({ roomId, consumerId } = {}, callback) => {
+        const reply = ack(callback);
+        if (!inMsRoom(roomId)) return reply({ error: 'Join the call first' });
+        await mediasoupManager.resumeConsumer(roomId, socket.id, consumerId);
+        reply({ resumed: true });
+    }));
 
     // Close a producer (e.g. stop screen share)
-    socket.on('ms-closeProducer', ({ roomId, producerId }) => {
-        try {
-            mediasoupManager.closeProducer(roomId, socket.id, producerId);
-
-            // Notify other peers that this producer is gone
-            socket.to(roomId).emit('ms-producerClosed', { producerId, socketId: socket.id });
-        } catch (error) {
-            console.error('[mediasoup] ms-closeProducer error:', error);
-        }
-    });
+    socket.on('ms-closeProducer', safe('ms-closeProducer', ({ roomId, producerId } = {}) => {
+        if (!inMsRoom(roomId)) return;
+        mediasoupManager.closeProducer(roomId, socket.id, producerId);
+        socket.to(msRoomKey(roomId)).emit('ms-producerClosed', { producerId, socketId: socket.id });
+    }));
 
     // Get all existing producers in a room (for a newly joined peer)
-    socket.on('ms-getProducers', ({ roomId }, callback) => {
-        try {
-            const producers = mediasoupManager.getProducersInRoom(roomId, socket.id);
-            callback(producers);
-        } catch (error) {
-            console.error('[mediasoup] ms-getProducers error:', error);
-            callback([]);
+    socket.on('ms-getProducers', safe('ms-getProducers', ({ roomId } = {}, callback) => {
+        const reply = ack(callback);
+        if (!inMsRoom(roomId)) return reply([]);
+        reply(mediasoupManager.getProducersInRoom(roomId, socket.id));
+    }));
+
+    const leaveMediasoupRoom = (callId) => {
+        const closedProducerIds = mediasoupManager.cleanupPeer(callId, socket.id);
+        for (const producerId of closedProducerIds) {
+            socket.to(msRoomKey(callId)).emit('ms-producerClosed', { producerId, socketId: socket.id });
         }
-    });
+        socket.leave(msRoomKey(callId));
+        socketMediasoupRooms[socket.id]?.delete(String(callId));
+    };
 
     // Leave a mediasoup room
-    socket.on('ms-leaveRoom', ({ roomId }) => {
-        try {
-            const closedProducerIds = mediasoupManager.cleanupPeer(roomId, socket.id);
-
-            // Remove tracking
-            if (socketMediasoupRooms[socket.id]) {
-                socketMediasoupRooms[socket.id].delete(roomId);
-            }
-
-            // Notify other peers about closed producers
-            for (const producerId of closedProducerIds) {
-                socket.to(roomId).emit('ms-producerClosed', { producerId, socketId: socket.id });
-            }
-        } catch (error) {
-            console.error('[mediasoup] ms-leaveRoom error:', error);
-        }
-    });
+    socket.on('ms-leaveRoom', safe('ms-leaveRoom', ({ roomId } = {}) => {
+        if (inMsRoom(roomId)) leaveMediasoupRoom(roomId);
+    }));
 
     // ========================================================
     // COLLABORATIVE EDITING EVENTS
     // ========================================================
 
+    const projectRoomKey = (projectId) => `project:${projectId}`;
+    const inProject = (projectId) => socket.rooms.has(projectRoomKey(projectId));
+
     // Join a project's collaborative session
-    socket.on('collab:join-project', async ({ projectId, userId, username }, callback) => {
-        try {
-            // Validate user is a member of this project
-            const project = await Project.findById(projectId);
-            if (!project) {
-                return callback && callback({ error: 'Project not found' });
-            }
+    socket.on('collab:join-project', safe('collab:join-project', async ({ projectId } = {}, callback) => {
+        const reply = ack(callback);
+        const access = await getProjectAccess(String(projectId || ''), userId);
+        if (!access) return reply({ error: 'Not a project member' });
 
-            const isMember = project.members.some(m => m.toString() === userId);
-            if (!isMember) {
-                return callback && callback({ error: 'Not a project member' });
-            }
+        const user = await User.findById(userId).select('username');
+        socket.join(projectRoomKey(projectId));
+        if (!socketProjects[socket.id]) socketProjects[socket.id] = new Set();
+        socketProjects[socket.id].add(String(projectId));
 
-            // Join project-scoped socket room
-            const projectRoom = `project:${projectId}`;
-            socket.join(projectRoom);
-
-            // Track presence
-            collabManager.addUserToProject(projectId, socket.id, userId, username);
-
-            // Broadcast updated presence to all project members
-            const presence = collabManager.getProjectPresence(projectId);
-            io.to(projectRoom).emit('collab:presence', presence);
-
-            console.log(`[collab] ${username} joined project ${projectId}`);
-            callback && callback({ success: true });
-        } catch (error) {
-            console.error('[collab] join-project error:', error);
-            callback && callback({ error: error.message });
-        }
-    });
+        collabManager.addUserToProject(projectId, socket.id, userId, user?.username || 'Unknown');
+        io.to(projectRoomKey(projectId)).emit('collab:presence', collabManager.getProjectPresence(projectId));
+        reply({ success: true });
+    }));
 
     // Leave a project's collaborative session
-    socket.on('collab:leave-project', async ({ projectId }) => {
-        try {
-            const projectRoom = `project:${projectId}`;
-            socket.leave(projectRoom);
-
-            collabManager.removeUserFromProject(projectId, socket.id);
-
-            // Broadcast updated presence
-            const presence = collabManager.getProjectPresence(projectId);
-            io.to(projectRoom).emit('collab:presence', presence);
-
-            console.log(`[collab] Socket ${socket.id} left project ${projectId}`);
-        } catch (error) {
-            console.error('[collab] leave-project error:', error);
-        }
-    });
+    socket.on('collab:leave-project', safe('collab:leave-project', ({ projectId } = {}) => {
+        socket.leave(projectRoomKey(projectId));
+        socketProjects[socket.id]?.delete(String(projectId));
+        collabManager.removeUserFromProject(projectId, socket.id);
+        io.to(projectRoomKey(projectId)).emit('collab:presence', collabManager.getProjectPresence(projectId));
+    }));
 
     // Open a file for collaborative editing
-    socket.on('collab:open-file', async ({ projectId, fileId, fileName }, callback) => {
-        try {
-            const docKey = `${projectId}:${fileId}`;
-            const fileRoom = `collab:${docKey}`;
+    socket.on('collab:open-file', safe('collab:open-file', async ({ projectId, fileId, fileName } = {}, callback) => {
+        const reply = ack(callback);
+        if (!inProject(projectId)) return reply({ error: 'Join the project first' });
+        if (!isValidId(String(fileId || ''))) return reply({ error: 'Invalid file' });
 
-            // Load file content from DB for initialization
-            const file = await File.findById(fileId);
-            if (!file) {
-                return callback && callback({ error: 'File not found' });
-            }
+        // The file must actually belong to the project the socket was authorized for
+        const file = await File.findById(fileId);
+        if (!file || !idEquals(file.project, projectId)) return reply({ error: 'File not found' });
 
-            // Get or create the Yjs document
-            const docEntry = await collabManager.getOrCreateDoc(projectId, fileId, file.content || '');
+        const docKey = `${projectId}:${fileId}`;
+        await collabManager.getOrCreateDoc(projectId, fileId, file.content || '');
+        collabManager.addUserToDoc(docKey, socket.id);
+        socket.join(`collab:${docKey}`);
+        collabManager.setUserActiveFile(projectId, socket.id, fileId, fileName || file.name);
 
-            // Add this socket to the document's user set
-            collabManager.addUserToDoc(docKey, socket.id);
+        const fullState = collabManager.getFullState(docKey);
+        io.to(projectRoomKey(projectId)).emit('collab:presence', collabManager.getProjectPresence(projectId));
 
-            // Join the file-specific socket room
-            socket.join(fileRoom);
-
-            // Update user's active file in presence
-            collabManager.setUserActiveFile(projectId, socket.id, fileId, fileName || file.name);
-
-            // Send full Yjs state to the joining client
-            const fullState = collabManager.getFullState(docKey);
-
-            // Broadcast updated presence
-            const projectRoom = `project:${projectId}`;
-            const presence = collabManager.getProjectPresence(projectId);
-            io.to(projectRoom).emit('collab:presence', presence);
-
-            console.log(`[collab] Socket ${socket.id} opened file ${fileId} (${collabManager.getDocUserCount(docKey)} users)`);
-            callback && callback({
-                state: fullState ? Array.from(fullState) : null,
-                userCount: collabManager.getDocUserCount(docKey)
-            });
-        } catch (error) {
-            console.error('[collab] open-file error:', error);
-            callback && callback({ error: error.message });
-        }
-    });
+        reply({
+            state: fullState ? Array.from(fullState) : null,
+            userCount: collabManager.getDocUserCount(docKey)
+        });
+    }));
 
     // Close a file (stop collaborating on it)
-    socket.on('collab:close-file', async ({ projectId, fileId }) => {
-        try {
-            const docKey = `${projectId}:${fileId}`;
-            const fileRoom = `collab:${docKey}`;
-
-            socket.leave(fileRoom);
-
-            const isEmpty = collabManager.removeUserFromDoc(docKey, socket.id);
-
-            // Update presence - clear active file
-            collabManager.setUserActiveFile(projectId, socket.id, null, null);
-
-            // If no more users, persist and clean up
-            if (isEmpty) {
-                await collabManager.removeDoc(docKey);
-            }
-
-            // Broadcast updated presence
-            const projectRoom = `project:${projectId}`;
-            const presence = collabManager.getProjectPresence(projectId);
-            io.to(projectRoom).emit('collab:presence', presence);
-
-            console.log(`[collab] Socket ${socket.id} closed file ${fileId}`);
-        } catch (error) {
-            console.error('[collab] close-file error:', error);
-        }
-    });
-
-    // Receive a Yjs binary update from a client and broadcast to others
-    socket.on('collab:sync-update', ({ projectId, fileId, update }) => {
-        try {
-            const docKey = `${projectId}:${fileId}`;
-            const fileRoom = `collab:${docKey}`;
-
-            // Apply update to server-side Y.Doc
-            collabManager.applyClientUpdate(docKey, update);
-
-            // Broadcast to all OTHER clients in the same file room
-            socket.to(fileRoom).emit('collab:sync-update', {
-                update,
-                senderId: socket.id
-            });
-        } catch (error) {
-            console.error('[collab] sync-update error:', error);
-        }
-    });
-
-    // Receive cursor position updates and broadcast to others
-    socket.on('collab:cursor-update', ({ projectId, fileId, cursor }) => {
+    socket.on('collab:close-file', safe('collab:close-file', async ({ projectId, fileId } = {}) => {
         const docKey = `${projectId}:${fileId}`;
         const fileRoom = `collab:${docKey}`;
+        if (!socket.rooms.has(fileRoom)) return;
 
-        socket.to(fileRoom).emit('collab:cursor-update', {
-            socketId: socket.id,
-            cursor
-        });
+        socket.leave(fileRoom);
+        const isEmpty = collabManager.removeUserFromDoc(docKey, socket.id);
+        collabManager.setUserActiveFile(projectId, socket.id, null, null);
+
+        // If no more users, persist and clean up
+        if (isEmpty) await collabManager.removeDoc(docKey);
+
+        io.to(projectRoomKey(projectId)).emit('collab:presence', collabManager.getProjectPresence(projectId));
+    }));
+
+    // Receive a Yjs binary update from a client and broadcast to others
+    socket.on('collab:sync-update', safe('collab:sync-update', ({ projectId, fileId, update } = {}) => {
+        const docKey = `${projectId}:${fileId}`;
+        const fileRoom = `collab:${docKey}`;
+        // Only sockets that opened this file (and so passed the access checks) may edit it
+        if (!socket.rooms.has(fileRoom)) return;
+
+        collabManager.applyClientUpdate(docKey, update);
+        socket.to(fileRoom).emit('collab:sync-update', { update, senderId: socket.id });
+    }));
+
+    // Receive cursor position updates and broadcast to others
+    socket.on('collab:cursor-update', ({ projectId, fileId, cursor } = {}) => {
+        const fileRoom = `collab:${projectId}:${fileId}`;
+        if (!socket.rooms.has(fileRoom)) return;
+        socket.to(fileRoom).emit('collab:cursor-update', { socketId: socket.id, cursor });
     });
 
     // Request current presence for a project
-    socket.on('collab:get-presence', ({ projectId }, callback) => {
-        const presence = collabManager.getProjectPresence(projectId);
-        callback && callback(presence);
+    socket.on('collab:get-presence', ({ projectId } = {}, callback) => {
+        ack(callback)(inProject(projectId) ? collabManager.getProjectPresence(projectId) : []);
     });
 
     // ========================================================
@@ -512,41 +434,35 @@ io.on('connection', (socket) => {
     socket.on('disconnect', async () => {
         // Remove user from all rooms they were in
         for (const roomId in roomUsers) {
-            const wasPresent = roomUsers[roomId].some(u => u.socketId === socket.id);
-            if (wasPresent) {
+            if (roomUsers[roomId].some(u => u.socketId === socket.id)) {
                 roomUsers[roomId] = roomUsers[roomId].filter(u => u.socketId !== socket.id);
                 io.to(roomId).emit('roomUsers', roomUsers[roomId]);
             }
+            if (roomUsers[roomId].length === 0) delete roomUsers[roomId];
         }
 
         // Cleanup mediasoup peers on disconnect
-        const msRooms = socketMediasoupRooms[socket.id];
-        if (msRooms) {
-            for (const roomId of msRooms) {
-                const closedProducerIds = mediasoupManager.cleanupPeer(roomId, socket.id);
-                for (const producerId of closedProducerIds) {
-                    socket.to(roomId).emit('ms-producerClosed', { producerId, socketId: socket.id });
-                }
-            }
-            delete socketMediasoupRooms[socket.id];
+        for (const callId of socketMediasoupRooms[socket.id] || []) {
+            try { leaveMediasoupRoom(callId); } catch (err) { console.error('[mediasoup] cleanup error:', err.message); }
         }
+        delete socketMediasoupRooms[socket.id];
 
-        // Cleanup collaborative editing on disconnect
+        // Cleanup collaborative editing, then refresh presence for the projects this socket was in
         try {
             await collabManager.cleanupSocket(socket.id);
-            // Broadcast updated presence to any projects this socket was in
-            // (cleanupSocket already removes from all projects/docs)
+            for (const projectId of socketProjects[socket.id] || []) {
+                io.to(projectRoomKey(projectId)).emit('collab:presence', collabManager.getProjectPresence(projectId));
+            }
         } catch (err) {
-            console.error('[collab] disconnect cleanup error:', err);
+            console.error('[collab] disconnect cleanup error:', err.message);
         }
+        delete socketProjects[socket.id];
 
-        const userId = Object.keys(userSocketMap).find(key => userSocketMap[key] === socket.id);
-        if (userId) delete userSocketMap[userId];
+        if (userSocketMap[userId] === socket.id) delete userSocketMap[userId];
     });
 });
 
 // --- API ROUTES ---
-// All routes are now expected to be in the 'server/routes' folder
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/auth/google', require('./routes/googleAuth'));
 app.use('/api/profile', require('./routes/profile'));
@@ -557,23 +473,51 @@ app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/files', require('./routes/files'));
 app.use('/api/execute', require('./routes/execute'));
 
-// Preview proxy — must come BEFORE catch-all routes
-// Proxies /api/preview/<port>/... → http://localhost:<port>/...
-// NOTE: Strip frame-blocking headers so the iframe can load preview content
-app.use('/api/preview', (req, res, next) => {
-    res.removeHeader('X-Frame-Options');
-    next();
-}, require('./routes/preview'));
+app.use('/api/deployments', require('./routes/deployments'));
 
-// NEW AI Routes (Updated to look in the main routes folder)
 app.use('/api/matchmaking', require('./routes/matchmaking'));
 app.use('/api/assessment', require('./routes/assessment'));
 app.use('/api/ai', require('./routes/ai'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 
+// JSON 404 for unknown API routes (instead of Express's HTML page)
+app.use('/api', (req, res) => res.status(404).json({ msg: 'Not found' }));
+
+// Last-resort error handler: malformed JSON, CORS rejections, multer limits, ...
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+    const status = err.status || err.statusCode || (err.type === 'entity.parse.failed' ? 400 : 500);
+    if (status >= 500) console.error('[express] Unhandled error:', err);
+    res.status(status).json({ msg: status >= 500 ? 'Server Error' : err.message });
+});
+
+// A stray rejection should be logged, not crash every connected user's session
+process.on('unhandledRejection', (reason) => {
+    console.error('[process] Unhandled promise rejection:', reason);
+});
+
 // Initialize mediasoup worker, then start HTTP server
 const PORT = process.env.PORT || 5000;
 (async () => {
+    // Sandbox: check Docker and clear workspaces left over from a previous run
+    const sandbox = require('./sandbox');
+    const { driver } = sandbox;
+    if (sandbox.getMode() === 'browser') {
+        console.log("[sandbox] Browser mode: code runs in each user's browser; deploys are stored in MongoDB");
+    } else {
+        const sandboxReady = await driver.isAvailable().catch((err) => {
+            console.error('[sandbox]', err.message);
+            return false;
+        });
+        if (sandboxReady) {
+            await driver.cleanupStaleWorkspaces();
+            console.log(`[sandbox] ${driver.name} driver ready${driver.isolated ? '' : ' (UNSANDBOXED)'}`);
+        } else {
+            sandbox.useBrowserMode();
+            console.warn("[sandbox] Docker is not reachable, so switched to browser mode (code runs in users' browsers). Start Docker and restart to run code on the server.");
+        }
+    }
+
     try {
         await mediasoupManager.createWorker();
         console.log('[mediasoup] Worker ready');
@@ -583,22 +527,12 @@ const PORT = process.env.PORT || 5000;
     server.listen(PORT, '0.0.0.0', () => {
         console.log(`Server started on port ${PORT}`);
 
-        // Schedule skill decay: run once after 30s (wait for DB), then every 24 hours
+        // Skill decay check: once after 30s (wait for DB), then daily.
+        // The worker itself only decays a skill once per week of inactivity.
         const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
-        setTimeout(async () => {
-            try {
-                await runSkillDecay();
-            } catch (e) {
-                console.error('[SkillDecay] Initial run failed:', e.message);
-            }
-        }, 30000);
-        setInterval(async () => {
-            try {
-                await runSkillDecay();
-            } catch (e) {
-                console.error('[SkillDecay] Scheduled run failed:', e.message);
-            }
-        }, TWENTY_FOUR_HOURS);
-        console.log('[SkillDecay] Scheduled: runs every 24 hours');
+        const runDecay = () => runSkillDecay().catch(e => console.error('[SkillDecay] Run failed:', e.message));
+        setTimeout(runDecay, 30000);
+        setInterval(runDecay, TWENTY_FOUR_HOURS);
+        console.log('[SkillDecay] Scheduled: checks every 24 hours');
     });
 })();

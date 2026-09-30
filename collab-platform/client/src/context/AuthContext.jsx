@@ -41,31 +41,40 @@ export const AuthProvider = ({ children }) => {
         }
     }, [loadUser]);
 
-    const register = async (formData) => {
+    // An expired/invalid token makes every API call fail with 401 — log out instead of
+    // leaving the UI in a "logged in but nothing works" state.
+    useEffect(() => {
+        const id = axios.interceptors.response.use(
+            (res) => res,
+            (err) => {
+                const url = err.config?.url || '';
+                if (err.response?.status === 401 && localStorage.getItem('token') && !url.includes('/api/auth/login')) {
+                    logout();
+                }
+                return Promise.reject(err);
+            }
+        );
+        return () => axios.interceptors.response.eject(id);
+    }, [logout]);
+
+    // Stores the token and loads the user. Throws a readable Error on failure so the
+    // login/register pages can show it (previously failures were silently swallowed).
+    const authenticate = async (endpoint, formData) => {
         try {
-            const res = await axios.post('/api/auth/register', formData); // Relative URL
+            const res = await axios.post(endpoint, formData);
             localStorage.setItem('token', res.data.token);
             setToken(res.data.token);
             setAuthToken(res.data.token);
             await loadUser();
         } catch (err) {
-            console.error(err.response.data);
             logout();
+            throw new Error(err.response?.data?.msg || 'Could not reach the server. Please try again.');
         }
     };
 
-    const login = async (formData) => {
-        try {
-            const res = await axios.post('/api/auth/login', formData); // Relative URL
-            localStorage.setItem('token', res.data.token);
-            setToken(res.data.token);
-            setAuthToken(res.data.token);
-            await loadUser();
-        } catch (err) {
-            console.error(err.response.data);
-            logout();
-        }
-    };
+    const register = (formData) => authenticate('/api/auth/register', formData);
+
+    const login = (formData) => authenticate('/api/auth/login', formData);
 
     // Google Auth0 login — called by GoogleCallbackPage with the JWT from the server
     const googleLogin = async (jwtToken) => {

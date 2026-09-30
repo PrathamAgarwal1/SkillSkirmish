@@ -1,39 +1,17 @@
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
-const VideoCallSchema = new Schema({
-    callName: {
-        type: String,
-        default: 'Call',
-        trim: true
-    },
+// A persistent Discord-style voice channel. Who is in it is live state (see voice/voiceManager.js).
+const VoiceChannelSchema = new Schema({
+    // Random hex id (also used as the SFU room id in CALL_MODE=sfu)
     _id: {
         type: String,
         default: () => require('crypto').randomBytes(8).toString('hex')
     },
-    startedBy: {
-        type: Schema.Types.ObjectId,
-        ref: 'User',
-        required: true
-    },
-    startedAt: {
-        type: Date,
-        default: Date.now
-    },
-    maxSlots: {
-        type: Number,
-        default: 10
-    },
-    participants: [{
-        userId: {
-            type: Schema.Types.ObjectId,
-            ref: 'User'
-        },
-        joinedAt: {
-            type: Date,
-            default: Date.now
-        }
-    }]
+    name: { type: String, required: true, trim: true, maxlength: 40 },
+    // 0 = the server's maximum (VOICE_MAX_USERS)
+    userLimit: { type: Number, default: 0, min: 0, max: 99 },
+    createdBy: { type: Schema.Types.ObjectId, ref: 'User' }
 });
 
 const RoomSchema = new Schema({
@@ -85,35 +63,7 @@ const RoomSchema = new Schema({
         default: false
     },
     tags: [{ type: String }],
-    // Video call management - support up to 3 concurrent calls
-    activeCalls: [VideoCallSchema],
-    maxConcurrentCalls: {
-        type: Number,
-        default: 3 // Maximum 3 calls can run simultaneously
-    }
+    voiceChannels: [VoiceChannelSchema]
 }, { timestamps: true });
-
-// Ensure activeCalls is always an array
-RoomSchema.pre('save', function (next) {
-    if (!this.activeCalls) {
-        this.activeCalls = [];
-    }
-    next();
-});
-
-// Ensure activeCalls is populated on find
-RoomSchema.post('findOne', function (doc) {
-    if (doc && !doc.activeCalls) {
-        doc.activeCalls = [];
-    }
-});
-
-RoomSchema.post('find', function (docs) {
-    docs.forEach(doc => {
-        if (!doc.activeCalls) {
-            doc.activeCalls = [];
-        }
-    });
-});
 
 module.exports = mongoose.model('Room', RoomSchema);
