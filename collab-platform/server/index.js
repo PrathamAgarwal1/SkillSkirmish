@@ -33,18 +33,8 @@ const server = http.createServer(app);
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
 
-const rawClientUrl = process.env.CLIENT_URL || '';
-const clientUrl = rawClientUrl.replace(/\/+$/, '');
-
-const allowedOrigins = [
-    'http://localhost:5173',
-    'http://localhost:5174',
-    'http://localhost:5175',
-    'https://PrathamAgarwal1.github.io',
-    'https://prathamagarwal1.github.io',
-    'https://skill-skirmish.vercel.app',
-    clientUrl
-].filter(Boolean);
+// Website origins allowed to call the API (includes CLIENT_URL) — see utils/origins.js
+const allowedOrigins = require('./utils/origins').allowedOrigins();
 
 const corsOptions = {
     origin: function (origin, callback) {
