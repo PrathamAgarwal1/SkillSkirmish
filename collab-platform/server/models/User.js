@@ -9,6 +9,11 @@ const SkillSchema = new mongoose.Schema({
     matchesPlayed: { type: Number, default: 0 },
     ratingDeviation: { type: Number, default: 350 },
     isProvisional: { type: Boolean, default: true },
+    // Set when an assessment in this skill is finished; drives inactivity decay
+    // (no default: Mongoose would stamp "now" on every load of legacy skills and they'd never decay)
+    lastPracticedAt: { type: Date, default: null },
+    // Last time the decay worker reduced this skill (decay applies at most once per week)
+    lastDecayAt: { type: Date, default: null },
     history: [{
         date: { type: Date, default: Date.now },
         eloChange: Number,

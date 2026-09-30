@@ -1,10 +1,76 @@
 const express = require('express');
 const router = express.Router();
+const fs = require('fs');
 const auth = require('../middleware/auth');
 const Room = require('../models/Room');
 const User = require('../models/User');
-const Message = require('../models/Message'); // Import Message Model
+const Message = require('../models/Message');
+const Notification = require('../models/Notification');
+const Project = require('../models/Project');
+const File = require('../models/File');
 const { ROOM_WEIGHTS, computeRoomScore } = require('../utils/matchmaking');
+const { isValidId, idEquals, isRoomMember, getProjectDir } = require('../utils/access');
+const { stopAllForProject } = require('../utils/projectRunner');
+const { destroyDeployment } = require('../services/deployService');
+const voice = require('../voice/voiceManager');
+
+const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const MESSAGE_HISTORY_LIMIT = 200;
+
+// Rejects malformed :id params before they reach Mongoose (avoids CastError 500s).
+router.param('id', (req, res, next, id) => {
+    if (!isValidId(id)) return res.status(404).json({ msg: 'Room not found' });
+    next();
+});
+
+const emitToUser = (req, userId, event, payload) => {
+    const io = req.app.get('socketio');
+    const userSocketMap = req.app.get('userSocketMap');
+    const socketId = userSocketMap && userSocketMap[userId.toString()];
+    if (io && socketId) io.to(socketId).emit(event, payload);
+};
+
+const isFull = (room) => (room.members || []).length + 1 >= (room.capacity || 10);
+
+/**
+ * Shared invite logic for both invite endpoints. Only the room owner may invite,
+ * and duplicate pending invites are not re-sent.
+ */
+const sendRoomInvite = async (req, res, roomId, targetUserId, message) => {
+    if (!isValidId(String(targetUserId || ''))) return res.status(400).json({ msg: 'Valid user ID required' });
+
+    const [room, sender, target] = await Promise.all([
+        Room.findById(roomId),
+        User.findById(req.user.id).select('username'),
+        User.findById(targetUserId).select('_id')
+    ]);
+
+    if (!room) return res.status(404).json({ msg: 'Room not found' });
+    if (!sender) return res.status(404).json({ msg: 'Sender not found' });
+    if (!target) return res.status(404).json({ msg: 'User not found' });
+    if (!idEquals(room.owner, req.user.id)) {
+        return res.status(403).json({ msg: 'Only room owner can send invites' });
+    }
+    if (isRoomMember(room, targetUserId)) return res.status(400).json({ msg: 'User is already a member' });
+
+    const existing = await Notification.findOne({ user: targetUserId, type: 'invite', relatedId: room._id });
+    if (existing) return res.json({ msg: 'Invitation already pending' });
+
+    let notifMsg = `${sender.username} invited you to join room: ${room.name}`;
+    if (message) notifMsg += `\nReason: ${String(message).slice(0, 500)}`;
+
+    const newNotif = await new Notification({
+        user: targetUserId,
+        sender: req.user.id,
+        type: 'invite',
+        message: notifMsg,
+        relatedId: room._id
+    }).save();
+
+    emitToUser(req, targetUserId, 'new-notification', newNotif);
+    return res.json({ msg: 'Invitation sent' });
+};
 
 // @route   GET api/rooms/myrooms
 router.get('/myrooms', auth, async (req, res) => {
@@ -24,10 +90,14 @@ router.get('/myrooms', auth, async (req, res) => {
 // @route   GET api/rooms/search
 router.get('/search', auth, async (req, res) => {
     try {
-        const { q } = req.query;
-        const query = q ? { name: { $regex: q, $options: 'i' } } : {};
+        const q = typeof req.query.q === 'string' ? req.query.q.slice(0, 100) : '';
+        // Escape user input so it is matched literally (an unescaped regex allows ReDoS and odd matches)
+        const query = q ? { name: { $regex: escapeRegex(q), $options: 'i' } } : {};
         query.isPrivate = false;
-        const rooms = await Room.find(query).populate('owner', 'username');
+        const rooms = await Room.find(query)
+            .select('name description owner members capacity tags isPrivate createdAt')
+            .populate('owner', 'username')
+            .limit(50);
         res.json(rooms);
     } catch (err) {
         res.status(500).send('Server Error');
@@ -54,7 +124,7 @@ router.get('/recommend', auth, async (req, res) => {
             .lean();
 
         // 3. Filter rooms that are already full
-        const availableRooms = rooms.filter(r => (r.members || []).length < (r.capacity || 10));
+        const availableRooms = rooms.filter(r => !isFull(r));
 
         // 4. Score each room
         const scoredRooms = availableRooms.map(room => {
@@ -95,251 +165,116 @@ router.get('/recommend', auth, async (req, res) => {
 
     } catch (err) {
         console.error('Room Recommendation Error:', err);
-        res.status(500).json({ msg: 'Server Error', reason: err.message });
+        res.status(500).json({ msg: 'Server Error' });
     }
 });
 
 // --- VIDEO CALL ROUTES (Multiple Concurrent Calls) - MUST BE BEFORE /:id ---
 
-// @route   GET api/rooms/:id/video-calls
-router.get('/:id/video-calls', auth, async (req, res) => {
+// ─── Voice channels (Discord-style; live presence is in voice/voiceManager.js) ───
+
+const cleanChannelName = (name) => (typeof name === 'string' ? name.replace(/s+/g, ' ').trim().slice(0, 40) : '');
+const cleanLimit = (v) => Math.max(0, Math.min(99, parseInt(v, 10) || 0));
+
+// @route   GET api/rooms/:id/voice
+// @desc    Voice channels and who is in them
+router.get('/:id/voice', auth, async (req, res) => {
     try {
-        const room = await Room.findById(req.params.id).populate('activeCalls.startedBy', 'username').populate('activeCalls.participants.userId', 'username');
+        const room = await Room.findById(req.params.id).select('owner members');
         if (!room) return res.status(404).json({ msg: 'Room not found' });
-
-        const activeCalls = room.activeCalls || [];
-        const calls = activeCalls.map(call => ({
-            callId: call._id,
-            callName: call.callName || 'Call',
-            startedBy: call.startedBy ? { _id: call.startedBy._id, username: call.startedBy.username } : null,
-            startedAt: call.startedAt,
-            maxSlots: call.maxSlots,
-            participantCount: (call.participants || []).length,
-            participants: (call.participants || []).map(p => ({
-                userId: p.userId._id,
-                username: p.userId.username,
-                joinedAt: p.joinedAt
-            }))
-        }));
-
-        res.json({
-            activeCalls: calls,
-            maxConcurrentCalls: room.maxConcurrentCalls || 3,
-            canStartNewCall: calls.length < (room.maxConcurrentCalls || 3)
-        });
+        if (!isRoomMember(room, req.user.id)) return res.status(403).json({ msg: 'Not a member of this room' });
+        res.json(await voice.roomState(req.params.id));
     } catch (err) {
-        console.error('Error fetching calls:', err);
-        res.status(500).json({ msg: err.message || 'Failed to fetch calls' });
+        console.error(err.message);
+        res.status(500).json({ msg: 'Server Error' });
     }
 });
 
-// @route   POST api/rooms/:id/video-calls/start
-router.post('/:id/video-calls/start', auth, async (req, res) => {
-    try {
-        const room = await Room.findById(req.params.id).populate('members', 'username');
-        if (!room) return res.status(404).json({ msg: 'Room not found' });
-
-        const isMember = room.members.some(m => m._id.toString() === req.user.id) || room.owner.toString() === req.user.id;
-        if (!isMember) return res.status(403).json({ msg: 'Access Denied' });
-
-        // Initialize activeCalls if it doesn't exist
-        if (!room.activeCalls) {
-            room.activeCalls = [];
-        }
-
-        // Check if user is already in a call
-        const userInCall = room.activeCalls.some(call =>
-            call.participants.some(p => p.userId.toString() === req.user.id)
-        );
-        if (userInCall) {
-            return res.status(400).json({ msg: 'You must leave your current call before starting a new one' });
-        }
-
-        // Check if max concurrent calls reached
-        if (room.activeCalls.length >= (room.maxConcurrentCalls || 3)) {
-            return res.status(400).json({ msg: `Maximum ${room.maxConcurrentCalls || 3} concurrent calls already active` });
-        }
-
-        // Create new call with optional name and max slots
-        const { callName, maxSlots } = req.body;
-        const newCall = {
-            callName: callName || 'Call',
-            startedBy: req.user.id,
-            startedAt: new Date(),
-            maxSlots: maxSlots || 10,
-            participants: [{ userId: req.user.id }]
-        };
-
-        room.activeCalls.push(newCall);
-        await room.save();
-
-        // Re-fetch room with populated fields
-        const populatedRoom = await Room.findById(req.params.id)
-            .populate('activeCalls.startedBy', 'username')
-            .populate('activeCalls.participants.userId', 'username');
-
-        const call = populatedRoom.activeCalls[populatedRoom.activeCalls.length - 1];
-
-        res.json({
-            msg: 'Video call started',
-            callId: call._id,
-            callName: call.callName || 'Call',
-            maxSlots: call.maxSlots,
-            startedBy: { _id: call.startedBy._id, username: call.startedBy.username },
-            participants: call.participants.map(p => ({
-                userId: p.userId._id,
-                username: p.userId.username,
-                joinedAt: p.joinedAt
-            }))
-        });
-    } catch (err) {
-        console.error('Error starting video call:', err);
-        res.status(500).json({ msg: err.message || 'Failed to start call' });
-    }
-});
-
-// @route   POST api/rooms/:id/video-calls/:callId/join
-router.post('/:id/video-calls/:callId/join', auth, async (req, res) => {
-    try {
-        const room = await Room.findById(req.params.id).populate('members', 'username');
-        if (!room) return res.status(404).json({ msg: 'Room not found' });
-
-        const isMember = room.members.some(m => m._id.toString() === req.user.id) || room.owner.toString() === req.user.id;
-        if (!isMember) return res.status(403).json({ msg: 'Access Denied' });
-
-        const call = room.activeCalls.id(req.params.callId);
-        if (!call) return res.status(404).json({ msg: 'Call not found' });
-
-        if (call.participants.length >= call.maxSlots) {
-            return res.status(400).json({ msg: 'Call is full' });
-        }
-
-        // Check if user already in this call
-        const alreadyInCall = call.participants.some(p => p.userId.toString() === req.user.id);
-        if (alreadyInCall) {
-            return res.json({ msg: 'Already in call' });
-        }
-
-        // Check if user is already in a different call (excluding the current one)
-        const userInOtherCall = room.activeCalls.some(activeCall =>
-            activeCall._id.toString() !== req.params.callId &&
-            activeCall.participants.some(p => p.userId.toString() === req.user.id)
-        );
-
-        if (userInOtherCall) {
-            // Try to clean up the stale entry first
-            for (const otherCall of room.activeCalls) {
-                if (otherCall._id.toString() !== req.params.callId) {
-                    otherCall.participants = otherCall.participants.filter(p => p.userId.toString() !== req.user.id);
-                }
-            }
-            await room.save();
-
-            // Continue with join - don't reject
-        }
-
-        call.participants.push({ userId: req.user.id });
-        await room.save();
-
-        // Re-fetch room with populated fields
-        const populatedRoom = await Room.findById(req.params.id)
-            .populate('activeCalls.participants.userId', 'username');
-        const updatedCall = populatedRoom.activeCalls.id(req.params.callId);
-
-        res.json({
-            msg: 'Joined video call',
-            callId: call._id,
-            participants: updatedCall.participants.map(p => ({
-                userId: p.userId._id,
-                username: p.userId.username,
-                joinedAt: p.joinedAt
-            }))
-        });
-    } catch (err) {
-        console.error('Error joining call:', err);
-        res.status(500).json({ msg: err.message || 'Failed to join call' });
-    }
-});
-
-// @route   POST api/rooms/:id/video-calls/:callId/leave
-router.post('/:id/video-calls/:callId/leave', auth, async (req, res) => {
+// @route   POST api/rooms/:id/voice-channels
+// @desc    Create a voice channel (any member)
+router.post('/:id/voice-channels', auth, async (req, res) => {
     try {
         const room = await Room.findById(req.params.id);
         if (!room) return res.status(404).json({ msg: 'Room not found' });
-
-        const call = room.activeCalls.id(req.params.callId);
-        if (!call) return res.status(404).json({ msg: 'Call not found' });
-
-        // Remove user from participants - ensure they're really removed
-        const initialLength = call.participants.length;
-        call.participants = call.participants.filter(p => p.userId.toString() !== req.user.id);
-
-        // Log if user wasn't in the call to begin with
-        if (call.participants.length === initialLength) {
-            console.warn(`User ${req.user.id} was not in call ${req.params.callId}`);
-        }
-
-        // Call persists even if empty — only manual delete removes it
-        await room.save();
-
-        // Re-fetch room with populated fields to ensure fresh data
-        const populatedRoom = await Room.findById(req.params.id)
-            .populate('activeCalls.participants.userId', 'username');
-
-        res.json({
-            msg: 'Left video call',
-            activeCalls: populatedRoom.activeCalls.map(c => ({
-                callId: c._id,
-                callName: c.callName || 'Call',
-                maxSlots: c.maxSlots,
-                participantCount: c.participants.length,
-                participants: c.participants.map(p => ({
-                    userId: p.userId._id,
-                    username: p.userId.username
-                }))
-            }))
-        });
+        if (!isRoomMember(room, req.user.id)) return res.status(403).json({ msg: 'Not a member of this room' });
+        const name = cleanChannelName(req.body.name);
+        if (!name) return res.status(400).json({ msg: 'Give the channel a name' });
+        await voice.loadChannels(req.params.id); // creates the defaults first for older rooms
+        const fresh = await Room.findById(req.params.id);
+        if (fresh.voiceChannels.length >= voice.MAX_CHANNELS) return res.status(400).json({ msg: `A room can have up to ${voice.MAX_CHANNELS} voice channels` });
+        fresh.voiceChannels.push({ _id: voice.newChannelId(), name, userLimit: cleanLimit(req.body.userLimit), createdBy: req.user.id });
+        await fresh.save();
+        voice.invalidateRoom(req.params.id);
+        await voice.broadcastRoom(req.params.id);
+        res.status(201).json(await voice.roomState(req.params.id));
     } catch (err) {
-        console.error('Error leaving call:', err);
-        res.status(500).json({ msg: err.message || 'Failed to leave call' });
+        console.error(err.message);
+        res.status(500).json({ msg: 'Server Error' });
     }
 });
 
-// @route   DELETE api/rooms/:id/video-calls/:callId
-router.delete('/:id/video-calls/:callId', auth, async (req, res) => {
+const canManageChannel = (room, channel, userId) => idEquals(room.owner, userId) || (channel.createdBy && idEquals(channel.createdBy, userId));
+
+// @route   PATCH api/rooms/:id/voice-channels/:channelId
+// @desc    Rename a channel / change its user limit (room owner or channel creator)
+router.patch('/:id/voice-channels/:channelId', auth, async (req, res) => {
     try {
         const room = await Room.findById(req.params.id);
-        if (!room) return res.status(404).json({ msg: 'Room not found' });
-
-        const call = room.activeCalls.id(req.params.callId);
-        if (!call) return res.status(404).json({ msg: 'Call not found' });
-
-        // Only creator or room owner can delete
-        const isOwner = room.owner.toString() === req.user.id;
-        const isCreator = call.startedBy?.toString() === req.user.id;
-        if (!isOwner && !isCreator) {
-            return res.status(403).json({ msg: 'Only the call creator or room owner can delete a call' });
+        const channel = room?.voiceChannels.id(req.params.channelId);
+        if (!channel) return res.status(404).json({ msg: 'Channel not found' });
+        if (!canManageChannel(room, channel, req.user.id)) return res.status(403).json({ msg: 'Only the room owner or the channel creator can change it' });
+        if (req.body.name !== undefined) {
+            const name = cleanChannelName(req.body.name);
+            if (!name) return res.status(400).json({ msg: 'Give the channel a name' });
+            channel.name = name;
         }
-
-        room.activeCalls.pull(req.params.callId);
+        if (req.body.userLimit !== undefined) channel.userLimit = cleanLimit(req.body.userLimit);
         await room.save();
-
-        res.json({ msg: 'Call deleted', callId: req.params.callId });
+        voice.invalidateRoom(req.params.id);
+        await voice.broadcastRoom(req.params.id);
+        res.json(await voice.roomState(req.params.id));
     } catch (err) {
-        console.error('Error deleting call:', err);
-        res.status(500).json({ msg: err.message || 'Failed to delete call' });
+        console.error(err.message);
+        res.status(500).json({ msg: 'Server Error' });
+    }
+});
+
+// @route   DELETE api/rooms/:id/voice-channels/:channelId
+// @desc    Delete a channel (room owner or channel creator); everyone in it is disconnected
+router.delete('/:id/voice-channels/:channelId', auth, async (req, res) => {
+    try {
+        const room = await Room.findById(req.params.id);
+        const channel = room?.voiceChannels.id(req.params.channelId);
+        if (!channel) return res.status(404).json({ msg: 'Channel not found' });
+        if (!canManageChannel(room, channel, req.user.id)) return res.status(403).json({ msg: 'Only the room owner or the channel creator can delete it' });
+        if (room.voiceChannels.length <= 1) return res.status(400).json({ msg: 'A room needs at least one voice channel' });
+        room.voiceChannels.pull(req.params.channelId);
+        await room.save();
+        voice.closeChannel(req.params.channelId);
+        voice.invalidateRoom(req.params.id);
+        await voice.broadcastRoom(req.params.id);
+        res.json(await voice.roomState(req.params.id));
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ msg: 'Server Error' });
     }
 });
 
 // @route   GET api/rooms/:id/messages
 router.get('/:id/messages', auth, async (req, res) => {
     try {
+        const room = await Room.findById(req.params.id).select('owner members');
+        if (!room) return res.status(404).json({ msg: 'Room not found' });
+        if (!isRoomMember(room, req.user.id)) return res.status(403).json({ msg: 'Access Denied' });
+
+        // Newest N messages, returned oldest-first for display
         const messages = await Message.find({ room: req.params.id })
             .populate('sender', 'username')
-            .sort({ timestamp: 1 });
-        res.json(messages);
+            .sort({ createdAt: -1 })
+            .limit(MESSAGE_HISTORY_LIMIT);
+        res.json(messages.reverse());
     } catch (err) {
-        console.error("Chat Load Error:", err.message);
+        console.error('Chat Load Error:', err.message);
         res.status(500).send('Server Error');
     }
 });
@@ -352,47 +287,72 @@ router.get('/:id', auth, async (req, res) => {
             .populate('members', 'username');
 
         if (!room) return res.status(404).json({ msg: 'Room not found' });
-
-        const isOwner = room.owner._id.toString() === req.user.id;
-        const isMember = room.members.some(m => m._id.toString() === req.user.id);
-
-        if (!isOwner && !isMember) {
-            return res.status(403).json({ msg: 'Access Denied' });
-        }
+        if (!isRoomMember(room, req.user.id)) return res.status(403).json({ msg: 'Access Denied' });
 
         res.json(room);
     } catch (err) {
-        if (err.kind === 'ObjectId') return res.status(404).json({ msg: 'Room not found' });
         res.status(500).send('Server Error');
     }
 });
 
+// Whitelisted, type-checked room settings shared by create and update.
+const pickRoomFields = (body) => {
+    const fields = {};
+    if (typeof body.name === 'string') fields.name = body.name.trim().slice(0, 80);
+    if (typeof body.description === 'string') fields.description = body.description.slice(0, 1000);
+    if (typeof body.isPrivate === 'boolean') fields.isPrivate = body.isPrivate;
+    if (typeof body.language === 'string') fields.language = body.language.slice(0, 40);
+    if (Array.isArray(body.requiredSkills)) {
+        fields.requiredSkills = body.requiredSkills
+            .filter(s => s && typeof s.name === 'string' && s.name.trim())
+            .slice(0, 20)
+            .map(s => ({ name: s.name.trim().slice(0, 50), weight: Math.min(Math.max(Number(s.weight) || 1, 0), 5) }));
+    }
+    if (body.minRating !== undefined && Number.isFinite(Number(body.minRating))) fields.minRating = Math.max(0, Number(body.minRating));
+    if (body.capacity !== undefined && Number.isFinite(Number(body.capacity))) fields.capacity = Math.min(Math.max(Math.round(Number(body.capacity)), 2), 100);
+    if (typeof body.projectDescription === 'string') fields.projectDescription = body.projectDescription.slice(0, 2000);
+    if (typeof body.isDiscoverable === 'boolean') fields.isDiscoverable = body.isDiscoverable;
+    if (Array.isArray(body.tags)) fields.tags = body.tags.filter(t => typeof t === 'string').map(t => t.trim().slice(0, 30)).filter(Boolean).slice(0, 10);
+    return fields;
+};
+
 // @route   POST api/rooms
 router.post('/', auth, async (req, res) => {
     try {
-        const {
-            name, description, isPrivate, language,
-            requiredSkills, minRating, capacity,
-            projectDescription, isDiscoverable, tags
-        } = req.body;
+        const fields = pickRoomFields(req.body);
+        if (!fields.name) return res.status(400).json({ msg: 'Room name is required' });
 
-        const newRoom = new Room({
-            name,
-            description,
-            owner: req.user.id,
-            members: [],
-            ...(isPrivate !== undefined && { isPrivate }),
-            ...(language && { language }),
-            ...(requiredSkills && { requiredSkills }),
-            ...(minRating !== undefined && { minRating }),
-            ...(capacity !== undefined && { capacity }),
-            ...(projectDescription && { projectDescription }),
-            ...(isDiscoverable !== undefined && { isDiscoverable }),
-            ...(tags && { tags })
-        });
-        const room = await newRoom.save();
+        const room = await new Room({ ...fields, owner: req.user.id, members: [] }).save();
         res.json(room);
     } catch (err) {
+        console.error('Create room error:', err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// @route   PUT api/rooms/:id
+// Owner-only room settings update (used by the Edit Room modal).
+router.put('/:id', auth, async (req, res) => {
+    try {
+        const room = await Room.findById(req.params.id);
+        if (!room) return res.status(404).json({ msg: 'Room not found' });
+        if (!idEquals(room.owner, req.user.id)) return res.status(403).json({ msg: 'Only the room owner can edit this room' });
+
+        const fields = pickRoomFields(req.body);
+        if (fields.name === '') return res.status(400).json({ msg: 'Room name cannot be empty' });
+        Object.assign(room, fields);
+        await room.save();
+
+        const populated = await Room.findById(room._id)
+            .populate('owner', 'username')
+            .populate('members', 'username');
+
+        const io = req.app.get('socketio');
+        if (io) io.to(req.params.id).emit('room-update');
+
+        res.json(populated);
+    } catch (err) {
+        console.error('Update room error:', err.message);
         res.status(500).send('Server Error');
     }
 });
@@ -400,25 +360,30 @@ router.post('/', auth, async (req, res) => {
 // @route   POST api/rooms/:id/accept-invite
 router.post('/:id/accept-invite', auth, async (req, res) => {
     try {
-        const { notificationId } = req.body;
         const room = await Room.findById(req.params.id);
         if (!room) return res.status(404).json({ msg: 'Room not found' });
 
-        if (room.members.includes(req.user.id) || room.owner.toString() === req.user.id) {
+        if (isRoomMember(room, req.user.id)) {
             return res.json({ msg: 'Already a member', roomId: room._id });
         }
 
-        room.members.push(req.user.id);
-        await room.save();
-        
-        // Delete the notification so it doesn't persist
-        if (notificationId) {
-            const Notification = require('../models/Notification');
-            await Notification.findByIdAndDelete(notificationId);
-        }
+        // Joining requires an invite that was actually sent to this user for this room
+        const invite = await Notification.findOne({ user: req.user.id, type: 'invite', relatedId: room._id });
+        if (!invite) return res.status(403).json({ msg: 'No pending invitation for this room' });
+
+        if (isFull(room)) return res.status(400).json({ msg: 'This room is full' });
+
+        await Room.updateOne({ _id: room._id }, { $addToSet: { members: req.user.id } });
+
+        // Clear every pending invite for this room so it doesn't persist
+        await Notification.deleteMany({ user: req.user.id, type: 'invite', relatedId: room._id });
+
+        const io = req.app.get('socketio');
+        if (io) io.to(req.params.id).emit('room-update');
 
         res.json({ msg: 'Joined successfully', roomId: room._id });
     } catch (err) {
+        console.error('Accept invite error:', err.message);
         res.status(500).send('Server Error');
     }
 });
@@ -430,12 +395,10 @@ router.post('/:id/request-join', auth, async (req, res) => {
         if (!room) return res.status(404).json({ msg: 'Room not found' });
         if (!room.owner) return res.status(400).json({ msg: 'Room has no owner' });
 
-        if (room.members.includes(req.user.id) || room.owner.toString() === req.user.id) {
+        if (isRoomMember(room, req.user.id)) {
             return res.status(400).json({ msg: 'Already a member' });
         }
-
-        // Check availability of Notification model (Lazy load if needed or ensure import)
-        const Notification = require('../models/Notification');
+        if (isFull(room)) return res.status(400).json({ msg: 'This room is full' });
 
         // Check if request already pending
         const existingReq = await Notification.findOne({
@@ -449,31 +412,18 @@ router.post('/:id/request-join', auth, async (req, res) => {
             return res.status(400).json({ msg: 'Request already sent' });
         }
 
-        // Log for debugging
-        console.log('DEBUG: room.owner =', room.owner);
-        console.log('DEBUG: req.user.id =', req.user.id);
-        console.log('DEBUG: req.user.username =', req.user.username);
+        // The JWT only carries the user id, so look the name up for the message
+        const requester = await User.findById(req.user.id).select('username');
 
-        // Create Notification for Owner
-        const newNotif = new Notification({
+        const newNotif = await new Notification({
             user: room.owner,
             sender: req.user.id,
             type: 'join_request',
-            message: `${req.user.username || 'A user'} wants to join ${room.name}`,
+            message: `${requester?.username || 'A user'} wants to join ${room.name}`,
             relatedId: room._id
-        });
-        console.log('DEBUG: newNotif before save =', newNotif);
-        await newNotif.save();
+        }).save();
 
-        // **SOCKET EMIT TO OWNER VIA IO**
-        const io = req.app.get('socketio');
-        const userSocketMap = req.app.get('userSocketMap');
-        if (io && userSocketMap) {
-            const recipientSocketId = userSocketMap[room.owner.toString()];
-            if (recipientSocketId) {
-                io.to(recipientSocketId).emit('new-notification', newNotif);
-            }
-        }
+        emitToUser(req, room.owner, 'new-notification', newNotif);
 
         res.json({ msg: 'Join request sent to owner' });
     } catch (err) {
@@ -485,40 +435,44 @@ router.post('/:id/request-join', auth, async (req, res) => {
 // @route   POST api/rooms/:id/approve-join
 router.post('/:id/approve-join', auth, async (req, res) => {
     try {
-        const { userId, notificationId } = req.body; // User to approve
-        let room = await Room.findById(req.params.id).populate('members', 'username');
+        const { userId } = req.body; // User to approve
+        if (!isValidId(String(userId || ''))) return res.status(400).json({ msg: 'Valid user ID required' });
 
+        const room = await Room.findById(req.params.id);
         if (!room) return res.status(404).json({ msg: 'Room not found' });
-        if (room.owner.toString() !== req.user.id) return res.status(401).json({ msg: 'Not Authorized' });
+        if (!idEquals(room.owner, req.user.id)) return res.status(403).json({ msg: 'Not Authorized' });
 
-        if (!room.members.find(m => m._id.toString() === userId)) {
-            room.members.push(userId);
-            await room.save();
-            // Reload to get populated members
-            room = await Room.findById(req.params.id).populate('members', 'username');
+        // Only users who actually asked to join can be approved
+        const request = await Notification.findOne({
+            user: req.user.id, type: 'join_request', relatedId: room._id, sender: userId
+        });
+        if (!request && !isRoomMember(room, userId)) {
+            return res.status(400).json({ msg: 'This user has no pending join request' });
         }
 
-        // Delete the notification
-        const Notification = require('../models/Notification');
-        if (notificationId) {
-            await Notification.findByIdAndDelete(notificationId);
+        if (!isRoomMember(room, userId)) {
+            if (isFull(room)) return res.status(400).json({ msg: 'This room is full' });
+            await Room.updateOne({ _id: room._id }, { $addToSet: { members: userId } });
         }
+
+        await Notification.deleteMany({ user: req.user.id, type: 'join_request', relatedId: room._id, sender: userId });
 
         // Notify the user they were accepted
-        const newNotif = new Notification({
+        const newNotif = await new Notification({
             user: userId,
             sender: req.user.id,
             type: 'info',
             message: `Your request to join ${room.name} was approved!`,
             relatedId: room._id
-        });
-        await newNotif.save();
+        }).save();
+        emitToUser(req, userId, 'new-notification', newNotif);
 
-        // Emit socket event to notify all users in room about updated members
+        // Tell everyone in the room about the updated member list
+        const updated = await Room.findById(req.params.id).populate('members', 'username');
         const io = req.app.get('socketio');
         if (io) {
             io.to(req.params.id).emit('room-members-updated', {
-                members: room.members.map(m => ({ _id: m._id, username: m.username }))
+                members: updated.members.filter(Boolean).map(m => ({ _id: m._id, username: m.username }))
             });
         }
 
@@ -533,63 +487,47 @@ router.post('/:id/approve-join', auth, async (req, res) => {
 // @route   POST api/rooms/:id/send-invite
 router.post('/:id/send-invite', auth, async (req, res) => {
     try {
-        const { userId } = req.body;
-        const room = await Room.findById(req.params.id);
-        const sender = await User.findById(req.user.id);
-
-        if (!room) return res.status(404).json({ msg: 'Room not found' });
-        if (!sender) return res.status(404).json({ msg: 'Sender not found' });
-        if (!userId) return res.status(400).json({ msg: 'User ID required' });
-
-        // Check authorization - must be room owner
-        if (room.owner.toString() !== req.user.id.toString()) {
-            return res.status(401).json({ msg: 'Only room owner can send invites' });
-        }
-
-        const { message } = req.body;
-        let notifMsg = `${sender.username} invited you to join room: ${room.name}`;
-        if (message) notifMsg += `\nReason: ${message}`;
-
-        // Create invitation notification
-        const Notification = require('../models/Notification');
-        const newNotif = new Notification({
-            user: userId,
-            sender: req.user.id,
-            type: 'invite',
-            message: notifMsg,
-            relatedId: room._id
-        });
-        await newNotif.save();
-
-        // Emit socket event to notify user
-        const io = req.app.get('socketio');
-        const userSocketMap = req.app.get('userSocketMap');
-        if (io && userSocketMap) {
-            const recipientSocketId = userSocketMap[userId.toString()];
-            if (recipientSocketId) {
-                io.to(recipientSocketId).emit('new-notification', newNotif);
-            }
-        }
-
-        res.json({ msg: 'Invitation sent' });
-
+        return await sendRoomInvite(req, res, req.params.id, req.body.userId, req.body.message);
     } catch (err) {
         console.error('Send invite error:', err);
-        res.status(500).json({ msg: 'Server Error', error: err.message });
+        res.status(500).json({ msg: 'Server Error' });
     }
 });
 
 // @route   DELETE api/rooms/:id
+// Deletes the room and everything that belongs to it (projects, files, chat, notifications).
 router.delete('/:id', auth, async (req, res) => {
     try {
         const room = await Room.findById(req.params.id);
         if (!room) return res.status(404).json({ msg: 'Room not found' });
-        if (room.owner.toString() !== req.user.id) return res.status(401).json({ msg: 'User not authorized' });
+        if (!idEquals(room.owner, req.user.id)) return res.status(403).json({ msg: 'User not authorized' });
+
+        const projects = await Project.find({ room: room._id }).select('_id');
+        const projectIds = projects.map(p => p._id);
+
+        for (const projectId of projectIds) {
+            await stopAllForProject(projectId);
+            await destroyDeployment(projectId);
+            fs.rm(getProjectDir(projectId), { recursive: true, force: true }, () => {});
+        }
+
+        await Promise.all([
+            File.deleteMany({ project: { $in: projectIds } }),
+            Project.deleteMany({ room: room._id }),
+            Message.deleteMany({ room: room._id }),
+            Notification.deleteMany({ relatedId: room._id })
+        ]);
         await room.deleteOne();
+
+        const io = req.app.get('socketio');
+        if (io) io.to(req.params.id).emit('room-deleted', { roomId: req.params.id });
+
         res.json({ msg: 'Room removed' });
     } catch (err) {
+        console.error('Delete room error:', err.message);
         res.status(500).send('Server Error');
     }
 });
 
 module.exports = router;
+module.exports.sendRoomInvite = sendRoomInvite;

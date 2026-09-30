@@ -3,7 +3,8 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import AuthContext from '../context/AuthContext';
 import { socket } from '../socket';
-import VideoGrid from '../components/rooms/VideoGrid';
+import VoiceChannelList from '../components/voice/VoiceChannelList';
+import VoiceStage from '../components/voice/VoiceStage';
 import CreateProjectModal from '../components/projects/CreateProjectModal';
 import ManageMembersModal from '../components/projects/ManageMembersModal';
 import { VscFolder, VscFileCode, VscChevronDown, VscChevronRight, VscNewFile, VscNewFolder, VscRefresh, VscEllipsis, VscAccount, VscSignOut, VscTrash, VscOrganization, VscAdd, VscCallOutgoing } from "react-icons/vsc";
@@ -28,25 +29,12 @@ const RoomPage = () => {
     const [tasks, setTasks] = useState([]);
     const [taskInput, setTaskInput] = useState('');
 
-    // Video Call State
-    const [activeCalls, setActiveCalls] = useState([]);
-    const [currentCallId, setCurrentCallId] = useState(null);
-    const [isUserInCall, setIsUserInCall] = useState(false);
-    const [canStartNewCall, setCanStartNewCall] = useState(true);
-    const [videoCallError, setVideoCallError] = useState(null);
-
-    // Create Call Modal State
-    const [showCreateCallModal, setShowCreateCallModal] = useState(false);
-    const [createCallName, setCreateCallName] = useState('');
-    const [createCallMaxParticipants, setCreateCallMaxParticipants] = useState(10);
-    const [expandedCalls, setExpandedCalls] = useState({});
-
-    // Track users who have already sent join message to prevent duplicates
-    const [usersJoinedNotified, setUsersJoinedNotified] = useState(new Set());
+    // Track users who have already sent join message to prevent duplicates.
+    // A ref, not state: the socket handlers are created once per room, so state would be stale.
+    const usersJoinedNotifiedRef = useRef(new Set());
 
     // Refs
     const chatEndRef = useRef(null);
-    const videoGridRef = useRef(null);
 
     // --- 1. Load Data ---
     useEffect(() => {
@@ -61,7 +49,7 @@ const RoomPage = () => {
                 const ownerInMembers = allMembers.some(m => (m._id || m) === (ownerData._id || ownerData));
                 const fullMembers = ownerInMembers ? allMembers : [ownerData, ...allMembers];
                 setRoomMembers(fullMembers);
-                setActiveUsers(roomRes.data.members || []);
+                // (Online users come from the socket 'roomUsers' event, not the member list)
 
                 const msgRes = await axios.get(`/api/rooms/${id}/messages`);
                 setMessages(msgRes.data);
@@ -70,62 +58,51 @@ const RoomPage = () => {
                 const projRes = await axios.get(`/api/projects/room/${id}`);
                 setProjects(projRes.data);
 
-                // Fetch active video calls
-                try {
-                    const callsRes = await axios.get(`/api/rooms/${id}/video-calls`);
-                    setActiveCalls(callsRes.data.activeCalls || []);
-                    setCanStartNewCall(callsRes.data.canStartNewCall || false);
-
-                    // Check if current user is in any of the active calls
-                    const calls = callsRes.data.activeCalls || [];
-                    const userInCall = calls.some(call =>
-                        call.participants.some(p => p.userId === user._id)
-                    );
-                    setIsUserInCall(userInCall);
-
-                    // If user is in a call, set current call ID
-                    if (userInCall) {
-                        const userCall = calls.find(call =>
-                            call.participants.some(p => p.userId === user._id)
-                        );
-                        if (userCall) {
-                            setCurrentCallId(userCall.callId);
-                        }
-                    }
-                } catch (err) {
-                    console.error('Failed to fetch video calls:', err);
-                }
-
             } catch (err) {
                 console.error(err);
-                alert("Failed to load room. Check console needed.");
-                // navigate('/dashboard'); // DEBUG: Disable auto-redirect
+                const status = err.response?.status;
+                if (status === 403 || status === 404) {
+                    alert(status === 403 ? 'You are not a member of this room.' : 'This room no longer exists.');
+                    navigate('/dashboard');
+                } else {
+                    alert('Failed to load room. Please try again.');
+                }
             }
         };
         fetchRoomData();
-    }, [id /*, navigate */]); // Remove navigate dependency for now
+    }, [id, navigate]);
 
     // --- 2. Socket Logic ---
     useEffect(() => {
         if (!user || !id) return;
 
-        // Join the socket room WITH user info
-        socket.emit('joinRoom', { roomId: id, user });
+        // Join the socket room (the server identifies us from the auth token).
+        // Re-join after every reconnect, otherwise chat/presence silently stop after a network blip.
+        const joinSocketRoom = () => socket.emit('joinRoom', { roomId: id });
+        joinSocketRoom();
+        socket.on('connect', joinSocketRoom);
 
         // Listeners
         const handleReceiveMessage = (msg) => {
             // Filter out duplicate join messages
             const isJoinMessage = msg.sender?.username === 'System' && msg.text?.includes('has joined the room');
             if (isJoinMessage) {
-                // Extract username from message
                 const username = msg.text.replace(' has joined the room.', '');
-                if (usersJoinedNotified.has(username)) {
+                if (usersJoinedNotifiedRef.current.has(username)) {
                     return; // Skip duplicate join message
                 }
-                // Mark this user as notified
-                setUsersJoinedNotified(prev => new Set([...prev, username]));
+                usersJoinedNotifiedRef.current.add(username);
             }
             setMessages((prev) => [...prev, msg]);
+        };
+
+        const handleRoomDeleted = () => {
+            alert('This room was deleted by its owner.');
+            navigate('/dashboard');
+        };
+
+        const handleRoomError = (data) => {
+            if (data?.roomId === id) console.warn('[room]', data.msg);
         };
 
         const handleRoomUsers = (users) => {
@@ -152,211 +129,41 @@ const RoomPage = () => {
             fetchProjects();
         };
 
-        const handleVideoCallStarted = (data) => {
-            setIsVideoCallActive(true);
-            setVideoCallParticipants(data.participants || []);
-            setVideoCallMaxSlots(data.maxSlots || 10);
-            setVideoCallError(null);
-        };
-
-        const handleVideoCallEnded = () => {
-            setIsVideoCallActive(false);
-            setVideoCallParticipants([]);
-            setIsUserInCall(false);
-        };
-
-        const handleVideoParticipantJoined = (data) => {
-            setVideoCallParticipants(prev => {
-                const exists = prev.some(p => p.userId === data.userId);
-                return exists ? prev : [...prev, data];
-            });
-        };
-
-        const handleVideoParticipantLeft = (data) => {
-            setVideoCallParticipants(prev => prev.filter(p => p.userId !== data.userId));
-        };
-
-        const handleMultipleCallsUpdate = (data) => {
-            setActiveCalls(data.activeCalls || []);
-            setCanStartNewCall(data.canStartNewCall || false);
-
-            // Check if current user is in any of the updated calls
-            const calls = data.activeCalls || [];
-            const userInCall = calls.some(call =>
-                call.participants.some(p => p.userId === user._id)
-            );
-            setIsUserInCall(userInCall);
-        };
-
         const handleRoomMembersUpdated = (data) => {
-            // Update active users when members list is updated
-            setActiveUsers(data.members || []);
+            // The member roster changed (not who is online) — rebuild the full list with the owner first
+            const members = data.members || [];
+            setRoom(prev => {
+                if (!prev) return prev;
+                const owner = prev.owner;
+                const ownerId = owner?._id || owner;
+                setRoomMembers(members.some(m => m._id === ownerId) ? members : [owner, ...members]);
+                return { ...prev, members };
+            });
         };
 
         socket.on('message', handleReceiveMessage);
         socket.on('roomUsers', handleRoomUsers);
         socket.on('room-update', handleRoomUpdate); // Listen for generic room updates (like new projects)
         socket.on('room-members-updated', handleRoomMembersUpdated);
-        socket.on('videoCallStarted', handleVideoCallStarted);
-        socket.on('videoCallEnded', handleVideoCallEnded);
-        socket.on('videoParticipantJoined', handleVideoParticipantJoined);
-        socket.on('videoParticipantLeft', handleVideoParticipantLeft);
-        socket.on('multipleCallsUpdate', handleMultipleCallsUpdate);
+        socket.on('room-deleted', handleRoomDeleted);
+        socket.on('room-error', handleRoomError);
 
         return () => {
-            socket.emit('leaveRoom', { roomId: id, userId: user._id });
+            socket.emit('leaveRoom', { roomId: id });
+            socket.off('connect', joinSocketRoom);
+            socket.off('room-deleted', handleRoomDeleted);
+            socket.off('room-error', handleRoomError);
             socket.off('message', handleReceiveMessage);
             socket.off('roomUsers', handleRoomUsers);
             socket.off('room-update', handleRoomUpdate);
             socket.off('room-members-updated', handleRoomMembersUpdated);
-            socket.off('videoCallStarted', handleVideoCallStarted);
-            socket.off('videoCallEnded', handleVideoCallEnded);
-            socket.off('videoParticipantJoined', handleVideoParticipantJoined);
-            socket.off('videoParticipantLeft', handleVideoParticipantLeft);
-            socket.off('multipleCallsUpdate', handleMultipleCallsUpdate);
         };
-    }, [id, user]);
+    }, [id, user, navigate]);
 
     // --- 3. Auto-scroll Chat ---
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
-
-    // --- Video Call Handlers ---
-    const handleStartCall = async (callName, maxSlots) => {
-        // Auto-leave current call if in one
-        if (isUserInCall && currentCallId) {
-            await handleLeaveCall();
-        }
-
-        try {
-            const response = await axios.post(`/api/rooms/${id}/video-calls/start`, {
-                userId: user._id,
-                callName: callName || 'Call',
-                maxSlots: maxSlots || 10
-            });
-            const newCall = response.data;
-            setActiveCalls(prev => [...prev, {
-                callId: newCall.callId,
-                callName: newCall.callName || callName || 'Call',
-                maxSlots: newCall.maxSlots || maxSlots || 10,
-                startedBy: newCall.startedBy,
-                participants: newCall.participants,
-                participantCount: newCall.participants.length
-            }]);
-            setCurrentCallId(newCall.callId);
-            setIsUserInCall(true);
-            setVideoCallError(null);
-            setCanStartNewCall(activeCalls.length + 1 < 3);
-            setExpandedCalls(prev => ({ ...prev, [newCall.callId]: true }));
-            socket.emit('videoCallStarted', { roomId: id, callId: newCall.callId });
-        } catch (err) {
-            console.error('Failed to start call:', err);
-            setVideoCallError(err.response?.data?.msg || 'Failed to start video call');
-        }
-    };
-
-    const handleCreateCallSubmit = async (e) => {
-        e.preventDefault();
-        const name = createCallName.trim() || 'Call';
-        const max = Math.max(2, Math.min(50, parseInt(createCallMaxParticipants) || 10));
-        await handleStartCall(name, max);
-        setShowCreateCallModal(false);
-        setCreateCallName('');
-        setCreateCallMaxParticipants(10);
-    };
-
-    const toggleCallExpanded = (callId) => {
-        setExpandedCalls(prev => ({ ...prev, [callId]: !prev[callId] }));
-    };
-
-    const handleDeleteCall = async (callId) => {
-        try {
-            await axios.delete(`/api/rooms/${id}/video-calls/${callId}`);
-            setActiveCalls(prev => prev.filter(c => c.callId !== callId));
-            if (currentCallId === callId) {
-                setCurrentCallId(null);
-                setIsUserInCall(false);
-                if (videoGridRef.current?.disconnect) {
-                    await videoGridRef.current.disconnect();
-                }
-            }
-            setCanStartNewCall(true);
-        } catch (err) {
-            console.error('Failed to delete call:', err);
-            setVideoCallError(err.response?.data?.msg || 'Failed to delete call');
-        }
-    };
-
-    const handleJoinCall = async (callId) => {
-        // Auto-leave current call if in a different one
-        if (isUserInCall && currentCallId !== callId) {
-            await handleLeaveCall();
-        }
-
-        try {
-            const response = await axios.post(`/api/rooms/${id}/video-calls/${callId}/join`, { userId: user._id });
-
-            // Check if the response indicates we weren't able to join
-            if (response.status === 200 && response.data.msg) {
-                setActiveCalls(prev => prev.map(call =>
-                    call.callId === callId ? { ...call, participants: response.data.participants || call.participants, participantCount: response.data.participants?.length || call.participantCount } : call
-                ));
-                setCurrentCallId(callId);
-                setIsUserInCall(true);
-                setVideoCallError(null);
-                socket.emit('videoCallJoin', { roomId: id, callId: callId, userId: user._id });
-            }
-        } catch (err) {
-            console.error('Failed to join call:', err);
-            // If it's a stale call error, try to clear it and refresh
-            if (err.response?.status === 400) {
-                // Refresh the calls list
-                try {
-                    const callsRes = await axios.get(`/api/rooms/${id}/video-calls`);
-                    setActiveCalls(callsRes.data.activeCalls || []);
-                    setCanStartNewCall(callsRes.data.canStartNewCall || false);
-                    setVideoCallError('Call state was out of sync. Please try again.');
-                } catch (refreshErr) {
-                    console.error('Failed to refresh calls:', refreshErr);
-                    setVideoCallError('Failed to refresh call list');
-                }
-            } else {
-                setVideoCallError(err.response?.data?.msg || 'Failed to join video call');
-            }
-        }
-    };
-
-    const handleLeaveCall = async () => {
-        if (!currentCallId) return;
-
-        const callIdToLeave = currentCallId;
-
-        try {
-            // Update state to hide video first (this will trigger token clear in VideoGrid)
-            setCurrentCallId(null);
-            setIsUserInCall(false);
-
-            // Give the component a moment to start cleanup
-            await new Promise(resolve => setTimeout(resolve, 100));
-
-            // Then try to disconnect if the ref method exists
-            if (videoGridRef.current?.disconnect) {
-                await videoGridRef.current.disconnect();
-            }
-
-            // Then notify backend
-            const response = await axios.post(`/api/rooms/${id}/video-calls/${callIdToLeave}/leave`, { userId: user._id });
-            setActiveCalls(response.data.activeCalls || []);
-            setCanStartNewCall(response.data.activeCalls.length < 3);
-            socket.emit('videoCallLeave', { roomId: id, callId: callIdToLeave, userId: user._id });
-        } catch (err) {
-            console.error('Failed to leave call:', err);
-            // Still clear state even if API call fails
-            setCurrentCallId(null);
-            setIsUserInCall(false);
-        }
-    };
 
     // --- 5. Handlers ---
     const handleSendMessage = async (e) => {
@@ -539,200 +346,18 @@ const RoomPage = () => {
                         </ul>
                     </div>
 
-                    {/* SECTION: VOICE CHANNELS (Discord-like) */}
+                    {/* SECTION: VOICE CHANNELS (Discord-style, live presence) */}
                     <div className="vscode-section" style={{ marginTop: '10px' }}>
-                        <div className="vscode-section-header" style={{ display: 'flex', alignItems: 'center', padding: '8px 20px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', justifyContent: 'space-between' }}>
-                            <div style={{ display: 'flex', alignItems: 'center' }}>
-                                <VscChevronDown style={{ marginRight: '6px', fontSize: '14px' }} />
-                                <span>VOICE CHANNELS ({activeCalls.length})</span>
-                            </div>
-                            {canStartNewCall && (
-                                <VscAdd
-                                    style={{ cursor: 'pointer', fontSize: '16px', color: '#8b949e' }}
-                                    title="Create Call"
-                                    onClick={(e) => { e.stopPropagation(); setShowCreateCallModal(true); }}
-                                />
-                            )}
+                        <div className="vscode-section-header" style={{ display: 'flex', alignItems: 'center', padding: '8px 20px', fontWeight: 'bold', fontSize: '14px' }}>
+                            <VscChevronDown style={{ marginRight: '6px', fontSize: '14px' }} />
+                            <span>VOICE CHANNELS</span>
                         </div>
-
-                        {/* Create Call Button */}
-                        <div
-                            style={{
-                                padding: '6px 20px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                cursor: canStartNewCall ? 'pointer' : 'not-allowed',
-                                color: canStartNewCall ? '#8b949e' : '#484f58',
-                                fontSize: '13px',
-                                transition: 'all 0.15s'
-                            }}
-                            onClick={() => canStartNewCall && setShowCreateCallModal(true)}
-                            onMouseEnter={(e) => canStartNewCall && (e.currentTarget.style.color = '#cccccc', e.currentTarget.style.backgroundColor = '#37373d')}
-                            onMouseLeave={(e) => (e.currentTarget.style.color = '#8b949e', e.currentTarget.style.backgroundColor = 'transparent')}
-                        >
-                            <VscAdd style={{ fontSize: '14px' }} />
-                            <span>Create Call</span>
-                        </div>
-
-                        {/* Call Channel List */}
-                        <ul className="vscode-file-list" style={{ margin: 0 }}>
-                            {activeCalls.length === 0 && (
-                                <li style={{ padding: '7px 20px', color: '#484f58', fontStyle: 'italic', fontSize: '12px' }}>
-                                    No voice channels active
-                                </li>
-                            )}
-                            {activeCalls.map((call) => {
-                                const isUserInThisCall = currentCallId === call.callId;
-                                const maxSlots = call.maxSlots || 10;
-                                const callIsFull = (call.participantCount || call.participants?.length || 0) >= maxSlots;
-                                const isExpanded = expandedCalls[call.callId] !== false; // default expanded
-                                const participantCount = call.participantCount || call.participants?.length || 0;
-
-                                return (
-                                    <li key={call.callId} style={{ listStyle: 'none' }}>
-                                        {/* Channel Header */}
-                                        <div
-                                            style={{
-                                                padding: '7px 14px 7px 20px',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'space-between',
-                                                cursor: 'pointer',
-                                                backgroundColor: isUserInThisCall ? 'rgba(88, 166, 255, 0.12)' : 'transparent',
-                                                borderLeft: isUserInThisCall ? '2px solid #58a6ff' : '2px solid transparent',
-                                                transition: 'all 0.15s',
-                                                fontSize: '14px'
-                                            }}
-                                            onClick={() => toggleCallExpanded(call.callId)}
-                                            onMouseEnter={(e) => {
-                                                if (!isUserInThisCall) e.currentTarget.style.backgroundColor = '#2a2d2e';
-                                            }}
-                                            onMouseLeave={(e) => {
-                                                e.currentTarget.style.backgroundColor = isUserInThisCall ? 'rgba(88, 166, 255, 0.12)' : 'transparent';
-                                            }}
-                                        >
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
-                                                {isExpanded
-                                                    ? <VscChevronDown style={{ fontSize: '12px', flexShrink: 0, color: '#8b949e' }} />
-                                                    : <VscChevronRight style={{ fontSize: '12px', flexShrink: 0, color: '#8b949e' }} />
-                                                }
-                                                <VscCallOutgoing style={{ fontSize: '14px', flexShrink: 0, color: isUserInThisCall ? '#58a6ff' : '#8b949e' }} />
-                                                <span style={{
-                                                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                                    color: isUserInThisCall ? '#58a6ff' : '#cccccc',
-                                                    fontWeight: isUserInThisCall ? '600' : '400'
-                                                }}>
-                                                    {call.callName || `Call`}
-                                                </span>
-                                                {isUserInThisCall && <span style={{ fontSize: '11px', color: '#3fb950', fontWeight: 'bold' }}>✓</span>}
-                                            </div>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0, marginLeft: '4px' }}>
-                                                <span style={{ fontSize: '11px', color: '#8b949e' }}>
-                                                    {participantCount}/{maxSlots}
-                                                </span>
-                                                {(call.startedBy?._id === user?._id || room?.owner?._id === user?._id) && (
-                                                    <VscTrash
-                                                        style={{ fontSize: '13px', color: '#484f58', cursor: 'pointer' }}
-                                                        title="Delete call"
-                                                        onClick={(e) => { e.stopPropagation(); handleDeleteCall(call.callId); }}
-                                                        onMouseEnter={(e) => e.currentTarget.style.color = '#f85149'}
-                                                        onMouseLeave={(e) => e.currentTarget.style.color = '#484f58'}
-                                                    />
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {/* Expanded: Participants List */}
-                                        {isExpanded && (
-                                            <div style={{ paddingLeft: '42px', paddingBottom: '4px' }}>
-                                                {call.participants && call.participants.length > 0 ? (
-                                                    call.participants.map((p, pi) => (
-                                                        <div key={pi} style={{
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            gap: '8px',
-                                                            padding: '3px 8px',
-                                                            fontSize: '13px',
-                                                            color: '#c9d1d9',
-                                                            borderRadius: '3px'
-                                                        }}
-                                                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2a2d2e'}
-                                                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                                                        >
-                                                            <VscAccount style={{ fontSize: '14px', color: '#8b949e', flexShrink: 0 }} />
-                                                            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                                {p.username || 'Unknown'}
-                                                            </span>
-                                                            <FaMicrophone style={{ fontSize: '11px', color: '#3fb950', flexShrink: 0 }} />
-                                                        </div>
-                                                    ))
-                                                ) : (
-                                                    <div style={{ fontSize: '12px', color: '#484f58', fontStyle: 'italic', padding: '3px 8px' }}>
-                                                        Empty channel
-                                                    </div>
-                                                )}
-
-                                                {/* Join / Leave Button */}
-                                                {isUserInThisCall ? (
-                                                    <div
-                                                        style={{
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            gap: '6px',
-                                                            padding: '5px 8px',
-                                                            marginTop: '4px',
-                                                            fontSize: '12px',
-                                                            color: '#f85149',
-                                                            cursor: 'pointer',
-                                                            borderRadius: '3px',
-                                                            transition: 'background 0.15s'
-                                                        }}
-                                                        onClick={(e) => { e.stopPropagation(); handleLeaveCall(); }}
-                                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(248, 81, 73, 0.1)'}
-                                                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                                                    >
-                                                        <FaPhoneSlash style={{ fontSize: '11px' }} />
-                                                        <span>Disconnect</span>
-                                                    </div>
-                                                ) : !callIsFull ? (
-                                                    <div
-                                                        style={{
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            gap: '6px',
-                                                            padding: '5px 8px',
-                                                            marginTop: '4px',
-                                                            fontSize: '12px',
-                                                            color: '#3fb950',
-                                                            cursor: 'pointer',
-                                                            borderRadius: '3px',
-                                                            transition: 'background 0.15s'
-                                                        }}
-                                                        onClick={(e) => { e.stopPropagation(); handleJoinCall(call.callId); }}
-                                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(63, 185, 80, 0.1)'}
-                                                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                                                    >
-                                                        <VscCallOutgoing style={{ fontSize: '12px' }} />
-                                                        <span>Join Channel</span>
-                                                    </div>
-                                                ) : (
-                                                    <div style={{ padding: '5px 8px', marginTop: '4px', fontSize: '12px', color: '#484f58' }}>
-                                                        Channel full
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-                                    </li>
-                                );
-                            })}
-                        </ul>
-
-                        {videoCallError && (
-                            <div style={{ padding: '6px 20px', fontSize: '12px', color: '#f85149' }}>
-                                {videoCallError}
-                            </div>
-                        )}
+                        <VoiceChannelList
+                            roomId={id}
+                            roomName={room.name}
+                            userId={user?._id}
+                            isOwner={(room.owner?._id || room.owner) === user?._id}
+                        />
                     </div>
 
                     {/* SECTION: TEAM MEMBERS (Room Members from DB) */}
@@ -840,18 +465,8 @@ const RoomPage = () => {
                     </button>
                 )}
 
-                {/* Main Video Grid — center workspace becomes video when in call */}
-                <VideoGrid
-                    ref={videoGridRef}
-                    roomId={id}
-                    user={user}
-                    onLeave={handleLeaveRoom}
-                    isActive={isUserInCall}
-                    currentCallId={currentCallId}
-                    onCallLeave={handleLeaveCall}
-                />
-
-
+                {/* Center: the voice/video call (or a lobby to join one) */}
+                <VoiceStage roomId={id} roomName={room.name} />
             </main>
 
             {/* COLUMN 3: TERMINAL CHAT */}
@@ -934,122 +549,6 @@ const RoomPage = () => {
                 />
             )}
 
-            {/* Create Call Modal */}
-            {showCreateCallModal && (
-                <div
-                    className="modal-backdrop"
-                    onClick={() => setShowCreateCallModal(false)}
-                    style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                >
-                    <div
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                            background: '#1e1e1e',
-                            border: '1px solid #30363d',
-                            borderRadius: '8px',
-                            width: '380px',
-                            overflow: 'hidden',
-                            boxShadow: '0 16px 48px rgba(0,0,0,0.4)'
-                        }}
-                    >
-                        {/* Modal Header */}
-                        <div style={{
-                            padding: '14px 16px',
-                            borderBottom: '1px solid #30363d',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px'
-                        }}>
-                            <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#ff5f57' }} />
-                            <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#febc2e' }} />
-                            <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#28c840' }} />
-                            <span style={{ marginLeft: '8px', fontSize: '13px', color: '#8b949e' }}>create_call.sh</span>
-                        </div>
-
-                        {/* Modal Body */}
-                        <form onSubmit={handleCreateCallSubmit} style={{ padding: '20px' }}>
-                            <div style={{ marginBottom: '16px' }}>
-                                <label style={{ display: 'block', fontSize: '13px', color: '#c9d1d9', marginBottom: '6px', fontWeight: '500' }}>
-                                    Call Name
-                                </label>
-                                <input
-                                    type="text"
-                                    value={createCallName}
-                                    onChange={(e) => setCreateCallName(e.target.value)}
-                                    placeholder="e.g. Backend Sync, Interview Room..."
-                                    autoFocus
-                                    style={{
-                                        width: '100%',
-                                        padding: '10px 12px',
-                                        background: '#0d1117',
-                                        border: '1px solid #30363d',
-                                        borderRadius: '6px',
-                                        color: '#c9d1d9',
-                                        fontSize: '14px',
-                                        outline: 'none',
-                                        boxSizing: 'border-box'
-                                    }}
-                                />
-                            </div>
-                            <div style={{ marginBottom: '20px' }}>
-                                <label style={{ display: 'block', fontSize: '13px', color: '#c9d1d9', marginBottom: '6px', fontWeight: '500' }}>
-                                    Max Participants
-                                </label>
-                                <input
-                                    type="number"
-                                    value={createCallMaxParticipants}
-                                    onChange={(e) => setCreateCallMaxParticipants(e.target.value)}
-                                    min={2}
-                                    max={50}
-                                    style={{
-                                        width: '100%',
-                                        padding: '10px 12px',
-                                        background: '#0d1117',
-                                        border: '1px solid #30363d',
-                                        borderRadius: '6px',
-                                        color: '#c9d1d9',
-                                        fontSize: '14px',
-                                        outline: 'none',
-                                        boxSizing: 'border-box'
-                                    }}
-                                />
-                            </div>
-                            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowCreateCallModal(false)}
-                                    style={{
-                                        padding: '8px 16px',
-                                        background: 'transparent',
-                                        border: '1px solid #30363d',
-                                        borderRadius: '6px',
-                                        color: '#8b949e',
-                                        fontSize: '13px',
-                                        cursor: 'pointer'
-                                    }}
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    style={{
-                                        padding: '8px 16px',
-                                        background: '#238636',
-                                        border: '1px solid #2ea043',
-                                        borderRadius: '6px',
-                                        color: '#fff',
-                                        fontSize: '13px',
-                                        fontWeight: '600',
-                                        cursor: 'pointer'
-                                    }}
-                                >
-                                    Create
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
         </div>
     );
 };

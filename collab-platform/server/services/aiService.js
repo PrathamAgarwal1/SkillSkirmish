@@ -21,6 +21,11 @@ const MODELS = {
     GENERATION: 'llama-3.3-70b-versatile',
 };
 
+// Gemini fallbacks. Google retires model names regularly (the 1.5 family is gone), so this is
+// configurable: GEMINI_MODELS=gemini-2.5-flash,gemini-2.0-flash
+const GEMINI_MODELS = (process.env.GEMINI_MODELS || 'gemini-2.5-flash,gemini-2.0-flash')
+    .split(',').map(m => m.trim()).filter(Boolean);
+
 /* ---------------------------------------------------------
    SIMPLE IN-MEMORY CACHE (for autocomplete)
 --------------------------------------------------------- */
@@ -174,12 +179,11 @@ async function callAI(messages, options = {}) {
                     const isRateLimit = err.status === 429 || err.message?.includes('rate_limit');
                     console.error(`⚠️ Groq Key #${keyIndex + 1} (${groqModel}) Failed (${isRateLimit ? 'RATE LIMITED' : 'ERROR'}):`, err.message?.substring(0, 100));
                     
-                    if (isRateLimit) {
-                        lastError = err;
-                        continue; // Try next key
-                    } else {
-                        throw err; // For other errors (auth, etc.), stop and fail or let it fall through
-                    }
+                    lastError = err;
+                    if (isRateLimit) continue; // Try the next key for this model
+                    // Other errors (bad key, decommissioned model, 5xx) won't be fixed by another
+                    // key — move on to the next model / provider instead of failing the whole call.
+                    break;
                 }
             }
         }
@@ -187,9 +191,7 @@ async function callAI(messages, options = {}) {
 
     // --- 2. GEMINI (fallback) ---
     if (genAI) {
-        // Try these model names specifically
-        const geminiModels = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"];
-        for (const modelName of geminiModels) {
+        for (const modelName of GEMINI_MODELS) {
             try {
                 console.log(`🤖 [${taskLabel}] Falling back to Gemini (${modelName})...`);
                 const generationConfig = {};

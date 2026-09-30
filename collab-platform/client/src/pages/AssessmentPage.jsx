@@ -60,6 +60,18 @@ const AssessmentPage = () => {
     // =========================
     // START ASSESSMENT (mixed)
     // =========================
+    // Renders a question into the transcript and makes it the active one
+    const showQuestion = (q, leadingNewline = true) => {
+        setSessionData(q);
+        const badge = getTypeBadge(q.type);
+        addToHistory('bot', `${leadingNewline ? '\n' : ''}[${badge.label}] — Difficulty: ${q.difficulty}`);
+        if (q.unrated) addToHistory('bot', '⚠ AI question service is unavailable — this is a practice question and will not affect your rating.');
+        if (q.title) addToHistory('bot', `Title: ${q.title}`);
+        addToHistory('bot', q.question);
+    };
+
+    const errorText = (err) => err.response?.data?.msg || err.message || 'Connection failed.';
+
     const startAssessment = async () => {
         setPhase('session');
         setLoading(true);
@@ -68,13 +80,8 @@ const AssessmentPage = () => {
 
         try {
             const res = await axios.post('/api/assessment/start', { skill });
-            setSessionData(res.data);
             setSessionStats({ attempted: 0, correct: 0, poolSize: res.data.poolSize || 20 });
-
-            const badge = getTypeBadge(res.data.type);
-            addToHistory('bot', `[${badge.label}] — Difficulty: ${res.data.difficulty}`);
-            if (res.data.title) addToHistory('bot', `Title: ${res.data.title}`);
-            addToHistory('bot', res.data.question);
+            showQuestion(res.data, false);
         } catch (err) {
             addToHistory('bot', `Error: ${err.response?.data?.msg || 'Connection failed.'}`);
         } finally {
@@ -87,6 +94,8 @@ const AssessmentPage = () => {
     // =========================
     const handleSubmitAnswer = async (e, directAnswer) => {
         if (e) e.preventDefault();
+
+        if (loading || !sessionData) return;
 
         const currentType = sessionData?.type;
         const submission = directAnswer || (currentType === 'coding' ? code : answer);
@@ -112,16 +121,12 @@ const AssessmentPage = () => {
                 // Auto-submit the assessment
                 setTimeout(() => handleFinishAssessment(), 1500);
             } else if (data.nextQuestion) {
-                setTimeout(() => {
-                    setSessionData(data.nextQuestion);
-                    const badge = getTypeBadge(data.nextQuestion.type);
-                    addToHistory('bot', `\n[${badge.label}] — Difficulty: ${data.nextQuestion.difficulty}`);
-                    if (data.nextQuestion.title) addToHistory('bot', `Title: ${data.nextQuestion.title}`);
-                    addToHistory('bot', data.nextQuestion.question);
-                }, 800);
+                // Show the next question immediately: a delayed swap left a window where a second
+                // submit was graded by the server against the question the user hadn't seen yet.
+                showQuestion(data.nextQuestion);
             }
         } catch (err) {
-            addToHistory('bot', `Error: ${err.message}`);
+            addToHistory('bot', `Error: ${errorText(err)}`);
         } finally {
             setLoading(false);
         }
@@ -131,6 +136,7 @@ const AssessmentPage = () => {
     // SKIP QUESTION
     // =========================
     const handleSkip = async () => {
+        if (loading) return;
         setLoading(true);
         addToHistory('user', '[SKIPPED]');
 
@@ -143,14 +149,10 @@ const AssessmentPage = () => {
                 setSessionData(null);
                 setTimeout(() => handleFinishAssessment(), 1500);
             } else if (data.nextQuestion) {
-                setSessionData(data.nextQuestion);
-                const badge = getTypeBadge(data.nextQuestion.type);
-                addToHistory('bot', `\n[${badge.label}] — Difficulty: ${data.nextQuestion.difficulty}`);
-                if (data.nextQuestion.title) addToHistory('bot', `Title: ${data.nextQuestion.title}`);
-                addToHistory('bot', data.nextQuestion.question);
+                showQuestion(data.nextQuestion);
             }
         } catch (err) {
-            addToHistory('bot', `Error: ${err.message}`);
+            addToHistory('bot', `Error: ${errorText(err)}`);
         } finally {
             setLoading(false);
         }
@@ -163,10 +165,17 @@ const AssessmentPage = () => {
         setLoading(true);
         try {
             const res = await axios.post('/api/assessment/finish');
+            if (!res.data.attempted) {
+                // Nothing was answered — the server cancelled the session, so there is no result to show
+                addToHistory('bot', res.data.msg || 'Assessment cancelled.');
+                setSessionData(null);
+                setPhase('intro');
+                return;
+            }
             setResultData(res.data);
             setPhase('result');
         } catch (err) {
-            addToHistory('bot', `Error: ${err.response?.data?.msg || err.message}`);
+            addToHistory('bot', `Error: ${errorText(err)}`);
         } finally {
             setLoading(false);
         }
@@ -282,6 +291,12 @@ const AssessmentPage = () => {
                                 <div style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--term-gold)' }}>{resultData.accuracy}%</div>
                             </div>
                         </div>
+
+                        {resultData.unratedQuestions > 0 && (
+                            <div style={{ color: 'var(--term-gold)', fontSize: '0.8rem', marginBottom: '1.5rem' }}>
+                                ⚠ {resultData.unratedQuestions} question(s) were practice-only (AI unavailable) and did not affect your rating.
+                            </div>
+                        )}
 
                         {isFirstRating ? (
                             /* First assessment — show initial placement */
