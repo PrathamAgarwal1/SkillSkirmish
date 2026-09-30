@@ -5,6 +5,8 @@ import AuthContext from '../context/AuthContext';
 
 const RegisterPage = () => {
     const [formData, setFormData] = useState({ username: '', email: '', password: '' });
+    const [error, setError] = useState('');
+    const [submitting, setSubmitting] = useState(false);
     const { register } = useContext(AuthContext);
     const navigate = useNavigate();
 
@@ -13,8 +15,16 @@ const RegisterPage = () => {
 
     const onSubmit = async e => {
         e.preventDefault();
-        await register(formData);
-        navigate('/');
+        setError('');
+        setSubmitting(true);
+        try {
+            await register(formData);
+            navigate('/dashboard');
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setSubmitting(false);
+        }
     };
 
     // Redirect to backend Google auth route (full page redirect)
@@ -56,7 +66,9 @@ const RegisterPage = () => {
                                 color: 'var(--term-blue)', fontFamily: 'var(--font-mono)'
                             }}>USERNAME</label>
                             <input className="term-input" type="text" name="username"
-                                value={username} onChange={onChange} placeholder="devuser" required />
+                                value={username} onChange={onChange} placeholder="devuser" required
+                                minLength="3" maxLength="30" pattern="[a-zA-Z0-9_.\-]+"
+                                title="3-30 characters: letters, numbers, _ . -" />
                         </div>
                         <div>
                             <label style={{
@@ -72,14 +84,21 @@ const RegisterPage = () => {
                                 color: 'var(--term-blue)', fontFamily: 'var(--font-mono)'
                             }}>PASSWORD</label>
                             <input className="term-input" type="password" name="password"
-                                value={password} onChange={onChange} placeholder="••••••••" required minLength="6" />
+                                value={password} onChange={onChange} placeholder="••••••••" required minLength="8"
+                                title="At least 8 characters" />
                         </div>
 
-                        <button className="btn-term-primary" type="submit" style={{
+                        {error && (
+                            <div role="alert" style={{ color: 'var(--term-red)', fontSize: '0.85rem', fontFamily: 'var(--font-mono)' }}>
+                                ✖ {error}
+                            </div>
+                        )}
+
+                        <button className="btn-term-primary" type="submit" disabled={submitting} style={{
                             marginTop: '0.5rem', padding: '0.8rem', fontSize: '0.9rem',
                             letterSpacing: '1px', borderRadius: 'var(--radius-sm)'
                         }}>
-                            CREATE ACCOUNT →
+                            {submitting ? 'CREATING…' : 'CREATE ACCOUNT →'}
                         </button>
                     </form>
 

@@ -2,7 +2,20 @@ import React, { useState } from 'react';
 import axios from 'axios';
 
 
-const projectTypes = ['MERN Stack', 'React App', 'Node.js API', 'Vanilla Web', 'Express + EJS'];
+// Keep in sync with PROJECT_TYPES in server/models/Project.js
+const PROJECT_TYPE_INFO = {
+    'React App': 'React + Vite with hot reload · deploys as a static site',
+    'MERN Stack': 'Express + MongoDB API with a React frontend on one port · deploys as a server',
+    'Next.js': 'Next.js pages + API routes · deploys as a server',
+    'Node.js API': 'Express REST API · deploys as a server',
+    'Express + EJS': 'Server-rendered pages with EJS templates',
+    'Vanilla Web': 'Plain HTML, CSS and JavaScript · deploys as a static site',
+    'Python API (FastAPI)': 'FastAPI with interactive /docs · deploys as a server',
+    'Python Script': 'Python scripts with an interactive terminal',
+    'Machine Learning (Jupyter)': 'JupyterLab, pandas, scikit-learn, PyTorch, Kaggle CLI · deploys a Streamlit app',
+    'Android (Expo)': 'React Native app: browser preview + your phone via Expo Go · deploys the web build'
+};
+const projectTypes = Object.keys(PROJECT_TYPE_INFO);
 
 const CreateProjectModal = ({ roomId, onClose, onProjectCreated }) => {
     const [name, setName] = useState('');
@@ -20,7 +33,7 @@ const CreateProjectModal = ({ roomId, onClose, onProjectCreated }) => {
             onClose();
         } catch (err) {
             console.error(err.response?.data || err.message);
-            alert('Failed to create project. Only the room owner can create projects.');
+            alert(`Failed to create project: ${err.response?.data?.msg || err.message}`);
             setIsLoading(false);
         }
     };
@@ -67,6 +80,9 @@ const CreateProjectModal = ({ roomId, onClose, onProjectCreated }) => {
                                 <select className="term-input" value={projectType} onChange={(e) => setProjectType(e.target.value)}>
                                     {projectTypes.map(type => <option key={type} value={type}>{type}</option>)}
                                 </select>
+                                <div style={{ marginTop: '0.4rem', fontSize: '0.8rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                                    {PROJECT_TYPE_INFO[projectType]}
+                                </div>
                             </div>
                             <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
                                 <button type="button" className="btn-term" onClick={onClose} disabled={isLoading}>CANCEL</button>

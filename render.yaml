@@ -1,0 +1,35 @@
+# Render Blueprint: the SkillSkirmish API on Render's free plan.
+# In Render: New → Blueprint → pick this repo. Then fill in the values marked "sync: false".
+# Code runs in users' browsers (browser mode), so no Docker is needed. See collab-platform/DEPLOYMENT.md.
+services:
+  - type: web
+    name: skillskirmish-api
+    runtime: node
+    plan: free
+    rootDir: collab-platform/server
+    buildCommand: npm ci --omit=dev
+    startCommand: node index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SANDBOX_DRIVER
+        value: browser
+      - key: MONGO_URI
+        sync: false          # MongoDB Atlas free cluster connection string
+      - key: CLIENT_URL
+        sync: false          # your Vercel URL, e.g. https://skillskirmish.vercel.app
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SECRETS_KEY
+        generateValue: true
+      - key: ADMIN_KEY
+        generateValue: true
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      # Optional: a TURN relay so calls also work behind strict firewalls (see DEPLOYMENT.md)
+      - key: CLOUDFLARE_TURN_KEY_ID
+        sync: false
+      - key: CLOUDFLARE_TURN_API_TOKEN
+        sync: false

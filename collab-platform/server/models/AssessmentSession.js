@@ -7,6 +7,8 @@ const QuestionLogSchema = new Schema({
     questionType: { type: String, required: true },
     difficulty: { type: String, enum: ['Easy', 'Medium', 'Hard'], default: 'Medium' },
     difficultyElo: { type: Number, default: 1200 },
+    // Fallback questions (served when every AI provider failed) don't affect ELO
+    isFallback: { type: Boolean, default: false },
     userAnswer: { type: String },
     correctAnswer: { type: String },
     scorePercentage: { type: Number, default: 0 },
@@ -51,6 +53,7 @@ const AssessmentSessionSchema = new Schema(
         currentDifficulty: { type: String, enum: ['Easy', 'Medium', 'Hard'], default: 'Medium' },
         currentDifficultyElo: { type: Number, default: 1200 },
         currentType: { type: String, default: 'subjective' },
+        currentIsFallback: { type: Boolean, default: false },
 
         // All answered questions
         questionsLog: [QuestionLogSchema],

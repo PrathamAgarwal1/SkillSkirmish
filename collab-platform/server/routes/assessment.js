@@ -47,13 +47,41 @@ function expectedProbability(userElo, difficultyElo) {
   return 1 / (1 + Math.pow(10, (difficultyElo - userElo) / 400));
 }
 
-function difficultyToElo(difficulty) {
-  if (!difficulty) return 1200;
-  const d = String(difficulty).toLowerCase();
-  if (d === 'easy') return 1000;
-  if (d === 'medium') return 1200;
-  if (d === 'hard') return 1400;
-  return 1200;
+// AI output fields are sometimes numbers/objects/arrays; store everything as text.
+function stringifyAnswer(value) {
+  if (value === null || value === undefined) return '';
+  return typeof value === 'string' ? value : JSON.stringify(value);
+}
+
+/**
+ * Makes an MCQ's answer exactly equal to one of its options.
+ * Handles "B", "(B)", "B) text", and answers that differ only by an option prefix/case.
+ * Returns { options, answer } or null if the answer can't be matched.
+ */
+function normalizeMcq(rawOptions, rawAnswer) {
+  if (!Array.isArray(rawOptions)) return null;
+  const options = rawOptions.map(o => stringifyAnswer(o).trim()).filter(Boolean).slice(0, 6);
+  if (options.length < 2) return null;
+
+  const answer = stringifyAnswer(rawAnswer).trim();
+  if (options.includes(answer)) return { options, answer };
+
+  const letter = answer.match(/^\(?([A-Fa-f])(?:[).:\s]|$)/);
+  if (letter) {
+    const idx = letter[1].toUpperCase().charCodeAt(0) - 65;
+    // "B" alone, or "B) <text>" whose text matches option B
+    if (options[idx] && (answer.length <= 3 || strip(answer) === strip(options[idx]))) {
+      return { options, answer: options[idx] };
+    }
+  }
+
+  const target = strip(answer);
+  const match = options.find(o => strip(o) === target);
+  return match ? { options, answer: match } : null;
+}
+
+function strip(s) {
+  return String(s).replace(/^\(?[A-Fa-f][).:]\s*/, '').trim().toLowerCase();
 }
 
 /**
@@ -157,16 +185,28 @@ async function generateQuestion(skill, currentElo, requiredType, avoidList = [],
         throw new Error('Duplicate question');
       }
 
+      // MCQ answers must be one of the options verbatim, or correct picks get graded as wrong
+      let options = [];
+      let answer = stringifyAnswer(aiData.answer) || 'Refer to documentation';
+      if (requiredType === 'mcq') {
+        const mcq = normalizeMcq(aiData.options, aiData.answer);
+        if (!mcq) throw new Error('MCQ answer does not match any option');
+        ({ options, answer } = mcq);
+      }
+
       // Force the type to match what we asked for
       return {
         type: requiredType,
         question: qText,
-        title: aiData.title || 'Challenge',
-        options: requiredType === 'mcq' && Array.isArray(aiData.options) ? aiData.options : [],
-        answer: aiData.answer || 'Refer to documentation',
-        difficulty: aiData.difficulty || diffLabel,
-        codeTemplate: requiredType === 'coding' ? (aiData.codeTemplate || `// Write your ${skill} solution here\n`) : '',
-        testCases: requiredType === 'coding' && Array.isArray(aiData.testCases) ? aiData.testCases : [],
+        title: String(aiData.title || 'Challenge').slice(0, 120),
+        options,
+        answer,
+        // Our own label, not the model's free-form string (which can break the schema enum)
+        difficulty: diffLabel,
+        codeTemplate: requiredType === 'coding' ? String(aiData.codeTemplate || `// Write your ${skill} solution here\n`) : '',
+        testCases: requiredType === 'coding' && Array.isArray(aiData.testCases)
+          ? aiData.testCases.slice(0, 10).map(tc => ({ input: stringifyAnswer(tc?.input), output: stringifyAnswer(tc?.output) }))
+          : [],
         difficultyElo: qElo
       };
     } catch (err) {
@@ -175,37 +215,94 @@ async function generateQuestion(skill, currentElo, requiredType, avoidList = [],
     }
   }
 
-  // FALLBACK
-  console.warn('[Assessment] Using Fallback Question');
+  // FALLBACK — used when every AI provider fails. These are practice-only: isFallback keeps
+  // them out of the ELO calculation so an AI outage can't be farmed for rating.
+  console.warn('[Assessment] Using Fallback Question:', lastErr?.message);
   if (requiredType === 'mcq') {
     return {
-      type: 'mcq', question: `Which of the following best describes ${skill}?`, title: 'Fallback MCQ',
+      type: 'mcq', question: `Which of the following best describes ${skill}?`, title: 'Fallback MCQ (unrated)',
       options: ["Core framework", "Utility library", "Design pattern", "All of the above"],
-      answer: "All of the above", difficulty: diffLabel, codeTemplate: '', testCases: [], difficultyElo: qElo
+      answer: "All of the above", difficulty: diffLabel, codeTemplate: '', testCases: [], difficultyElo: qElo, isFallback: true
     };
   } else if (requiredType === 'coding') {
     return {
       type: 'coding', question: `Write a function that demonstrates a core concept of ${skill}.`,
-      title: 'Fallback Coding', options: [], answer: '// Solution code',
-      difficulty: diffLabel, codeTemplate: `// Write your ${skill} solution here\n`, testCases: [{ input: 'test', output: 'test' }], difficultyElo: qElo
+      title: 'Fallback Coding (unrated)', options: [], answer: '// Solution code',
+      difficulty: diffLabel, codeTemplate: `// Write your ${skill} solution here\n`, testCases: [{ input: 'test', output: 'test' }], difficultyElo: qElo, isFallback: true
     };
   } else {
     return {
       type: 'subjective', question: `Explain the core concepts of ${skill} and when you would use it.`,
-      title: 'Fallback Subjective', options: [], answer: 'Refer to documentation',
-      difficulty: diffLabel, codeTemplate: '', testCases: [], difficultyElo: qElo
+      title: 'Fallback Subjective (unrated)', options: [], answer: 'Refer to documentation',
+      difficulty: diffLabel, codeTemplate: '', testCases: [], difficultyElo: qElo, isFallback: true
     };
   }
 }
+
+/** Copies a generated question onto the session as the "current" question. */
+function setCurrentQuestion(session, q, type, fallbackElo) {
+  session.currentQuestionText = q.question;
+  session.currentOptions = q.options || [];
+  session.currentAnswer = q.answer;
+  session.currentTitle = q.title || '';
+  session.currentCodeTemplate = q.codeTemplate || '';
+  session.currentTestCases = q.testCases || [];
+  session.currentDifficulty = q.difficulty || 'Medium';
+  session.currentDifficultyElo = q.difficultyElo || fallbackElo;
+  session.currentType = type;
+  session.currentIsFallback = !!q.isFallback;
+  if (!session.askedQuestions.includes(q.question)) {
+    session.askedQuestions.push(q.question);
+  }
+}
+
+/** Generates the question at plan index `index` for a session. */
+async function generateNextQuestion(session, index) {
+  const nextType = (Array.isArray(session.questionPlan) && session.questionPlan[index]) || 'subjective';
+  const nextDifficultyElo = (Array.isArray(session.difficultyPlanElos) && session.difficultyPlanElos[index]) || session.startRating || 1200;
+  const effectiveRating = session.startRating || 1200;
+  const q = await generateQuestion(session.skill, effectiveRating, nextType, session.askedQuestions || [], nextDifficultyElo);
+  return { q, nextType, nextDifficultyElo };
+}
+
+/** The payload the client renders for a question (never includes the answer). */
+function questionPayload(q, type, questionNumber, poolSize) {
+  return {
+    question: q.question,
+    options: q.options || [],
+    type,
+    difficulty: q.difficulty || 'Medium',
+    title: q.title || '',
+    codeTemplate: q.codeTemplate || '',
+    testCases: q.testCases || [],
+    unrated: !!q.isFallback,
+    questionNumber,
+    poolSize
+  };
+}
+
+// One submit/skip at a time per user, so a double-click can't grade the same question twice
+const busyUsers = new Set();
+const withUserLock = (handler) => async (req, res) => {
+  if (busyUsers.has(req.user.id)) {
+    return res.status(429).json({ msg: 'Still processing your previous answer.' });
+  }
+  busyUsers.add(req.user.id);
+  try {
+    await handler(req, res);
+  } finally {
+    busyUsers.delete(req.user.id);
+  }
+};
 
 // =============================================================
 // POST /api/assessment/start
 // Accepts: { skill }
 // Creates a session with mixed question types (coding/mcq/subjective)
 // =============================================================
-router.post('/start', auth, async (req, res) => {
+router.post('/start', auth, withUserLock(async (req, res) => {
   try {
-    const { skill } = req.body;
+    const skill = typeof req.body.skill === 'string' ? req.body.skill.trim().slice(0, 50) : '';
     if (!skill) return res.status(400).json({ msg: 'Skill is missing.' });
 
     const user = await User.findById(req.user.id);
@@ -217,96 +314,62 @@ router.post('/start', auth, async (req, res) => {
     // Clear old incomplete sessions FIRST (before generating, so we don't fail after cleanup)
     await AssessmentSession.deleteMany({ user: req.user.id, completed: false });
 
-    // Build randomized plans
-    const plan = buildQuestionPlan();
-    const diffPlanElos = buildDynamicDifficultyPlan(currentRating);
-    const firstType = plan[0];
-    const firstDifficultyElo = diffPlanElos[0];
-
-    // Generate first question (this can fail — fallback is built into generateQuestion)
-    let aiData;
-    try {
-      aiData = await generateQuestion(skill, currentRating, firstType, [], firstDifficultyElo);
-    } catch (genErr) {
-      console.error('[Assessment][start] Question generation failed:', genErr.message);
-      // Use a hardcoded fallback so the session can still start
-      aiData = {
-        type: firstType, question: `Explain a core concept of ${skill}.`,
-        title: 'Getting Started', options: firstType === 'mcq' ? ['Option A', 'Option B', 'Option C', 'Option D'] : [],
-        answer: 'Refer to documentation', difficulty: getDynamicLabel(firstDifficultyElo, currentRating || 1200),
-        codeTemplate: firstType === 'coding' ? `// Write your ${skill} solution here\n` : '',
-        testCases: firstType === 'coding' ? [{ input: 'test', output: 'test' }] : [],
-        difficultyElo: firstDifficultyElo
-      };
-    }
-
-    const newSession = new AssessmentSession({
+    const session = new AssessmentSession({
       user: req.user.id,
       skill,
       assessmentMode: 'mixed',
       startRating: currentRating,
       poolSize: POOL_SIZE,
       questionCount: 1,
-      currentQuestionText: aiData.question,
-      currentOptions: aiData.options || [],
-      currentAnswer: aiData.answer,
-      currentTitle: aiData.title || '',
-      currentCodeTemplate: aiData.codeTemplate || '',
-      currentTestCases: aiData.testCases || [],
-      currentDifficulty: aiData.difficulty || 'Medium',
-      currentDifficultyElo: aiData.difficultyElo || firstDifficultyElo,
-      currentType: firstType,
-      askedQuestions: [aiData.question],
-      questionPlan: plan,
-      difficultyPlanElos: diffPlanElos,
+      askedQuestions: [],
+      questionPlan: buildQuestionPlan(),
+      difficultyPlanElos: buildDynamicDifficultyPlan(currentRating),
       questionsLog: [],
       completed: false
     });
 
-    await newSession.save();
+    // generateQuestion never throws — it falls back to an unrated question
+    const { q, nextType, nextDifficultyElo } = await generateNextQuestion(session, 0);
+    setCurrentQuestion(session, q, nextType, nextDifficultyElo);
+    await session.save();
 
-    return res.json({
-      question: aiData.question,
-      options: aiData.options || [],
-      type: firstType,
-      skill,
-      difficulty: aiData.difficulty || 'Medium',
-      title: aiData.title || '',
-      codeTemplate: aiData.codeTemplate || '',
-      testCases: aiData.testCases || [],
-      questionNumber: 1,
-      poolSize: POOL_SIZE
-    });
+    return res.json({ ...questionPayload(q, nextType, 1, POOL_SIZE), skill });
   } catch (err) {
     console.error('[Assessment][start] Error:', err);
     return res.status(500).json({ msg: 'Failed to start assessment.' });
   }
-});
+}));
 
 // =============================================================
 // POST /api/assessment/submit
 // Grades one answer, logs it, generates next question.
 // Does NOT update user ELO.
 // =============================================================
-router.post('/submit', auth, async (req, res) => {
+router.post('/submit', auth, withUserLock(async (req, res) => {
   try {
-    const { userAnswer } = req.body;
+    const userAnswer = stringifyAnswer(req.body.userAnswer).slice(0, 20000);
     const session = await AssessmentSession.findOne({ user: req.user.id, completed: false });
     if (!session) return res.status(404).json({ msg: 'No active assessment found.' });
+    if (!session.currentQuestionText) {
+      return res.status(400).json({ msg: 'No question is waiting for an answer. Finish the assessment.' });
+    }
 
     const qType = session.currentType || 'subjective';
 
     // --- Grade the current answer ---
     let scorePercentage = 0;
     let feedback = '';
+    let gradingFailed = false;
     let correctAnswer = session.currentAnswer;
 
     if (qType === 'mcq') {
-      const isCorrect = String(userAnswer || '').trim() === String(session.currentAnswer || '').trim();
+      const isCorrect = userAnswer.trim() === String(session.currentAnswer || '').trim();
       scorePercentage = isCorrect ? 100 : 0;
       feedback = isCorrect ? 'Correct!' : 'Incorrect.';
       correctAnswer = isCorrect ? null : session.currentAnswer;
-    } else if (qType === 'subjective' || qType === 'coding') {
+    } else if (!userAnswer.trim()) {
+      feedback = 'No answer submitted.';
+    } else {
       const aiResult = await evaluateSubjectiveWithAI(
         session.currentQuestionText,
         session.currentAnswer,
@@ -314,10 +377,7 @@ router.post('/submit', auth, async (req, res) => {
       );
       scorePercentage = aiResult.bucketScore || 0;
       feedback = aiResult.feedback || '';
-      correctAnswer = session.currentAnswer;
-    } else {
-      scorePercentage = 0;
-      feedback = 'Unknown question type.';
+      gradingFailed = !!aiResult.failed;
     }
 
     // --- Log this question (NO ELO update) ---
@@ -326,6 +386,7 @@ router.post('/submit', auth, async (req, res) => {
       questionType: qType,
       difficulty: session.currentDifficulty || 'Medium',
       difficultyElo: session.currentDifficultyElo || 1200,
+      isFallback: !!session.currentIsFallback || gradingFailed,
       userAnswer,
       correctAnswer: session.currentAnswer,
       scorePercentage,
@@ -335,58 +396,21 @@ router.post('/submit', auth, async (req, res) => {
       testCases: session.currentTestCases || []
     });
 
-    if (!session.askedQuestions.includes(session.currentQuestionText)) {
-      session.askedQuestions.push(session.currentQuestionText);
-    }
-
     const attempted = session.questionsLog.length;
     const correct = session.questionsLog.filter(q => q.scorePercentage === 100).length;
-    const reachedPoolLimit = attempted >= session.poolSize;
+    // Skips also consume plan slots, so stop when either limit is hit
+    const reachedPoolLimit = attempted >= session.poolSize || session.questionCount >= session.poolSize;
 
     // --- Generate next question ---
     let nextQuestion = null;
     if (!reachedPoolLimit) {
       const nextIndex = session.questionCount; // 0-based next
-      let nextType = 'subjective';
-      if (Array.isArray(session.questionPlan) && nextIndex < session.questionPlan.length) {
-        nextType = session.questionPlan[nextIndex];
-      }
-
-      // Get difficulty from dynamic plan
-      let nextDifficultyElo = session.startRating || 1200;
-      if (Array.isArray(session.difficultyPlanElos) && nextIndex < session.difficultyPlanElos.length) {
-        nextDifficultyElo = session.difficultyPlanElos[nextIndex];
-      }
-
-      const effectiveRating = session.startRating || 1200;
-      const nextAiQ = await generateQuestion(session.skill, effectiveRating, nextType, session.askedQuestions || [], nextDifficultyElo);
-
-      session.currentQuestionText = nextAiQ.question;
-      session.currentOptions = nextAiQ.options || [];
-      session.currentAnswer = nextAiQ.answer;
-      session.currentTitle = nextAiQ.title || '';
-      session.currentCodeTemplate = nextAiQ.codeTemplate || '';
-      session.currentTestCases = nextAiQ.testCases || [];
-      session.currentDifficulty = nextAiQ.difficulty || 'Medium';
-      session.currentDifficultyElo = nextAiQ.difficultyElo || nextDifficultyElo;
-      session.currentType = nextType;
+      const { q, nextType, nextDifficultyElo } = await generateNextQuestion(session, nextIndex);
+      setCurrentQuestion(session, q, nextType, nextDifficultyElo);
       session.questionCount = nextIndex + 1;
-
-      if (!session.askedQuestions.includes(nextAiQ.question)) {
-        session.askedQuestions.push(nextAiQ.question);
-      }
-
-      nextQuestion = {
-        question: nextAiQ.question,
-        options: nextAiQ.options || [],
-        type: nextType,
-        difficulty: nextAiQ.difficulty || 'Medium',
-        title: nextAiQ.title || '',
-        codeTemplate: nextAiQ.codeTemplate || '',
-        testCases: nextAiQ.testCases || [],
-        questionNumber: nextIndex + 1,
-        poolSize: session.poolSize
-      };
+      nextQuestion = questionPayload(q, nextType, nextIndex + 1, session.poolSize);
+    } else {
+      session.currentQuestionText = '';
     }
 
     await session.save();
@@ -405,13 +429,13 @@ router.post('/submit', auth, async (req, res) => {
     console.error('[Assessment] Submit Error:', err);
     return res.status(500).json({ msg: 'Server error' });
   }
-});
+}));
 
 // =============================================================
 // POST /api/assessment/skip
 // Skips the current question without answering, loads next.
 // =============================================================
-router.post('/skip', auth, async (req, res) => {
+router.post('/skip', auth, withUserLock(async (req, res) => {
   try {
     const session = await AssessmentSession.findOne({ user: req.user.id, completed: false });
     if (!session) return res.status(404).json({ msg: 'No active assessment found.' });
@@ -422,37 +446,14 @@ router.post('/skip', auth, async (req, res) => {
     // Move to next question in the plan
     const nextIndex = session.questionCount;
     if (nextIndex >= session.poolSize) {
+      session.currentQuestionText = '';
+      await session.save();
       return res.json({ reachedPoolLimit: true, attempted, correct, poolSize: session.poolSize, nextQuestion: null });
     }
 
-    let nextType = 'subjective';
-    if (Array.isArray(session.questionPlan) && nextIndex < session.questionPlan.length) {
-      nextType = session.questionPlan[nextIndex];
-    }
-
-    let nextDifficultyElo = session.startRating || 1200;
-    if (Array.isArray(session.difficultyPlanElos) && nextIndex < session.difficultyPlanElos.length) {
-      nextDifficultyElo = session.difficultyPlanElos[nextIndex];
-    }
-
-    const effectiveRating = session.startRating || 1200;
-    const nextAiQ = await generateQuestion(session.skill, effectiveRating, nextType, session.askedQuestions || [], nextDifficultyElo);
-
-    session.currentQuestionText = nextAiQ.question;
-    session.currentOptions = nextAiQ.options || [];
-    session.currentAnswer = nextAiQ.answer;
-    session.currentTitle = nextAiQ.title || '';
-    session.currentCodeTemplate = nextAiQ.codeTemplate || '';
-    session.currentTestCases = nextAiQ.testCases || [];
-    session.currentDifficulty = nextAiQ.difficulty || 'Medium';
-    session.currentDifficultyElo = nextAiQ.difficultyElo || nextDifficultyElo;
-    session.currentType = nextType;
+    const { q, nextType, nextDifficultyElo } = await generateNextQuestion(session, nextIndex);
+    setCurrentQuestion(session, q, nextType, nextDifficultyElo);
     session.questionCount = nextIndex + 1;
-
-    if (!session.askedQuestions.includes(nextAiQ.question)) {
-      session.askedQuestions.push(nextAiQ.question);
-    }
-
     await session.save();
 
     return res.json({
@@ -461,29 +462,36 @@ router.post('/skip', auth, async (req, res) => {
       correct,
       poolSize: session.poolSize,
       reachedPoolLimit: false,
-      nextQuestion: {
-        question: nextAiQ.question,
-        options: nextAiQ.options || [],
-        type: nextType,
-        difficulty: nextAiQ.difficulty || 'Medium',
-        title: nextAiQ.title || '',
-        codeTemplate: nextAiQ.codeTemplate || '',
-        testCases: nextAiQ.testCases || [],
-        questionNumber: nextIndex + 1,
-        poolSize: session.poolSize
-      }
+      nextQuestion: questionPayload(q, nextType, nextIndex + 1, session.poolSize)
     });
   } catch (err) {
     console.error('[Assessment] Skip Error:', err);
     return res.status(500).json({ msg: 'Server error' });
   }
-});
+}));
+
+/**
+ * ELO change for a whole session: ΔR = K × Σ(Sᵢ − Eᵢ) over rated questions.
+ * Exported for unit tests.
+ */
+function computeSessionRating(oldRating, matchesPlayed, log) {
+  const rated = log.filter(entry => !entry.isFallback);
+  const kFactor = getKFactor(matchesPlayed, oldRating);
+  let totalExpected = 0;
+  let totalActual = 0;
+  for (const entry of rated) {
+    totalExpected += expectedProbability(oldRating, entry.difficultyElo || 1200);
+    totalActual += (entry.scorePercentage || 0) / 100.0;
+  }
+  const ratingChange = Math.round(kFactor * (totalActual - totalExpected));
+  return { ratingChange, newRating: Math.max(0, oldRating + ratingChange), kFactor, ratedCount: rated.length };
+}
 
 // =============================================================
 // POST /api/assessment/finish
 // Calculates ELO from all questionsLog, updates user, returns result.
 // =============================================================
-router.post('/finish', auth, async (req, res) => {
+router.post('/finish', auth, withUserLock(async (req, res) => {
   try {
     const session = await AssessmentSession.findOne({ user: req.user.id, completed: false });
     if (!session) return res.status(404).json({ msg: 'No active assessment to finish.' });
@@ -502,60 +510,55 @@ router.post('/finish', auth, async (req, res) => {
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ msg: 'User not found' });
 
-    let skillObj = (user.skills || []).find(s => s.name === session.skill);
-    if (!skillObj) {
-      skillObj = { name: session.skill, elo: null, mastery: 0, matchesPlayed: 0, isProvisional: true, history: [] };
-      user.skills = user.skills || [];
-      user.skills.push(skillObj);
+    if (!(user.skills || []).some(s => s.name === session.skill)) {
+      user.skills.push({ name: session.skill, elo: null, mastery: 0, matchesPlayed: 0, isProvisional: true, history: [] });
     }
-    skillObj = user.skills.find(s => s.name === session.skill);
+    const skillObj = user.skills.find(s => s.name === session.skill);
 
     const oldRating = skillObj.elo;
     const effectiveOldRating = oldRating !== null && oldRating !== undefined ? oldRating : 1200;
     const matchesPlayed = skillObj.matchesPlayed || 0;
-    const kFactor = getKFactor(matchesPlayed, effectiveOldRating);
+    const { ratingChange, newRating, ratedCount } = computeSessionRating(effectiveOldRating, matchesPlayed, log);
 
-    let totalExpected = 0;
-    let totalActual = 0;
-    for (const entry of log) {
-      const diffElo = entry.difficultyElo || 1200;
-      totalExpected += expectedProbability(effectiveOldRating, diffElo);
-      totalActual += (entry.scorePercentage || 0) / 100.0;
+    // A session made only of fallback (AI-outage) questions doesn't rate the user
+    if (ratedCount > 0) {
+      skillObj.elo = newRating;
+      // Rescaled mastery: a perfect assessment grants +30 mastery
+      const masteryGain = Math.round((accuracy / 100) * 30);
+      skillObj.mastery = Math.max(0, Math.min(100, (skillObj.mastery || 0) + masteryGain));
+      skillObj.matchesPlayed = matchesPlayed + ratedCount;
+      skillObj.isProvisional = skillObj.matchesPlayed < 30;
+      skillObj.history.push({
+        date: new Date(),
+        eloChange: ratingChange,
+        newElo: newRating,
+        questionId: `assessment_${ratedCount}q`
+      });
     }
-
-    const ratingChange = Math.round(kFactor * (totalActual - totalExpected));
-    const newRating = Math.max(0, effectiveOldRating + ratingChange);
-
-    skillObj.elo = newRating;
-    // Rescaled mastery: a perfect assessment now grants +30 mastery instead of +10
-    const masteryGain = Math.round((accuracy / 100) * 30);
-    skillObj.mastery = Math.max(0, Math.min(100, (skillObj.mastery || 0) + masteryGain));
-    skillObj.matchesPlayed = matchesPlayed + attempted;
-    skillObj.isProvisional = skillObj.matchesPlayed < 30;
-
-    if (!skillObj.history) skillObj.history = [];
-    skillObj.history.push({
-      date: new Date(),
-      eloChange: ratingChange,
-      newElo: newRating,
-      questionId: `assessment_${attempted}q`
-    });
+    skillObj.lastPracticedAt = new Date();
 
     await user.save();
 
+    const finalNewRating = ratedCount > 0 ? newRating : skillObj.elo;
+    const finalChange = ratedCount > 0 ? ratingChange : 0;
+
     session.completed = true;
-    session.finalResult = { attempted, correct, accuracy, oldRating, newRating, ratingChange };
+    session.finalResult = { attempted, correct, accuracy, oldRating, newRating: finalNewRating, ratingChange: finalChange };
     await session.save();
 
     return res.json({
       attempted, correct, accuracy,
       oldRating: oldRating !== null && oldRating !== undefined ? oldRating : 'Unrated',
-      newRating, ratingChange, sessionOver: true
+      newRating: finalNewRating ?? 'Unrated',
+      ratingChange: finalChange,
+      unratedQuestions: attempted - ratedCount,
+      sessionOver: true
     });
   } catch (err) {
     console.error('[Assessment] Finish Error:', err);
     return res.status(500).json({ msg: 'Server error' });
   }
-});
+}));
 
 module.exports = router;
+module.exports._internals = { normalizeMcq, computeSessionRating, buildDynamicDifficultyPlan, getKFactor, expectedProbability };

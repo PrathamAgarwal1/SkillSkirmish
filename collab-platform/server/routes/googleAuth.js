@@ -78,10 +78,15 @@ router.get('/callback', async (req, res) => {
             headers: { Authorization: `Bearer ${access_token}` }
         });
 
-        const { sub, name, email, picture } = userInfoResponse.data;
+        const { sub, name, picture, email_verified } = userInfoResponse.data;
+        const email = (userInfoResponse.data.email || '').trim().toLowerCase();
 
         if (!email) {
             throw new Error('No email returned from Google account');
+        }
+        // We link to existing accounts by email, so the provider must vouch for it
+        if (email_verified === false) {
+            throw new Error('Google account email is not verified');
         }
 
         // ----- Step 3: Find or create user in MongoDB -----
@@ -99,7 +104,9 @@ router.get('/callback', async (req, res) => {
         } else {
             // Create new user for first-time Google login
             // Generate a unique username from the name
-            const baseUsername = name.replace(/\s+/g, '').toLowerCase();
+            // (Google may omit the display name; fall back to the email's local part)
+            const rawName = name || email.split('@')[0];
+            const baseUsername = (rawName.toLowerCase().replace(/[^a-z0-9_.-]/g, '') || 'dev').slice(0, 24).padEnd(3, '0');
             let username = baseUsername;
             let counter = 1;
 

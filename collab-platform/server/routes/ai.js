@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const rateLimit = require('express-rate-limit');
 const auth = require('../middleware/auth');
-const { generateChatResponse, explainCode, autocompleteCode, evaluateResponse, generateQuestion, getUsageStats, resetUsageStats } = require('../services/aiService');
+const { generateChatResponse, explainCode, autocompleteCode, evaluateResponse, generateQuestion } = require('../services/aiService');
 
 /* ---------------------------------------------------------
    RATE LIMITERS
@@ -159,21 +159,6 @@ router.post('/generate-question', auth, chatLimiter, async (req, res) => {
     }
 });
 
-/* ---------------------------------------------------------
-   GET /api/ai/usage
-   Returns cumulative token usage stats (by model, task, provider)
---------------------------------------------------------- */
-router.get('/usage', auth, (req, res) => {
-    res.json(getUsageStats());
-});
-
-/* ---------------------------------------------------------
-   POST /api/ai/usage/reset
-   Resets all usage counters
---------------------------------------------------------- */
-router.post('/usage/reset', auth, (req, res) => {
-    resetUsageStats();
-    res.json({ msg: 'Usage stats reset successfully' });
-});
+// Platform-wide usage stats live under /api/admin/ai-usage (any user could previously reset them here).
 
 module.exports = router;
