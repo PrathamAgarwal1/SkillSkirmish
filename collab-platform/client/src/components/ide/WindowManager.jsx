@@ -385,6 +385,13 @@ const WindowManager = ({ projectId, projectType = 'React App', projectName, room
             setIsDirty(false);
             setFileContent(response.data.content);
             if (browserMode) rt.onFileSaved(currentFile.path, response.data.content);
+            if (/.json$/i.test(currentFile.path) && !currentFile.path.endsWith('.ipynb')) {
+                try {
+                    JSON.parse(contentToSave);
+                } catch (jsonErr) {
+                    addLog(`⚠ ${currentFile.name} is not valid JSON: ${jsonErr.message}`, 'warning');
+                }
+            }
             addLog(`✓ Saved: ${currentFile.name}`, 'success');
         } catch (_err) {
             addLog(`Error saving file: ${_err.response?.data?.msg || _err.message}`, 'error');
