@@ -83,6 +83,18 @@ const prepareWorkspace = async (projectId, io, { config, dir, env }) => {
     for (const [i, step] of config.install.entries()) {
         if (!needsInstall(dir, step)) continue;
         const where = step.dir || 'project root';
+        // A broken package.json makes npm print a wall of errors: point at the exact spot instead
+        const manifest = path.join(dir, step.dir || '', 'package.json');
+        if (step.cmd.startsWith('npm ')) {
+            try {
+                JSON.parse(require('fs').readFileSync(manifest, 'utf8'));
+            } catch (err) {
+                if (err instanceof SyntaxError) {
+                    out.console(`❌ ${step.dir ? step.dir + '/' : ''}package.json has a syntax error: ${err.message}. Fix it in the editor and run again.`, 'error');
+                    return false;
+                }
+            }
+        }
         out.console(`📦 Installing dependencies in ${where}: ${step.cmd}`, 'info');
         setState(io, projectId, { phase: 'installing' });
         const code = await execToCompletion(String(projectId), `install-${i}-${Date.now()}`, step.cmd, {
