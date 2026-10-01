@@ -57,6 +57,14 @@ const serialize = (dep) => dep && {
     url: appUrl(dep.slug),
     status: dep.status,
     activeVersion: dep.activeVersion,
+    gallery: {
+        listed: !!dep.gallery?.listed,
+        forkable: !!dep.gallery?.forkable,
+        description: dep.gallery?.description || ''
+    },
+    views: dep.views || 0,
+    likes: (dep.likes || []).length,
+    forks: dep.forks || 0,
     versions: [...dep.versions].reverse().map(v => ({
         number: v.number,
         status: v.status,

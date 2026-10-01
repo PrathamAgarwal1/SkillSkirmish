@@ -138,3 +138,28 @@
 .vc-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 3600; background: #111214; color: var(--vc-text); border-left: 4px solid var(--vc-yellow); padding: 10px 14px; border-radius: 6px; font-family: system-ui, sans-serif; font-size: 14px; display: flex; gap: 12px; align-items: center; max-width: 90vw; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
 .vc-toast.error { border-left-color: var(--vc-red); }
 .vc-toast button { background: none; border: none; color: var(--vc-muted); cursor: pointer; font-size: 16px; }
+
+/* ── Floating call window in the IDE (FloatingCall.jsx) ── */
+.vc-ide-toggle { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 2300; display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 20px; border: 1px solid #3f4147; background: #232428; color: var(--vc-text); font: 600 13px system-ui, sans-serif; cursor: pointer; box-shadow: 0 6px 20px rgba(0,0,0,.45); }
+.vc-ide-toggle:hover { background: #2b2d31; }
+.vc-ide-toggle.live { border-color: var(--vc-green); color: var(--vc-green); }
+.vc-ide-toggle span { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vc-ide-count { background: var(--vc-green); color: #fff; border-radius: 10px; font-size: 11px; padding: 0 6px; }
+.vc-float { position: fixed; right: 80px; bottom: 70px; width: 500px; height: 340px; min-width: 320px; min-height: 220px; max-width: calc(100vw - 32px); max-height: calc(100vh - 100px); z-index: 2350; display: flex; flex-direction: column; background: #000; border: 1px solid #3f4147; border-radius: 12px; overflow: hidden; resize: both; box-shadow: 0 16px 48px rgba(0,0,0,.6); }
+.vc-float.big { width: min(900px, calc(100vw - 32px)); height: min(560px, calc(100vh - 100px)); }
+.vc-float-bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; background: #1e1f22; color: var(--vc-text); font: 600 13px system-ui, sans-serif; cursor: move; user-select: none; flex-shrink: 0; }
+.vc-float-bar .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vc-float-bar button { background: none; border: none; color: var(--vc-muted); cursor: pointer; display: inline-flex; padding: 4px; border-radius: 4px; }
+.vc-float-bar button:hover { background: var(--vc-hover); color: #fff; }
+.vc-float-body { flex: 1; min-height: 0; }
+/* The room's call view, compacted for the smaller window */
+.vc-float .vc-stage-header { padding: 6px 10px; font-size: 12px; }
+.vc-float .vc-grid, .vc-float .vc-spotlight { padding: 4px 8px 70px; gap: 6px; }
+.vc-float .vc-filmstrip { height: 80px; }
+.vc-float .vc-filmstrip .vc-tile { width: 130px; }
+.vc-float .vc-lobby { gap: 10px; padding: 12px; justify-content: flex-start; overflow-y: auto; }
+.vc-float .vc-lobby h2 { font-size: 16px; }
+.vc-float .vc-card { width: 200px; padding: 10px; gap: 8px; }
+@media (max-width: 600px) {
+    .vc-float, .vc-float.big { right: 8px; left: 8px; width: auto; bottom: 64px; height: 50vh; resize: none; }
+}

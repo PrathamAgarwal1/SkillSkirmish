@@ -22,6 +22,7 @@ const Navbar = () => {
                 {isAuthenticated ? (
                     <ul style={{ display: 'flex', gap: '2rem', margin: 0, padding: 0, listStyle: 'none', alignItems: 'center', fontFamily: 'var(--font-mono)' }}>
                         <li><Link to="/dashboard" className="nav-link" style={{ color: 'var(--text-main)' }}>./dashboard</Link></li>
+                        <li><Link to="/gallery" className="nav-link" style={{ color: 'var(--text-main)' }}>./gallery</Link></li>
                         <li><Link to="/forum" className="nav-link" style={{ color: 'var(--text-main)' }}>./forum</Link></li>
                         <li><Link to="/profile" className="nav-link" style={{ color: 'var(--text-main)' }}>./profile</Link></li>
                         <li>
@@ -32,6 +33,7 @@ const Navbar = () => {
                     </ul>
                 ) : (
                     <ul style={{ display: 'flex', gap: '1.5rem', margin: 0, padding: 0, listStyle: 'none', alignItems: 'center', fontFamily: 'var(--font-mono)' }}>
+                        <li><Link to="/gallery" className="nav-link" style={{ color: 'var(--text-main)' }}>./gallery</Link></li>
                         <li><Link to="/login" className="nav-link" style={{ color: 'var(--term-blue)' }}>./login</Link></li>
                         <li><Link to="/register" className="btn" style={{ padding: '0.5rem 1rem', fontSize: '0.9rem', fontFamily: 'var(--font-mono)' }}>./init --user</Link></li>
                     </ul>

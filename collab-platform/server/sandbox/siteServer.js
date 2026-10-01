@@ -9,6 +9,24 @@ const SiteFile = require('../models/SiteFile');
 
 const deployService = () => require('../services/deployService');
 
+// Page views for the gallery: one per visitor (IP) per app every 30 minutes; gallery thumbnails
+// (iframes) and asset requests don't count.
+const VIEW_WINDOW_MS = 30 * 60 * 1000;
+const recentViews = new Map(); // "slug|ip" -> time
+const countView = (req, slug) => {
+    if (req.method !== 'GET' || req.headers['sec-fetch-dest'] === 'iframe') return;
+    if (req.headers['sec-fetch-dest'] && req.headers['sec-fetch-dest'] !== 'document') return;
+    const key = `${slug}|${req.ip}`;
+    const now = Date.now();
+    if (now - (recentViews.get(key) || 0) < VIEW_WINDOW_MS) return;
+    recentViews.set(key, now);
+    if (recentViews.size > 50000) {
+        for (const [k, t] of recentViews) if (now - t >= VIEW_WINDOW_MS) recentViews.delete(k);
+        if (recentViews.size > 50000) recentViews.clear();
+    }
+    require('../models/Deployment').updateOne({ slug }, { $inc: { views: 1 } }).catch(() => {});
+};
+
 const notFound = (res, message = 'Not found') => res.status(404).type('text/plain').send(message);
 
 const findFile = async (slug, version, rel, wantsHtml) => {
@@ -44,6 +62,7 @@ const serveStored = async (req, res, { slug, version, rel, base = '' }) => {
     res.setHeader('Content-Type', doc.contentType);
     const isHtml = /text\/html/.test(doc.contentType);
     res.setHeader('Cache-Control', isHtml ? 'no-cache' : 'public, max-age=300');
+    if (isHtml && wantsHtml) countView(req, slug);
     if (req.headers['if-none-match'] === etag) return res.status(304).end();
 
     let body = Buffer.from(doc.data.buffer || doc.data);

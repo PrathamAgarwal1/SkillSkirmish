@@ -21,12 +21,18 @@ export const AuthProvider = ({ children }) => {
 
     const loadUser = useCallback(async () => {
         try {
-            const res = await axios.get('/api/auth'); // Relative URL
+            const res = await axios.get('/api/auth'); // Relative URL (retried while the server wakes up)
             setUser(res.data);
             setIsAuthenticated(true);
         } catch (err) {
-            console.error("Token validation failed:", err.response ? err.response.data.msg : err.message);
-            logout();
+            console.error("Token validation failed:", err.response ? err.response.data?.msg : err.message);
+            if (err.response && err.response.status < 500) {
+                logout(); // the token was rejected
+            } else {
+                // Server asleep/unreachable: keep the token so a reload signs straight back in
+                setUser(null);
+                setIsAuthenticated(false);
+            }
         } finally {
             setLoading(false);
         }
