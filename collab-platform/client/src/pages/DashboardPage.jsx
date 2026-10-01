@@ -1,608 +1,393 @@
-import React, { useState, useEffect, useContext, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useContext, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { toast } from 'react-toastify';
 import AuthContext from '../context/AuthContext';
 import EditRoomModal from '../components/rooms/EditRoomModal';
-import InviteModal from '../components/rooms/InviteModal';
-import StatsBar from '../components/dashboard/StatsBar';
-import ActivityFeed from '../components/dashboard/ActivityFeed';
-import SkillAnalytics from '../components/dashboard/SkillAnalytics';
-import PlatformPulse from '../components/dashboard/PlatformPulse';
 import { socket } from '../socket';
+
+const errMsg = (err, fallback = 'Something went wrong') => err.response?.data?.msg || err.response?.data?.reason || fallback;
+
+const timeAgo = (timestamp) => {
+    const mins = Math.floor((Date.now() - new Date(timestamp)) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    if (mins < 1440) return `${Math.floor(mins / 60)}h ago`;
+    if (mins < 10080) return `${Math.floor(mins / 1440)}d ago`;
+    return new Date(timestamp).toLocaleDateString();
+};
+
+const EMPTY_ROOM = { name: '', description: '', discoverable: false, projectDescription: '', skills: '', minRating: '', capacity: '', tags: '' };
+
+/** "New room" dialog. Discovery settings only show when the room is discoverable. */
+function CreateRoomModal({ onClose, onCreated }) {
+    const [form, setForm] = useState(EMPTY_ROOM);
+    const [saving, setSaving] = useState(false);
+    const set = (key) => (e) => setForm(f => ({ ...f, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
+
+    const submit = async (e) => {
+        e.preventDefault();
+        if (!form.name.trim()) return;
+        const payload = { name: form.name.trim(), description: form.description };
+        if (form.discoverable) {
+            payload.isDiscoverable = true;
+            if (form.projectDescription) payload.projectDescription = form.projectDescription;
+            if (form.skills.trim()) {
+                payload.requiredSkills = form.skills.split(',').map(s => {
+                    const [name, weight] = s.trim().split(':');
+                    return { name: (name || '').trim(), weight: weight ? Math.min(5, Math.max(1, parseInt(weight, 10))) || 1 : 1 };
+                }).filter(s => s.name);
+            }
+            if (form.minRating) payload.minRating = parseInt(form.minRating, 10) || 0;
+            if (form.capacity) payload.capacity = parseInt(form.capacity, 10) || 10;
+            if (form.tags.trim()) payload.tags = form.tags.split(',').map(t => t.trim()).filter(Boolean);
+        }
+        setSaving(true);
+        try {
+            await axios.post('/api/rooms', payload);
+            toast.success(`Room "${payload.name}" created`);
+            onCreated();
+        } catch (err) {
+            toast.error(`Couldn't create the room: ${errMsg(err)}`);
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="ui-modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+            <form className="ui-modal" onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="new-room-title">
+                <h2 id="new-room-title">New room</h2>
+                <label className="ui-field">
+                    <span>Name</span>
+                    <input className="ui-input" value={form.name} onChange={set('name')} placeholder="Hackathon team" required autoFocus />
+                </label>
+                <label className="ui-field">
+                    <span>Description <small>(optional)</small></span>
+                    <input className="ui-input" value={form.description} onChange={set('description')} placeholder="What's this room for?" />
+                </label>
+                <label className="ui-check">
+                    <input type="checkbox" checked={form.discoverable} onChange={set('discoverable')} />
+                    <span>Let people find this room<small>It shows up in room recommendations for people with matching skills.</small></span>
+                </label>
+                {form.discoverable && (
+                    <>
+                        <label className="ui-field">
+                            <span>Project description</span>
+                            <input className="ui-input" value={form.projectDescription} onChange={set('projectDescription')} placeholder="A study planner built with React and Node" />
+                        </label>
+                        <label className="ui-field">
+                            <span>Skills you're looking for</span>
+                            <input className="ui-input" value={form.skills} onChange={set('skills')} placeholder="React:5, Node.js" />
+                            <small>Separate with commas. Add :1–5 to say how important a skill is.</small>
+                        </label>
+                        <div className="ui-inline">
+                            <label className="ui-field" style={{ flex: 1 }}>
+                                <span>Minimum rating</span>
+                                <input className="ui-input" type="number" min="0" value={form.minRating} onChange={set('minRating')} placeholder="0" />
+                            </label>
+                            <label className="ui-field" style={{ flex: 1 }}>
+                                <span>Max members</span>
+                                <input className="ui-input" type="number" min="1" value={form.capacity} onChange={set('capacity')} placeholder="10" />
+                            </label>
+                        </div>
+                        <label className="ui-field">
+                            <span>Tags</span>
+                            <input className="ui-input" value={form.tags} onChange={set('tags')} placeholder="frontend, beginner-friendly" />
+                        </label>
+                    </>
+                )}
+                <div className="ui-modal-actions">
+                    <button type="button" className="ui-btn ghost" onClick={onClose}>Cancel</button>
+                    <button type="submit" className="ui-btn primary" disabled={saving || !form.name.trim()}>{saving ? 'Creating…' : 'Create room'}</button>
+                </div>
+            </form>
+        </div>
+    );
+}
 
 const DashboardPage = () => {
     const { user } = useContext(AuthContext);
     const navigate = useNavigate();
 
-    // Existing state
     const [myRooms, setMyRooms] = useState([]);
     const [notifications, setNotifications] = useState([]);
-    const [roomName, setRoomName] = useState('');
-    const [roomDescription, setRoomDescription] = useState('');
     const [loading, setLoading] = useState(true);
-    const [roomSkills, setRoomSkills] = useState('');
-    const [roomMinRating, setRoomMinRating] = useState('');
-    const [roomCapacity, setRoomCapacity] = useState('');
-    const [roomTags, setRoomTags] = useState('');
-    const [roomDiscoverable, setRoomDiscoverable] = useState(false);
-    const [roomProjectDesc, setRoomProjectDesc] = useState('');
-    const [showAdvanced, setShowAdvanced] = useState(false);
+    const [showCreate, setShowCreate] = useState(false);
     const [editingRoom, setEditingRoom] = useState(null);
-    const [searchQuery, setSearchQuery] = useState('');
-    const [searchResults, setSearchResults] = useState([]);
-    const [matchingSkill, setMatchingSkill] = useState('');
-    const [matchResults, setMatchResults] = useState([]);
-    const [matchLoading, setMatchLoading] = useState(false);
-    const [selectedMatchUser, setSelectedMatchUser] = useState(null);
-    const [inviteRoomOptions, setInviteRoomOptions] = useState([]);
 
-    // NEW: Dashboard data state
-    const [dashStats, setDashStats] = useState(null);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchResults, setSearchResults] = useState(null);
+
+
+    const [stats, setStats] = useState(null);
     const [activity, setActivity] = useState([]);
     const [analytics, setAnalytics] = useState(null);
-    const [platform, setPlatform] = useState(null);
-    const [statsLoading, setStatsLoading] = useState(true);
-    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-    // --- DATA FETCHERS ---
+    // --- data ---
     const fetchRooms = useCallback(async () => {
-        try {
-            const res = await axios.get('/api/rooms/myrooms');
-            setMyRooms(res.data);
-        } catch (err) {
-            console.error("Failed to fetch rooms", err);
-        }
+        try { setMyRooms((await axios.get('/api/rooms/myrooms')).data); } catch (err) { console.error('Failed to fetch rooms', err); }
     }, []);
-
     const fetchNotifications = useCallback(async () => {
-        try {
-            const res = await axios.get('/api/notifications');
-            setNotifications(res.data);
-        } catch (err) {
-            console.error("Failed to fetch notifications", err);
-        }
+        try { setNotifications((await axios.get('/api/notifications')).data); } catch (err) { console.error('Failed to fetch notifications', err); }
     }, []);
-
     const fetchDashboardData = useCallback(async () => {
         try {
-            setStatsLoading(true);
-            const [statsRes, activityRes, analyticsRes, platformRes] = await Promise.all([
+            const [s, a, an] = await Promise.all([
                 axios.get('/api/dashboard/stats'),
-                axios.get('/api/dashboard/activity?limit=15'),
-                axios.get('/api/dashboard/analytics'),
-                axios.get('/api/dashboard/platform')
+                axios.get('/api/dashboard/activity?limit=8'),
+                axios.get('/api/dashboard/analytics')
             ]);
-            setDashStats(statsRes.data);
-            setActivity(activityRes.data);
-            setAnalytics(analyticsRes.data);
-            setPlatform(platformRes.data);
+            setStats(s.data);
+            setActivity(a.data);
+            setAnalytics(an.data);
         } catch (err) {
-            console.error("Failed to fetch dashboard data:", err);
-        } finally {
-            setStatsLoading(false);
+            console.error('Failed to fetch dashboard data:', err);
         }
     }, []);
 
-    // --- INITIAL LOAD ---
     useEffect(() => {
         if (!user) return;
-        const fetchData = async () => {
-            setLoading(true);
-            await Promise.all([fetchRooms(), fetchNotifications(), fetchDashboardData()]);
+        Promise.all([fetchRooms(), fetchNotifications(), fetchDashboardData()]).finally(() => setLoading(false));
 
-            // Restore search state
-            const savedSkill = sessionStorage.getItem('dashboard_matchingSkill');
-            const savedMatches = sessionStorage.getItem('dashboard_matchResults');
-            if (savedSkill) setMatchingSkill(savedSkill);
-            if (savedMatches) setMatchResults(JSON.parse(savedMatches));
-
-            setLoading(false);
+        const onDashboardUpdate = (data) => {
+            if (data.userId === user._id) { fetchRooms(); fetchNotifications(); fetchDashboardData(); }
         };
-        fetchData();
-
-        // Socket listeners
-        const handleDashboardUpdate = (data) => {
-            if (data.userId === user._id) {
-                fetchRooms();
-                fetchNotifications();
-                fetchDashboardData();
-            }
-        };
-        const handleNewNotification = () => { fetchNotifications(); };
-        const handleStatsUpdate = () => { fetchDashboardData(); };
-
-        socket.on('dashboard-update', handleDashboardUpdate);
-        socket.on('new-notification', handleNewNotification);
-        socket.on('dashboard-stats-update', handleStatsUpdate);
-
+        socket.on('dashboard-update', onDashboardUpdate);
+        socket.on('new-notification', fetchNotifications);
+        socket.on('dashboard-stats-update', fetchDashboardData);
         return () => {
-            socket.off('dashboard-update', handleDashboardUpdate);
-            socket.off('new-notification', handleNewNotification);
-            socket.off('dashboard-stats-update', handleStatsUpdate);
+            socket.off('dashboard-update', onDashboardUpdate);
+            socket.off('new-notification', fetchNotifications);
+            socket.off('dashboard-stats-update', fetchDashboardData);
         };
     }, [user, fetchRooms, fetchNotifications, fetchDashboardData]);
 
-    // --- HANDLERS (unchanged logic) ---
-    const handleCreateRoom = async (e) => {
-        e.preventDefault();
-        if (!roomName) return alert('Please enter a room name');
+    // --- actions ---
+    const handleDelete = async (room) => {
+        if (!window.confirm(`Delete the room "${room.name}"? This can't be undone.`)) return;
         try {
-            const payload = { name: roomName, description: roomDescription };
-            if (roomDiscoverable) {
-                payload.isDiscoverable = true;
-                if (roomProjectDesc) payload.projectDescription = roomProjectDesc;
-                if (roomSkills.trim()) {
-                    payload.requiredSkills = roomSkills.split(',').map(s => {
-                        const trimmed = s.trim();
-                        const parts = trimmed.split(':');
-                        return {
-                            name: parts[0].trim(),
-                            weight: parts[1] ? Math.min(5, Math.max(1, parseInt(parts[1]))) || 1 : 1
-                        };
-                    }).filter(s => s.name);
-                }
-                if (roomMinRating) payload.minRating = parseInt(roomMinRating) || 0;
-                if (roomCapacity) payload.capacity = parseInt(roomCapacity) || 10;
-                if (roomTags.trim()) {
-                    payload.tags = roomTags.split(',').map(t => t.trim()).filter(Boolean);
-                }
-            }
-
-            await axios.post('/api/rooms', payload);
-            setRoomName(''); setRoomDescription(''); setRoomSkills('');
-            setRoomMinRating(''); setRoomCapacity(''); setRoomTags('');
-            setRoomDiscoverable(false); setRoomProjectDesc('');
-            setShowAdvanced(false);
+            await axios.delete(`/api/rooms/${room._id}`);
+            toast.success('Room deleted');
             fetchRooms();
-            fetchDashboardData(); // Refresh stats
-        } catch (err) {
-            console.error("Failed to create room:", err);
-            alert(`Failed to create room: ${err.response?.data?.msg || 'An error occurred.'}`);
-        }
-    };
-
-    const handleDelete = async (roomId) => {
-        if (window.confirm('Delete this room?')) {
-            try {
-                await axios.delete(`/api/rooms/${roomId}`);
-                fetchRooms();
-                fetchDashboardData();
-            } catch (err) { alert('Failed to delete room.'); }
-        }
+            fetchDashboardData();
+        } catch (err) { toast.error(`Couldn't delete the room: ${errMsg(err)}`); }
     };
 
     const handleSearch = async (e) => {
         e.preventDefault();
-        try {
-            const res = await axios.get(`/api/rooms/search?q=${searchQuery}`);
-            setSearchResults(res.data);
-        } catch (err) { console.error("Search failed:", err); }
-    };
-
-    const handleQuickMatch = async (e) => {
-        e.preventDefault();
-        if (!matchingSkill.trim()) return alert('Please enter a skill');
-        try {
-            setMatchLoading(true);
-            const res = await axios.post('/api/matchmaking/find-match', {
-                requiredSkills: [matchingSkill],
-                minElo: 0
-            });
-            const matches = res.data.matches || [];
-            setMatchResults(matches);
-            sessionStorage.setItem('dashboard_matchingSkill', matchingSkill);
-            sessionStorage.setItem('dashboard_matchResults', JSON.stringify(matches));
-            if (matches.length === 0) {
-                alert('No matching developers found for this skill.');
-            }
-        } catch (err) {
-            alert(`Failed: ${err.response?.data?.reason || 'An error occurred'}`);
-        } finally {
-            setMatchLoading(false);
-        }
-    };
-
-    const handleInviteToRoom = useCallback((matchUser) => {
-        setSelectedMatchUser(matchUser);
-        setInviteRoomOptions(myRooms);
-    }, [myRooms]);
-
-    const handleSendRoomInvite = async (roomId, message) => {
-        if (!selectedMatchUser) { alert('No user selected'); return; }
-        try {
-            await axios.post(`/api/rooms/${roomId}/send-invite`, {
-                userId: selectedMatchUser.userId,
-                message
-            });
-            alert('Invite sent!');
-            setSelectedMatchUser(null);
-            setInviteRoomOptions([]);
-        } catch (err) { alert('Failed to send invite'); }
+        try { setSearchResults((await axios.get('/api/rooms/search', { params: { q: searchQuery } })).data); } catch (err) { toast.error(`Search failed: ${errMsg(err)}`); }
     };
 
     const handleRequestJoin = async (roomId) => {
         try {
             await axios.post(`/api/rooms/${roomId}/request-join`);
-            alert('Join request sent!');
-            setSearchResults(prev => prev.filter(r => r._id !== roomId));
-        } catch (err) {
-            console.error('Failed to send join request:', err);
-            alert(`Failed: ${err.response?.data?.msg || 'An error occurred'}`);
-        }
+            toast.success('Join request sent');
+            setSearchResults(prev => (prev || []).filter(r => r._id !== roomId));
+        } catch (err) { toast.error(`Couldn't send the request: ${errMsg(err)}`); }
     };
 
-    // --- FIX: More Robust Accept Invite Logic ---
+
+
     const handleAcceptInvite = async (roomId, notificationId) => {
-        if (!roomId) {
-            console.error("Cannot join room: Room ID is missing from invite.");
-            return;
-        }
-
+        if (!roomId) return;
         try {
-            console.log(`Attempting to join room: ${roomId}`);
-
-            // 1. Call Backend to add user to member list
-            // We await this to ensure the user is a member BEFORE navigating
-            const response = await axios.post(`/api/rooms/${roomId}/accept-invite`, { notificationId });
-
-            console.log("Join response:", response.data);
-
-            if (response.data.msg === 'Joined successfully' || response.data.msg === 'Already a member') {
-                navigate(`/rooms/${roomId}`);
-            } else {
-                alert(`Could not join room: ${response.data.msg}`);
-            }
+            const res = await axios.post(`/api/rooms/${roomId}/accept-invite`, { notificationId });
+            if (res.data.msg === 'Joined successfully' || res.data.msg === 'Already a member') navigate(`/rooms/${roomId}`);
+            else toast.error(`Couldn't join: ${res.data.msg}`);
             fetchRooms();
-        } catch (err) {
-            console.error("Failed to join room:", err);
-            alert(err.response?.data?.msg || "Error joining room. It may have been deleted.");
-        }
+        } catch (err) { toast.error(errMsg(err, "Couldn't join the room. It may have been deleted.")); }
     };
 
-    const handleApproveJoin = async (roomID, userId, notificationId) => {
+    const handleApproveJoin = async (roomId, userId, notificationId) => {
         try {
-            await axios.post(`/api/rooms/${roomID}/approve-join`, { userId, notificationId });
-            alert('User approved!');
+            await axios.post(`/api/rooms/${roomId}/approve-join`, { userId, notificationId });
+            toast.success('Request approved');
             fetchNotifications();
-        } catch (err) {
-            console.error("Failed to approve:", err);
-            alert("Failed to approve request.");
-        }
+        } catch (err) { toast.error(`Couldn't approve: ${errMsg(err)}`); }
     };
 
-    if (loading || !user) return <div className="dashboard-layout" style={{ padding: '2rem' }}><h1>Loading...</h1></div>;
+    if (loading || !user) return <div className="ui-page"><p className="ui-muted">Loading…</p></div>;
+
+    const pending = notifications.filter(n => (n.type === 'invite' && n.relatedId) || (n.type === 'join_request' && n.sender));
+    const skills = analytics?.skills || [];
+    const maxElo = Math.max(1600, ...skills.map(s => s.elo));
+    const summary = [
+        stats?.totalRooms ? `${stats.totalRooms} room${stats.totalRooms === 1 ? '' : 's'}` : null,
+        stats?.skillCount ? `${stats.skillCount} skill${stats.skillCount === 1 ? '' : 's'}` : null,
+        stats?.assessment?.total ? `${stats.assessment.total} assessment${stats.assessment.total === 1 ? '' : 's'}` : null
+    ].filter(Boolean).join(' · ');
 
     return (
-        <>
+        <div className="ui-page">
+            {showCreate && <CreateRoomModal onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); fetchRooms(); fetchDashboardData(); }} />}
             {editingRoom && <EditRoomModal room={editingRoom} onClose={() => setEditingRoom(null)} onRoomUpdated={() => { setEditingRoom(null); fetchRooms(); }} />}
 
-            <div className="dashboard-container">
-                <header className="dashboard-header">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <button 
-                            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                            style={{ background: 'none', border: '1px solid var(--border-subtle)', color: 'var(--text-main)', fontSize: '1.2rem', padding: '0.3rem 0.6rem', cursor: 'pointer', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                            title="Toggle Sidebar"
-                        >
-                            <span style={{ fontSize: '1.4rem', lineHeight: '1', display: 'flex', alignItems: 'center' }}>☰</span>
-                        </button>
-                        <h2 style={{ margin: 0 }}>~/dashboard</h2>
-                    </div>
-                    <div className="sys-status">
-                        <span className="status-dot online"></span> SYSTEM ONLINE
-                    </div>
-                </header>
-
-                <div className="dashboard-grid">
-                    {/* LEFT COL: Activity, Notifications, Matchmaking */}
-                    <div className={`dashboard-sidebar ${isSidebarOpen ? 'expanded' : 'collapsed'}`}>
-
-                        <div className="sidebar-icon-bar">
-                            <span title="Activity" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--term-green)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-                                </svg>
-                            </span>
-                            <span title="Notifications" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--term-gold)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-                                    <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-                                </svg>
-                            </span>
-                            <span title="Quick Match" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--term-blue)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-                                </svg>
-                            </span>
-                            <span title="Find Room" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--term-cyan, #00d4ff)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <circle cx="11" cy="11" r="8"/>
-                                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                                </svg>
-                            </span>
-                            <span title="Platform Pulse" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--term-purple, #b388ff)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-                                </svg>
-                            </span>
-                        </div>
-
-                        <div className="sidebar-content-wrapper">
-                            {/* Activity Feed (NEW) */}
-                            <ActivityFeed activities={activity} loading={statsLoading} />
-
-                            {/* Notifications */}
-                            <div className="term-card" style={{ marginTop: '1rem' }}>
-                                <div className="term-header">
-                                    <div className="window-dots"><div className="dot dot-red"></div><div className="dot dot-yellow"></div><div className="dot dot-green"></div></div>
-                                    <span>notifications.log</span>
-                                </div>
-                                <div className="term-body" style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                                    {notifications.length > 0 ? (
-                                        <ul className="term-list">
-                                            {notifications.map(n => (
-                                                <li key={n._id} className="term-list-item">
-                                                    <span className="timestamp">[{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}]</span> {n.message}
-                                                    {n.type === 'invite' && n.relatedId && (
-                                                        <button className="btn-term-action" onClick={() => handleAcceptInvite(n.relatedId, n._id)}>
-                                                            [ACCEPT INVITE]
-                                                        </button>
-                                                    )}
-                                                    {n.type === 'join_request' && n.sender && (
-                                                        <button className="btn-term-action" onClick={() => handleApproveJoin(n.relatedId, n.sender, n._id)}>
-                                                            [APPROVE ACCESS]
-                                                        </button>
-                                                    )}
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    ) : <div className="term-empty">&gt; No new system messages.</div>}
-                                </div>
-                            </div>
-
-                            {/* Quick Match */}
-                            <div className="term-card" style={{ marginTop: '1rem' }}>
-                                <div className="term-header">
-                                    <span>quick_match.exe</span>
-                                </div>
-                                <div className="term-body">
-                                    <form onSubmit={handleQuickMatch} style={{ display: 'flex', gap: '0.5rem' }}>
-                                        <input
-                                            type="text"
-                                            className="term-input"
-                                            placeholder="Enter skill (e.g., React, Python)..."
-                                            value={matchingSkill}
-                                            onChange={(e) => setMatchingSkill(e.target.value)}
-                                        />
-                                        <button type="submit" className="btn-term" disabled={matchLoading}>
-                                            {matchLoading ? 'SEARCHING...' : 'GO'}
-                                        </button>
-                                    </form>
-                                    {matchResults.length > 0 && (
-                                        <ul className="term-list" style={{ marginTop: '1rem' }}>
-                                            {matchResults.map(match => {
-                                                const skillNames = match.skills && Array.isArray(match.skills) && match.skills.length > 0
-                                                    ? match.skills.map(s => typeof s === 'string' ? s : s.name).filter(Boolean).join(', ')
-                                                    : null;
-                                                return (
-                                                    <li key={match.userId} className="term-list-item">
-                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                                                            <span>
-                                                                <strong><Link to={`/profile/${match.userId}`} className="text-white hover:underline">{match.username || 'Unknown User'}</Link></strong>
-                                                                <br />
-                                                                {skillNames ? (
-                                                                    <span style={{ fontSize: '0.85em', color: '#999' }}>{skillNames}</span>
-                                                                ) : (
-                                                                    <span style={{ fontSize: '0.85em', color: '#999' }}>No skills listed</span>
-                                                                )}
-                                                            </span>
-                                                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                                                                <span className="status-tag">[SCORE: {match.matchScore}]</span>
-                                                                <button className="btn-term-sm" onClick={() => handleInviteToRoom(match)}>INVITE</button>
-                                                            </div>
-                                                        </div>
-                                                    </li>
-                                                );
-                                            })}
-                                        </ul>
-                                    )}
-                                    <div style={{ marginTop: '0.8rem' }}>
-                                        <Link to="/forum" className="term-link">&gt; Advanced Search...</Link>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Join Room */}
-                            <div className="term-card" style={{ marginTop: '1.5rem' }}>
-                                <div className="term-header">
-                                    <span>connect_remote.sh</span>
-                                </div>
-                                <div className="term-body">
-                                    <form onSubmit={handleSearch} style={{ display: 'flex', gap: '0.5rem' }}>
-                                        <input type="text" className="term-input" placeholder="Search rooms..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-                                        <button type="submit" className="btn-term">FIND</button>
-                                    </form>
-                                    <ul className="term-list" style={{ marginTop: '1rem' }}>
-                                        {searchResults.map(room => (
-                                            <li key={room._id} className="term-list-item">
-                                                <span>{room.name}</span>
-                                                {room.members?.some(m => m._id === user._id) ?
-                                                    <span className="status-tag">[MEMBER]</span> :
-                                                    <button className="btn-term-sm" onClick={() => handleRequestJoin(room._id)}>REQ_ACCESS</button>
-                                                }
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            </div>
-
-                            {/* Platform Pulse (NEW) */}
-                            <div style={{ marginTop: '1.5rem' }}>
-                                <PlatformPulse platform={platform} loading={statsLoading} />
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* RIGHT COL: Main Room Management + Analytics */}
-                    <div className="dashboard-main">
-
-                        {/* Expandable Skill Analytics */}
-                        <div className="analytics-popout-container">
-                            <div className="analytics-header-collapsed">
-                                <span>~/metrics/skill_analytics.exe</span>
-                                <span className="hint">[HOVER TO EXPAND]</span>
-                            </div>
-                            <div className="analytics-content">
-                                <SkillAnalytics analytics={analytics} loading={statsLoading} />
-                            </div>
-                        </div>
-
-                        {/* Top Stats */}
-                        <StatsBar stats={dashStats} loading={statsLoading} />
-
-                        {/* Create Room */}
-                        <div className="term-card mb-4">
-                            <div className="term-header">
-                                <div className="window-dots"><div className="dot dot-red"></div><div className="dot dot-yellow"></div><div className="dot dot-green"></div></div>
-                                <span>mkdir new_room</span>
-                            </div>
-                            <div className="term-body">
-                                <form onSubmit={handleCreateRoom} className="create-room-form" style={{ gap: '0.6rem' }}>
-                                    <div className="form-group">
-                                        <label style={{ marginBottom: '0.2rem' }}>&gt; Room Name:</label>
-                                        <input type="text" className="term-input" style={{ padding: '0.5rem' }} value={roomName} onChange={(e) => setRoomName(e.target.value)} required />
-                                    </div>
-                                    <div className="form-group">
-                                        <label style={{ marginBottom: '0.2rem' }}>&gt; Description:</label>
-                                        <input type="text" className="term-input" style={{ padding: '0.5rem' }} value={roomDescription} onChange={(e) => setRoomDescription(e.target.value)} />
-                                    </div>
-
-                                    {/* Discoverable Toggle */}
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', margin: '0.4rem 0' }}>
-                                        <label style={{
-                                            display: 'flex', alignItems: 'center', gap: '0.5rem',
-                                            cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: '0.8rem',
-                                            color: roomDiscoverable ? 'var(--term-green)' : 'var(--text-muted)',
-                                            whiteSpace: 'nowrap'
-                                        }}>
-                                            <input type="checkbox" checked={roomDiscoverable}
-                                                onChange={(e) => { setRoomDiscoverable(e.target.checked); setShowAdvanced(e.target.checked); }}
-                                                style={{ accentColor: 'var(--term-green)', width: '14px', height: '14px' }} />
-                                            Make Discoverable
-                                        </label>
-                                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                                            (appears in room recommendations)
-                                        </span>
-                                    </div>
-
-                                    {/* Advanced Discovery Fields */}
-                                    {showAdvanced && (
-                                        <div style={{
-                                            background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius-sm)',
-                                            padding: '0.8rem', marginBottom: '0.5rem',
-                                            border: '1px solid var(--border-subtle)'
-                                        }}>
-                                            <div style={{ fontSize: '0.7rem', color: 'var(--term-blue)', fontFamily: 'var(--font-mono)', marginBottom: '0.4rem' }}>
-                                                PROJECT_DISCOVERY_CONFIG
-                                            </div>
-
-                                            <div className="form-group" style={{ marginBottom: '0.5rem' }}>
-                                                <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: '0.2rem' }}>
-                                                    &gt; Project Description:
-                                                </label>
-                                                <input type="text" className="term-input" style={{ padding: '0.4rem' }} placeholder="What is this project about?"
-                                                    value={roomProjectDesc} onChange={(e) => setRoomProjectDesc(e.target.value)} />
-                                            </div>
-
-                                            <div className="form-group" style={{ marginBottom: '0.5rem' }}>
-                                                <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: '0.2rem' }}>
-                                                    &gt; Required Skills <span style={{ color: 'var(--term-gold)' }}>(comma-separated)</span>:
-                                                </label>
-                                                <input type="text" className="term-input" style={{ padding: '0.4rem' }} placeholder="e.g. React:5, Node.js"
-                                                    value={roomSkills} onChange={(e) => setRoomSkills(e.target.value)} />
-                                            </div>
-
-                                            <div style={{ display: 'flex', gap: '0.8rem', marginBottom: '0.5rem' }}>
-                                                <div className="form-group" style={{ flex: 1 }}>
-                                                    <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: '0.2rem' }}>
-                                                        &gt; Min Rating:
-                                                    </label>
-                                                    <input type="number" className="term-input" style={{ padding: '0.4rem' }} placeholder="0"
-                                                        value={roomMinRating} onChange={(e) => setRoomMinRating(e.target.value)} />
-                                                </div>
-                                                <div className="form-group" style={{ flex: 1 }}>
-                                                    <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: '0.2rem' }}>
-                                                        &gt; Capacity:
-                                                    </label>
-                                                    <input type="number" className="term-input" style={{ padding: '0.4rem' }} placeholder="10"
-                                                        value={roomCapacity} onChange={(e) => setRoomCapacity(e.target.value)} />
-                                                </div>
-                                            </div>
-
-                                            <div className="form-group">
-                                                <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: '0.2rem' }}>
-                                                    &gt; Tags:
-                                                </label>
-                                                <input type="text" className="term-input" style={{ padding: '0.4rem' }} placeholder="e.g. frontend"
-                                                    value={roomTags} onChange={(e) => setRoomTags(e.target.value)} />
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    <button type="submit" className="btn-term-primary" style={{ marginTop: '0' }}>EXECUTE CREATE</button>
-                                </form>
-                            </div>
-                        </div>
-
-
-
-                        {/* My Rooms List */}
-                        <div className="term-card" style={{ flexGrow: 1 }}>
-                            <div className="term-header">
-                                <div className="window-dots"><div className="dot dot-red"></div><div className="dot dot-yellow"></div><div className="dot dot-green"></div></div>
-                                <span>ls ./my_rooms</span>
-                            </div>
-                            <div className="term-body room-grid-display">
-                                {myRooms.length > 0 ? (
-                                    myRooms.map(room => (
-                                        <div key={room._id} className="room-card-mini">
-                                            <div className="room-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--term-gold)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                                                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" fill="rgba(210,153,34,0.1)"/>
-                                                </svg>
-                                            </div>
-                                            <div className="room-info">
-                                                <Link to={`/rooms/${room._id}`} className="room-title">{room.name}</Link>
-                                                <span className="room-desc">{room.description || 'No description'}</span>
-                                            </div>
-                                            {user._id === room.owner._id && (
-                                                <div className="room-actions">
-                                                    <button className="icon-btn" onClick={() => setEditingRoom(room)} title="Edit">✎</button>
-                                                    <button className="icon-btn danger" onClick={() => handleDelete(room._id)} title="Delete">×</button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))
-                                ) : <div className="term-empty">&gt; Directory is empty. Create a room to start.</div>}
-                            </div>
-                        </div>
-                    </div>
+            <header className="ui-head">
+                <div>
+                    <h1>Welcome back, {user.username}</h1>
+                    <p>{summary || 'Create a room to start building with others, or jump into a battle.'}</p>
                 </div>
-            </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                    <Link className="ui-btn" to="/forum">Find teammates</Link>
+                    <button className="ui-btn primary" onClick={() => setShowCreate(true)}>New room</button>
+                </div>
+            </header>
 
-            {/* Invite to Room Modal */}
-            {selectedMatchUser && (
-                <InviteModal
-                    user={selectedMatchUser}
-                    rooms={inviteRoomOptions}
-                    onSend={handleSendRoomInvite}
-                    onClose={() => {
-                        setSelectedMatchUser(null);
-                        setInviteRoomOptions([]);
-                    }}
-                />
+            {pending.length > 0 && (
+                <section className="ui-card" style={{ marginBottom: 20, borderColor: 'rgba(56,139,253,0.45)' }} aria-label="Waiting for you">
+                    <div className="ui-card-head"><h2>Waiting for you</h2></div>
+                    <ul className="ui-list">
+                        {pending.map(n => (
+                            <li key={n._id} className="ui-row">
+                                <div className="ui-row-main"><span className="ui-row-title" style={{ whiteSpace: 'normal' }}>{n.message}</span></div>
+                                <div className="ui-row-end">
+                                    {n.type === 'invite'
+                                        ? <button className="ui-btn small primary" onClick={() => handleAcceptInvite(n.relatedId, n._id)}>Join room</button>
+                                        : <button className="ui-btn small primary" onClick={() => handleApproveJoin(n.relatedId, n.sender, n._id)}>Approve</button>}
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                </section>
             )}
-        </>
+
+            <div className="ui-grid">
+                <div className="ui-stack">
+                    <section className="ui-card">
+                        <div className="ui-card-head" style={{ flexWrap: 'wrap' }}>
+                            <h2>Your rooms</h2>
+                            <form onSubmit={handleSearch} className="ui-inline" role="search" style={{ maxWidth: 320, width: '100%' }}>
+                                <input className="ui-input" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Find a room to join" aria-label="Find a room to join" style={{ padding: '6px 10px' }} />
+                                <button className="ui-btn small" type="submit">Search</button>
+                            </form>
+                        </div>
+
+                        {searchResults && (
+                            <div style={{ marginBottom: 14, padding: '4px 14px', background: 'var(--bg-input)', borderRadius: 8 }}>
+                                <div className="ui-row" style={{ borderTop: 'none' }}>
+                                    <span className="ui-row-main ui-muted ui-small">{searchResults.length ? `Rooms matching "${searchQuery}"` : `No public rooms match "${searchQuery}"`}</span>
+                                    <button className="ui-link ui-small" onClick={() => setSearchResults(null)}>Close</button>
+                                </div>
+                                {searchResults.map(room => (
+                                    <div key={room._id} className="ui-row">
+                                        <div className="ui-row-main">
+                                            <span className="ui-row-title">{room.name}</span>
+                                            {room.description && <span className="ui-row-sub">{room.description}</span>}
+                                        </div>
+                                        {room.members?.some(m => (m._id || m) === user._id)
+                                            ? <Link className="ui-btn small" to={`/rooms/${room._id}`}>Open</Link>
+                                            : <button className="ui-btn small" onClick={() => handleRequestJoin(room._id)}>Ask to join</button>}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {myRooms.length > 0 ? (
+                            <ul className="ui-list">
+                                {myRooms.map(room => {
+                                    const owner = room.owner?._id === user._id;
+                                    const members = room.members?.length || 0;
+                                    return (
+                                        <li key={room._id} className="ui-row">
+                                            <div className="ui-row-main">
+                                                <Link to={`/rooms/${room._id}`} className="ui-row-title">{room.name}</Link>
+                                                <span className="ui-row-sub">{room.description || (owner ? 'No description' : `By ${room.owner?.username || 'someone'}`)}</span>
+                                            </div>
+                                            <div className="ui-row-end">
+                                                {members > 1 && <span>{members} members</span>}
+                                                {owner && <span className="ui-tag">Owner</span>}
+                                                {owner && (
+                                                    <>
+                                                        <button className="ui-btn small quiet" onClick={() => setEditingRoom(room)} aria-label={`Edit ${room.name}`}>Edit</button>
+                                                        <button className="ui-btn small quiet danger" onClick={() => handleDelete(room)} aria-label={`Delete ${room.name}`}>Delete</button>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        ) : (
+                            <div className="ui-empty">
+                                Rooms are where your team chats, talks in voice and builds projects together.
+                                <br />
+                                <button className="ui-btn primary" onClick={() => setShowCreate(true)}>Create your first room</button>
+                            </div>
+                        )}
+                    </section>
+
+                    <section className="ui-card">
+                        <div className="ui-card-head"><h2>Recent activity</h2></div>
+                        {activity.length > 0 ? (
+                            <ul className="ui-list">
+                                {activity.map((item, i) => (
+                                    <li key={i} className="ui-row">
+                                        <div className="ui-row-main">
+                                            <span className="ui-row-title" style={{ fontWeight: 400 }}>{item.title}</span>
+                                            {item.detail && <span className="ui-row-sub">{item.detail}</span>}
+                                        </div>
+                                        <div className="ui-row-end">
+                                            {item.ratingChange != null && (
+                                                <span className={item.ratingChange >= 0 ? 'ui-up' : 'ui-down'}>{item.ratingChange >= 0 ? '▲' : '▼'} {Math.abs(item.ratingChange)}</span>
+                                            )}
+                                            <span>{timeAgo(item.timestamp)}</span>
+                                        </div>
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : <div className="ui-empty">Nothing yet. Your assessments, rooms and invites show up here.</div>}
+                    </section>
+                </div>
+
+                <aside className="ui-stack">
+                    <section className="ui-card">
+                        <div className="ui-card-head">
+                            <h2>Your skills</h2>
+                            <Link to="/profile" className="ui-link ui-small">Take an assessment</Link>
+                        </div>
+                        {skills.length > 0 ? (
+                            <ul className="ui-list">
+                                {skills.slice(0, 6).map(s => {
+                                    const rated = s.matchesPlayed > 0;
+                                    return (
+                                        <li key={s.name} className="ui-row" style={{ display: 'block' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: rated ? 6 : 0 }}>
+                                                <span>{s.name}{rated && s.isProvisional && <span className="ui-tag" style={{ marginLeft: 8 }} title="Rating settles after a few more assessments">new</span>}</span>
+                                                {rated ? <span className="ui-num">{s.elo}</span> : <span className="ui-muted ui-small">Not rated yet</span>}
+                                            </div>
+                                            {rated && <div className="ui-bar" aria-hidden="true"><span style={{ width: `${Math.max(4, (s.elo / maxElo) * 100)}%` }} /></div>}
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        ) : (
+                            <div className="ui-empty">Add a skill on your profile and take a short assessment to get a rating.</div>
+                        )}
+                    </section>
+
+                    <section className="ui-card">
+                        <div className="ui-card-head"><h2>Today</h2></div>
+                        <ul className="ui-list">
+                            <li className="ui-row">
+                                <div className="ui-row-main">
+                                    <span className="ui-row-title">Daily CodeGuessr</span>
+                                    <span className="ui-row-sub">5 rounds, the same for everyone</span>
+                                </div>
+                                <Link className="ui-btn small primary" to="/battle">Play</Link>
+                            </li>
+                            <li className="ui-row">
+                                <div className="ui-row-main">
+                                    <span className="ui-row-title">Find a battle</span>
+                                    <span className="ui-row-sub">Quiz, debug race, CSS and more</span>
+                                </div>
+                                <Link className="ui-btn small" to="/battle">Open</Link>
+                            </li>
+                        </ul>
+                    </section>
+
+                </aside>
+            </div>
+        </div>
     );
 };
 

@@ -83,7 +83,6 @@ const AppContent = () => {
 
   return (
     <VoiceProvider>
-      <div className="crt-overlay"></div>
       <ServerStatusBanner />
       <Navbar />
       <main className="app-content">

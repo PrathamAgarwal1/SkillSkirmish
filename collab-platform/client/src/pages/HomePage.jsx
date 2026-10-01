@@ -59,35 +59,35 @@ const HomePage = () => {
                     {/* Left: Text Content */}
                     <div className="hero-text-content">
                         <div className="hero-badge">
-                            <span></span> v2.0 is Live
+                            <span></span> Build, battle and level up
                         </div>
                         <h1 className="hero-title">
                             Skill<span className="gradient-text">Skirmish</span>
                         </h1>
                         <p className="hero-subtitle">
                             The real-time collaboration platform for developers.
-                            Instant IDEs, voice channels, and AI-powered skill tracking—all in your browser.
+                            Shared IDEs, voice rooms, live code battles and skill ratings, all in your browser.
                         </p>
 
                         <div className="hero-actions">
                             {isAuthenticated ? (
                                 <>
-                                    <Link to="/dashboard" className="btn" style={{ fontFamily: 'var(--font-mono)' }}>
-                                        ./dashboard
+                                    <Link to="/dashboard" className="btn">
+                                        Open your dashboard
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 12H19M19 12L12 5M19 12L12 19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
                                     </Link>
-                                    <button onClick={() => setShowInviteModal(true)} className="btn btn-secondary" style={{ fontFamily: 'var(--font-mono)' }}>
-                                        ./join-room
+                                    <button onClick={() => setShowInviteModal(true)} className="btn btn-secondary">
+                                        Join a room
                                     </button>
                                 </>
                             ) : (
                                 <>
-                                    <Link to="/register" className="btn" style={{ fontFamily: 'var(--font-mono)' }}>
-                                        ./init --new-project
+                                    <Link to="/register" className="btn">
+                                        Get started free
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 12H19M19 12L12 5M19 12L12 19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
                                     </Link>
-                                    <Link to="/login" className="btn btn-secondary" style={{ fontFamily: 'var(--font-mono)' }}>
-                                        ./login
+                                    <Link to="/login" className="btn btn-secondary">
+                                        Log in
                                     </Link>
                                 </>
                             )}

@@ -111,7 +111,80 @@ html, body {
   align-items: center;
   justify-content: space-between;
   padding: 0 2rem;
+  gap: 2rem;
   flex-shrink: 0;
+}
+
+.nav-main {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0 auto 0 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.nav-main::-webkit-scrollbar { display: none; }
+.nav-guest { margin: 0 0 0 auto; gap: 0.75rem; }
+
+.nav-item {
+  display: block;
+  padding: 0.45rem 0.8rem;
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.nav-item:hover { color: var(--text-bright); background: rgba(255, 255, 255, 0.05); }
+.nav-item.active { color: var(--text-bright); background: rgba(88, 166, 255, 0.12); }
+
+.nav-user { display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0; }
+.nav-profile {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.6rem 0.25rem 0.25rem;
+  border-radius: 999px;
+  color: var(--text-main);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+.nav-profile:hover, .nav-profile.active { background: rgba(255, 255, 255, 0.06); color: var(--text-bright); }
+.nav-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(88, 166, 255, 0.18);
+  color: var(--term-blue);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+.nav-logout {
+  background: none;
+  border: none;
+  padding: 0.4rem 0.2rem;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.nav-logout:hover { color: var(--text-bright); }
+.nav-item:focus-visible, .nav-profile:focus-visible, .nav-logout:focus-visible {
+  outline: 2px solid var(--term-blue);
+  outline-offset: 2px;
+}
+
+@media (max-width: 760px) {
+  .navbar-fixed { height: auto; flex-wrap: wrap; padding: 0.6rem 1rem 0; gap: 0.5rem 0.75rem; }
+  .nav-main { order: 3; flex-basis: 100%; margin: 0 -0.25rem; padding-bottom: 0.4rem; }
+  .nav-guest { order: 0; flex-basis: auto; margin-left: auto; }
+  .nav-user { margin-left: auto; }
+  .nav-username { display: none; }
 }
 
 /* Main content area below navbar */

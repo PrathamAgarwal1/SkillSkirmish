@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useContext } from 'react';
 import axios from 'axios';
+import { toast } from 'react-toastify';
 import FriendButton from '../components/friends/FriendButton';
 import '../components/friends/friends.css';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -18,18 +19,18 @@ const availableSkills = [
     "Git", "CI/CD", "HTML5", "CSS3", "Sass"
 ];
 
-// --- CODEFORCES RANK DATA ---
+// --- CODEFORCES-STYLE RANKS (colours lightened to stay readable on the dark background) ---
 const CF_RANKS = [
-    { name: 'Newbie', min: 0, max: 1200, color: '#808080' },
-    { name: 'Pupil', min: 1200, max: 1400, color: '#008000' },
-    { name: 'Specialist', min: 1400, max: 1600, color: '#03A89E' },
-    { name: 'Expert', min: 1600, max: 1900, color: '#0000FF' },
-    { name: 'Candidate Master', min: 1900, max: 2100, color: '#AA00AA' },
-    { name: 'Master', min: 2100, max: 2300, color: '#FF8C00' },
-    { name: 'International Master', min: 2300, max: 2400, color: '#FF8C00' },
-    { name: 'Grandmaster', min: 2400, max: 2600, color: '#FF0000' },
-    { name: 'International Grandmaster', min: 2600, max: 3000, color: '#CC0000' },
-    { name: 'Legendary Grandmaster', min: 3000, max: 5000, color: '#800000' }
+    { name: 'Newbie', min: 0, max: 1200, color: '#9da5b0' },
+    { name: 'Pupil', min: 1200, max: 1400, color: '#3fb950' },
+    { name: 'Specialist', min: 1400, max: 1600, color: '#39c5bb' },
+    { name: 'Expert', min: 1600, max: 1900, color: '#6ea8fe' },
+    { name: 'Candidate Master', min: 1900, max: 2100, color: '#d2a8ff' },
+    { name: 'Master', min: 2100, max: 2300, color: '#ffa657' },
+    { name: 'International Master', min: 2300, max: 2400, color: '#ffa657' },
+    { name: 'Grandmaster', min: 2400, max: 2600, color: '#ff7b72' },
+    { name: 'International Grandmaster', min: 2600, max: 3000, color: '#ff6b6b' },
+    { name: 'Legendary Grandmaster', min: 3000, max: 5000, color: '#ff4d4d' }
 ];
 
 const getRankName = (elo) => {
@@ -136,27 +137,23 @@ const ProfilePage = () => {
         fetchProfile();
     };
 
-    const handleAddSkill = () => {
-        if (!profile || profile.skills.find(skill => skill.name === selectedSkillToAdd)) {
-            alert("Skill already added!");
-            return;
-        }
-        const newSkill = { name: selectedSkillToAdd, mastery: 0, elo: null, matchesPlayed: 0, isProvisional: true };
+    const handleAddSkill = (name) => {
+        if (!profile || !name || profile.skills.find(skill => skill.name === name)) return;
+        const newSkill = { name, mastery: 0, elo: null, matchesPlayed: 0, isProvisional: true };
         const updatedSkills = [...profile.skills, newSkill];
 
         setProfile({ ...profile, skills: updatedSkills });
-        setGraphFilter(selectedSkillToAdd);
+        setGraphFilter(name);
 
         axios.put('/api/profile', { skills: updatedSkills })
-            .then(res => setProfile(res.data))
+            .then(res => { setProfile(res.data); toast.success(`${name} added`); })
             .catch(err => {
                 console.error(err);
-                alert("Failed to save skill.");
+                toast.error("Couldn't save the skill.");
             });
     };
 
     const isRated = (s) => s && s.elo != null && (s.matchesPlayed || 0) > 0;
-    const displayElo = (s) => isRated(s) ? s.elo : null;
 
     const handleSaveProfile = async () => {
         try {
@@ -175,7 +172,7 @@ const ProfilePage = () => {
                 socket.emit('profileUpdated', { userId: profile._id, username: res.data.username });
             }
         } catch (err) {
-            alert(`Failed to save profile: ${err.response?.data?.msg || 'Error'}`);
+            toast.error(`Couldn't save your profile: ${err.response?.data?.msg || 'something went wrong'}`);
         }
     };
 
@@ -185,10 +182,10 @@ const ProfilePage = () => {
                 userId: profile._id,
                 message
             });
-            alert(`Invite sent to ${profile.username}!`);
+            toast.success(`Invite sent to ${profile.username}`);
             setShowInviteModal(false);
         } catch (err) {
-            alert(`Failed: ${err.response?.data?.msg || 'Error sending invite'}`);
+            toast.error(`Couldn't send the invite: ${err.response?.data?.msg || 'something went wrong'}`);
         }
     };
 
@@ -206,281 +203,142 @@ const ProfilePage = () => {
         return [];
     };
 
-    if (loading) return (
-        <div className="dashboard-container" style={{ paddingTop: '2rem', color: 'var(--text-main)' }}>
-            Loading Profile...
-        </div>
-    );
-    if (!profile) return (
-        <div className="dashboard-container" style={{ paddingTop: '2rem', color: 'var(--text-main)' }}>
-            Could not load profile.
-        </div>
-    );
+    if (loading) return <div className="ui-page"><p className="ui-muted">Loading profile…</p></div>;
+    if (!profile) return <div className="ui-page"><p className="ui-muted">Couldn't load this profile.</p></div>;
 
     const cooldownTime = profile.assessmentCooldownExpires ? new Date(profile.assessmentCooldownExpires) : null;
     const isOnCooldown = cooldownTime && cooldownTime > new Date();
     const graphData = getGraphData();
 
     const dataElos = graphData.map(d => d.elo);
-    const minDataElo = Math.min(...dataElos);
-    const maxDataElo = Math.max(...dataElos);
-    const minGraphElo = Math.max(0, minDataElo - 200);
-    const maxGraphElo = maxDataElo + 200;
+    const minGraphElo = Math.max(0, Math.min(...dataElos) - 200);
+    const maxGraphElo = Math.max(...dataElos) + 200;
+
+    const ratedSkills = profile.skills.filter(isRated);
+    const bestElo = ratedSkills.length ? Math.max(...ratedSkills.map(s => s.elo)) : null;
+    const unaddedSkills = availableSkills.filter(s => !profile.skills.some(k => k.name === s));
+    const links = [['GitHub', profile.socialLinks?.github], ['LinkedIn', profile.socialLinks?.linkedin], ['LeetCode', profile.socialLinks?.leetcode]].filter(([, url]) => url);
+    const setField = (key) => (e) => setEditForm({ ...editForm, [key]: e.target.value });
 
     return (
-        <div className="dashboard-container">
-            {isOwnProfile && isModalOpen && (
-                <AIAssessmentModal onClose={handleModalClose} userSkills={profile.skills} />
-            )}
+        <div className="ui-page">
+            {isOwnProfile && isModalOpen && <AIAssessmentModal onClose={handleModalClose} userSkills={profile.skills} />}
 
-            <div style={{ flexGrow: 1, overflowY: 'auto', paddingRight: '0.5rem', minHeight: 0 }}>
-                {/* HEADER CARD */}
-                <div className="term-card" style={{ marginBottom: '1.5rem' }}>
-                <div className="term-header">
-                    <div className="window-dots">
-                        <div className="dot dot-red"></div>
-                        <div className="dot dot-yellow"></div>
-                        <div className="dot dot-green"></div>
-                    </div>
-                    <span>~/profile/{profile.username}</span>
-                    {!isOwnProfile && (
-                        <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px', alignItems: 'center' }}>
-                            <span style={{
-                                fontSize: '0.7rem', color: 'var(--term-gold)',
-                                border: '1px solid var(--term-gold)', padding: '1px 6px',
-                                borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-mono)'
-                            }}>VIEWING</span>
-                            <FriendButton userId={profile._id} />
-                            <button className="btn-term-sm" style={{ borderColor: '#00ff00', color: '#00ff00' }} onClick={() => setShowInviteModal(true)}>
-                                INVITE TO ROOM
-                            </button>
+            <section className="ui-card" style={{ marginBottom: 20 }}>
+                {!isEditing ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
+                        <div className="nav-avatar" style={{ width: 64, height: 64, fontSize: 26 }} aria-hidden="true">{profile.username.slice(0, 1).toUpperCase()}</div>
+                        <div style={{ flex: 1, minWidth: 200 }}>
+                            <h1 style={{ margin: 0, fontSize: 26 }}>{profile.username}</h1>
+                            <div className="ui-muted" style={{ marginTop: 4, fontSize: 14 }}>
+                                {bestElo != null
+                                    ? <><span style={{ color: getRankColor(bestElo), fontWeight: 600 }}>{getRankName(bestElo)}</span> · best rating <span className="ui-num">{bestElo}</span></>
+                                    : 'Unrated so far'}
+                                {links.length > 0 && <span> · {links.map(([label, url], i) => <React.Fragment key={label}>{i > 0 && ' · '}<a className="ui-link" href={url} target="_blank" rel="noreferrer">{label}</a></React.Fragment>)}</span>}
+                            </div>
                         </div>
-                    )}
-                </div>
-                <div className="term-body" style={{
-                    padding: '1.5rem', display: 'flex', justifyContent: 'space-between',
-                    alignItems: 'center', flexWrap: 'wrap', gap: '1rem'
-                }}>
-                    {!isEditing ? (
-                        <>
-                            <div>
-                                <h1 style={{
-                                    fontSize: '2rem', marginBottom: '0.5rem', color: 'var(--text-bright)',
-                                    fontFamily: 'var(--font-mono)'
-                                }}>
-                                    {profile.username}
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            {isOwnProfile ? (
+                                <button className="ui-btn" onClick={() => setIsEditing(true)}>Edit profile</button>
+                            ) : (
+                                <>
+                                    <FriendButton userId={profile._id} className="ui-btn" />
+                                    <button className="ui-btn" onClick={() => setShowInviteModal(true)}>Invite to room</button>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                ) : (
+                    <form onSubmit={(e) => { e.preventDefault(); handleSaveProfile(); }}>
+                        <h2 style={{ margin: '0 0 14px', fontSize: 18 }}>Edit profile</h2>
+                        <div style={{ display: 'grid', gap: '0 16px', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+                            <label className="ui-field"><span>Username</span><input className="ui-input" value={editForm.username} onChange={setField('username')} /></label>
+                            <label className="ui-field"><span>GitHub URL</span><input className="ui-input" value={editForm.github} onChange={setField('github')} placeholder="https://github.com/you" /></label>
+                            <label className="ui-field"><span>LinkedIn URL</span><input className="ui-input" value={editForm.linkedin} onChange={setField('linkedin')} placeholder="https://linkedin.com/in/you" /></label>
+                            <label className="ui-field"><span>LeetCode URL</span><input className="ui-input" value={editForm.leetcode} onChange={setField('leetcode')} placeholder="https://leetcode.com/you" /></label>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <button type="submit" className="ui-btn primary">Save</button>
+                            <button type="button" className="ui-btn ghost" onClick={() => setIsEditing(false)}>Cancel</button>
+                        </div>
+                    </form>
+                )}
+            </section>
+
+            <div className="ui-grid" style={{ gridTemplateColumns: 'minmax(300px, 1fr) minmax(0, 1.6fr)' }}>
+                <section className="ui-card">
+                    <div className="ui-card-head"><h2>Skills</h2></div>
+                    {isOwnProfile && <p>Take a short assessment to get a rating for a skill. Ratings also move with skill quiz battles.</p>}
+                    {profile.skills.length > 0 ? (
+                        <ul className="ui-list">
+                            {profile.skills.map(s => (
+                                <li key={s.name} className="ui-row">
+                                    <div className="ui-row-main">
+                                        <span className="ui-row-title">{s.name}</span>
+                                        <span className="ui-row-sub" style={isRated(s) ? { color: getRankColor(s.elo) } : undefined}>{isRated(s) ? getRankName(s.elo) : 'Not assessed yet'}</span>
+                                    </div>
+                                    {isRated(s) && <span className="ui-num">{s.elo}</span>}
                                     {isOwnProfile && (
-                                        <button onClick={() => setIsEditing(true)} 
-                                            style={{ marginLeft: '1rem', background: 'none', border: 'none', color: 'var(--term-blue)', cursor: 'pointer', fontSize: '0.9rem' }}>
-                                            [EDIT PROFILE]
+                                        <button className="ui-btn small" disabled={isOnCooldown} onClick={() => navigate(`/assessment/${encodeURIComponent(s.name)}`)}>
+                                            Assess
                                         </button>
                                     )}
-                                </h1>
-                                <div style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                                    <span style={{ color: 'var(--term-blue)' }}>ID:</span> {profile._id}
-                                    {/* The server only includes the email on your own profile */}
-                                    {profile.email && (
-                                        <>
-                                            <span style={{ margin: '0 10px', color: 'var(--border-subtle)' }}>|</span>
-                                            <span style={{ color: 'var(--term-blue)' }}>EMAIL:</span> {profile.email}
-                                        </>
-                                    )}
-                                </div>
-                                
-                                {/* SOCIAL LINKS */}
-                                <div style={{ marginTop: '0.5rem', display: 'flex', gap: '1rem', fontSize: '0.85rem' }}>
-                                    {profile.socialLinks?.github && <a href={profile.socialLinks.github} target="_blank" rel="noreferrer" style={{ color: 'var(--term-green)' }}>GitHub</a>}
-                                    {profile.socialLinks?.linkedin && <a href={profile.socialLinks.linkedin} target="_blank" rel="noreferrer" style={{ color: 'var(--term-green)' }}>LinkedIn</a>}
-                                    {profile.socialLinks?.leetcode && <a href={profile.socialLinks.leetcode} target="_blank" rel="noreferrer" style={{ color: 'var(--term-green)' }}>LeetCode</a>}
-                                </div>
-                            </div>
-                            <div style={{ textAlign: 'right' }}>
-                                <div style={{
-                                    fontSize: '0.75rem', color: 'var(--text-muted)',
-                                    letterSpacing: '1px', fontFamily: 'var(--font-mono)', marginBottom: '0.3rem'
-                                }}>MAX RATING</div>
-                                {(() => {
-                                    const ratedSkills = profile.skills.filter(s => isRated(s));
-                                    const maxElo = ratedSkills.length > 0 ? Math.max(...ratedSkills.map(s => s.elo)) : null;
-                                    return (
-                                        <div style={{
-                                            fontSize: '1.8rem', fontWeight: 'bold',
-                                            color: maxElo != null ? getRankColor(maxElo) : 'var(--text-muted)',
-                                            fontFamily: 'var(--font-mono)'
-                                        }}>
-                                            {maxElo != null ? getRankName(maxElo) : 'Unrated'}
-                                        </div>
-                                    );
-                                })()}
-                            </div>
-                        </>
+                                </li>
+                            ))}
+                        </ul>
                     ) : (
-                        <div style={{ width: '100%' }}>
-                            <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: '1fr 1fr' }}>
-                                <div>
-                                    <label style={{ color: 'var(--term-blue)', fontSize: '0.75rem', display: 'block', marginBottom: '0.2rem' }}>USERNAME</label>
-                                    <input type="text" className="term-input" value={editForm.username} onChange={e => setEditForm({...editForm, username: e.target.value})} />
-                                </div>
-                                <div>
-                                    <label style={{ color: 'var(--term-blue)', fontSize: '0.75rem', display: 'block', marginBottom: '0.2rem' }}>GITHUB URL</label>
-                                    <input type="text" className="term-input" value={editForm.github} onChange={e => setEditForm({...editForm, github: e.target.value})} />
-                                </div>
-                                <div>
-                                    <label style={{ color: 'var(--term-blue)', fontSize: '0.75rem', display: 'block', marginBottom: '0.2rem' }}>LINKEDIN URL</label>
-                                    <input type="text" className="term-input" value={editForm.linkedin} onChange={e => setEditForm({...editForm, linkedin: e.target.value})} />
-                                </div>
-                                <div>
-                                    <label style={{ color: 'var(--term-blue)', fontSize: '0.75rem', display: 'block', marginBottom: '0.2rem' }}>LEETCODE URL</label>
-                                    <input type="text" className="term-input" value={editForm.leetcode} onChange={e => setEditForm({...editForm, leetcode: e.target.value})} />
-                                </div>
-                            </div>
-                            <div style={{ marginTop: '1rem', display: 'flex', gap: '1rem' }}>
-                                <button className="btn-term-primary" onClick={handleSaveProfile}>SAVE CHANGES</button>
-                                <button className="btn-term" onClick={() => setIsEditing(false)}>CANCEL</button>
-                            </div>
+                        <div className="ui-empty">{isOwnProfile ? 'Add the skills you work with, then take an assessment.' : 'No skills added yet.'}</div>
+                    )}
+                    {isOwnProfile && isOnCooldown && (
+                        <p className="ui-small" style={{ color: 'var(--term-gold)', margin: '10px 0 0' }}>You can take another assessment at {cooldownTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.</p>
+                    )}
+                    {isOwnProfile && unaddedSkills.length > 0 && (
+                        <div className="ui-inline" style={{ marginTop: 14 }}>
+                            <select className="ui-select" value={unaddedSkills.includes(selectedSkillToAdd) ? selectedSkillToAdd : unaddedSkills[0]} onChange={e => setSelectedSkillToAdd(e.target.value)} aria-label="Skill to add">
+                                {unaddedSkills.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                            <button className="ui-btn" onClick={() => handleAddSkill(unaddedSkills.includes(selectedSkillToAdd) ? selectedSkillToAdd : unaddedSkills[0])}>Add skill</button>
                         </div>
                     )}
-                </div>
-            </div>
+                </section>
 
-            <div style={{
-                display: 'flex',
-                gap: '1.5rem',
-                flexDirection: isOwnProfile ? 'row' : 'column'
-            }}>
-
-                {/* --- LEFT COLUMN (ONLY VISIBLE IF IT IS MY PROFILE) --- */}
-                {isOwnProfile && (
-                    <div style={{ width: '380px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                        {/* Skill Check Card */}
-                        <div className="term-card">
-                            <div className="term-header">
-                                <span style={{ color: 'var(--term-blue)' }}>skill_check.exe</span>
-                            </div>
-                            <div className="term-body" style={{ padding: '1.5rem' }}>
-                                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
-                                    Take an AI-driven assessment to verify your skills and increase your rating.
-                                </p>
-                                <label style={{
-                                    display: 'block', marginBottom: '0.4rem', fontSize: '0.75rem',
-                                    color: 'var(--term-blue)', fontFamily: 'var(--font-mono)'
-                                }}>SELECT_SKILL</label>
-                                <select className="term-input" id="assessment-skill-select"
-                                    defaultValue={profile.skills?.[0]?.name || ''}
-                                    style={{ marginBottom: '1rem' }}>
-                                    {profile.skills.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
-                                </select>
-                                <button className="btn-term-primary"
-                                    onClick={() => {
-                                        const skill = document.getElementById('assessment-skill-select').value;
-                                        if (skill) navigate(`/assessment/${skill}`);
-                                    }}
-                                    disabled={isOnCooldown || profile.skills.length === 0}
-                                    style={{ width: '100%', padding: '0.7rem' }}>
-                                    {isOnCooldown ? 'COOLDOWN ACTIVE' : '▸ START ASSESSMENT'}
-                                </button>
-                                {isOnCooldown && (
-                                    <div style={{
-                                        marginTop: '0.8rem', fontSize: '0.75rem',
-                                        color: 'var(--term-gold)', textAlign: 'center',
-                                        fontFamily: 'var(--font-mono)'
-                                    }}>
-                                        Next: {cooldownTime.toLocaleTimeString()}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Add Skill Card */}
-                        <div className="term-card">
-                            <div className="term-header">
-                                <span style={{ color: 'var(--term-green)' }}>add_skill.sh</span>
-                            </div>
-                            <div className="term-body" style={{ padding: '1.5rem' }}>
-                                <label style={{
-                                    display: 'block', marginBottom: '0.4rem', fontSize: '0.75rem',
-                                    color: 'var(--term-blue)', fontFamily: 'var(--font-mono)'
-                                }}>SKILL_NAME</label>
-                                <select className="term-input" value={selectedSkillToAdd}
-                                    onChange={e => setSelectedSkillToAdd(e.target.value)}
-                                    style={{ marginBottom: '1rem' }}>
-                                    {availableSkills.map(s => <option key={s} value={s}>{s}</option>)}
-                                </select>
-                                <button onClick={handleAddSkill} className="btn-term" style={{
-                                    width: '100%', justifyContent: 'center', padding: '0.6rem',
-                                    borderColor: 'var(--term-green)', color: 'var(--term-green)'
-                                }}>
-                                    + ADD TO PROFILE
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* --- RIGHT COLUMN (GRAPH) --- */}
-                <div style={{ flexGrow: 1, minWidth: 0 }}>
-                    <div className="term-card">
-                        <div className="term-header" style={{ justifyContent: 'space-between' }}>
-                            <span>rating_history.log</span>
-                            <select className="term-input" style={{
-                                width: '180px', padding: '0.3rem 0.5rem', fontSize: '0.8rem',
-                                border: '1px solid var(--border-subtle)'
-                            }}
-                                value={graphFilter} onChange={e => setGraphFilter(e.target.value)}>
-                                {profile.skills.length === 0 && <option value="">No Skills Added</option>}
-                                {profile.skills.map(s => (
-                                    <option key={s.name} value={s.name}>{s.name} ({isRated(s) ? s.elo : 'Unrated'})</option>
-                                ))}
+                <section className="ui-card">
+                    <div className="ui-card-head">
+                        <h2>Rating history</h2>
+                        {profile.skills.length > 0 && (
+                            <select className="ui-select" style={{ width: 'auto', padding: '5px 10px' }} value={graphFilter} onChange={e => setGraphFilter(e.target.value)} aria-label="Skill">
+                                {profile.skills.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
                             </select>
-                        </div>
-                        <div className="term-body" style={{ padding: '1rem' }}>
-                            <div style={{
-                                width: '100%', height: 450, backgroundColor: 'var(--bg-deep)',
-                                borderRadius: 'var(--radius-sm)', padding: '10px', position: 'relative',
-                                border: '1px solid var(--border-subtle)'
-                            }}>
-                                {profile.skills.length > 0 && graphFilter ? (
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <LineChart data={graphData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-subtle)" />
-                                            {CF_RANKS.map((rank) => (
-                                                <ReferenceArea key={rank.name} y1={rank.min} y2={rank.max} fill={rank.color} fillOpacity={0.1} stroke="none" />
-                                            ))}
-                                            <XAxis dataKey="match" type="number" domain={['dataMin', 'dataMax']}
-                                                tick={{ fontSize: 12, fill: 'var(--text-muted)' }}
-                                                tickCount={graphData.length} interval={0} />
-                                            <YAxis domain={[minGraphElo, maxGraphElo]}
-                                                tick={{ fontSize: 12, fill: 'var(--text-muted)' }} width={50} />
-                                            <Tooltip content={<CustomTooltip />} />
-                                            <Line type="monotone" dataKey="elo" stroke="var(--term-gold)" strokeWidth={3}
-                                                dot={{ r: 4, fill: 'var(--bg-deep)', stroke: 'var(--term-gold)', strokeWidth: 2 }}
-                                                activeDot={{ r: 7, fill: 'var(--term-gold)', stroke: 'var(--text-bright)', strokeWidth: 2 }}
-                                                animationDuration={1500} isAnimationActive={true} />
-                                        </LineChart>
-                                    </ResponsiveContainer>
-                                ) : (
-                                    <div style={{
-                                        height: '100%', display: 'flex', flexDirection: 'column',
-                                        alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)'
-                                    }}>
-                                        <p style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--text-main)' }}>No Data Available</p>
-                                        <p>Add a skill to your profile to see your rating graph.</p>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
+                        )}
                     </div>
-                </div>
+                    {graphData.length > 0 ? (
+                        <div style={{ width: '100%', height: 320 }}>
+                            <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={graphData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#21262d" />
+                                    {CF_RANKS.map((rank) => (
+                                        <ReferenceArea key={rank.name} y1={rank.min} y2={rank.max} fill={rank.color} fillOpacity={0.05} stroke="none" />
+                                    ))}
+                                    <XAxis dataKey="match" type="number" domain={['dataMin', 'dataMax']} tick={{ fontSize: 12, fill: '#8b949e' }} tickCount={graphData.length} interval={0} />
+                                    <YAxis domain={[minGraphElo, maxGraphElo]} tick={{ fontSize: 12, fill: '#8b949e' }} width={50} />
+                                    <Tooltip content={<CustomTooltip />} />
+                                    <Line type="monotone" dataKey="elo" stroke="#58a6ff" strokeWidth={2.5}
+                                        dot={{ r: 3, fill: '#0d1117', stroke: '#58a6ff', strokeWidth: 2 }}
+                                        activeDot={{ r: 6, fill: '#58a6ff', stroke: '#fff', strokeWidth: 2 }} />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        </div>
+                    ) : (
+                        <div className="ui-empty">
+                            {profile.skills.length === 0
+                                ? 'Ratings show up here once there are skills to rate.'
+                                : `No rating for ${graphFilter || 'this skill'} yet.${isOwnProfile ? ' Take an assessment to get one.' : ''}`}
+                        </div>
+                    )}
+                </section>
             </div>
-            </div>
-            {showInviteModal && (
-                <InviteModal
-                    user={profile}
-                    rooms={myRooms}
-                    onSend={handleSendInvite}
-                    onClose={() => setShowInviteModal(false)}
-                />
-            )}
+
+            {showInviteModal && <InviteModal user={profile} rooms={myRooms} onSend={handleSendInvite} onClose={() => setShowInviteModal(false)} />}
         </div>
     );
 };

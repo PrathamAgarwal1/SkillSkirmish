@@ -11,6 +11,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
 import './index.css';
 import './modern-dark.css';
+import './ui.css';
 import { AuthProvider } from './context/AuthContext.jsx';
 import axios from 'axios'; // <-- IMPORT AXIOS
 import { installNetworkResilience } from './utils/serverStatus';
