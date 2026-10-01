@@ -9,6 +9,8 @@ const PlayerSchema = new Schema({
     ratingBefore: Number,
     ratingAfter: Number,
     passed: { type: Number, default: 0 },
+    score: Number,             // CodeGuessr / quiz points, CSS match %
+    hp: Number,                // CodeGuessr duel health left
     total: { type: Number, default: 0 },
     solvedMs: Number,          // time from start to passing every test
     submissions: { type: Number, default: 0 },
@@ -18,12 +20,14 @@ const PlayerSchema = new Schema({
 }, { _id: false });
 
 const BattleSchema = new Schema({
-    problem: { type: String, required: true },
+    kind: { type: String, default: 'algo' }, // battles/catalog.js KINDS
+    problem: { type: String, required: true }, // challenge / target / skill / 'rounds'
+    skill: String,
     difficulty: String,
-    mode: { type: String, enum: ['ranked', 'friend', 'practice'], required: true },
+    mode: { type: String, enum: ['ranked', 'friend', 'practice', 'daily'], required: true },
     players: [PlayerSchema],
     winner: { type: Schema.Types.ObjectId, ref: 'User', default: null },
-    result: { type: String, enum: ['win', 'draw', 'no-contest', 'solved', 'unsolved'], required: true },
+    result: { type: String, enum: ['win', 'draw', 'no-contest', 'solved', 'unsolved', 'finished'], required: true },
     reason: String,
     startedAt: Date,
     endedAt: Date
