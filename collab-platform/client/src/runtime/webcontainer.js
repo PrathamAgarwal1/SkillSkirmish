@@ -15,8 +15,12 @@ const MAX_SYNC_BYTES = 512 * 1024;
 
 let bootPromise = null;
 let mountedProjectId = null;
+let mountGeneration = 0;      // bumps whenever the workdir is wiped for another project
 let synced = new Map();       // path -> content last known to match the server
 let installStamps = new Map(); // dir -> package.json + lockfile contents at last install
+
+/** Identifies the current contents of the workdir (project + mount), e.g. to restore .git once per mount. */
+export const mountKey = () => `${mountedProjectId}:${mountGeneration}`;
 
 export const isSupported = () => typeof window !== 'undefined' && window.crossOriginIsolated === true;
 
@@ -92,6 +96,7 @@ export const syncFromServer = async (projectId) => {
         synced = new Map();
         installStamps = new Map();
         mountedProjectId = projectId;
+        mountGeneration++;
     }
     const incoming = new Map(data.files.map(f => [f.path, f.content]));
     for (const folder of data.folders || []) await wc.fs.mkdir(folder, { recursive: true });

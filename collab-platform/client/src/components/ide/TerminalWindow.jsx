@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { getGitToken, setGitToken } from '../../runtime/git/gitCli';
 
-const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, projectId, collapsed, onToggleCollapse }) => {
+const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, projectId, collapsed, onToggleCollapse, browserGit = false }) => {
     const terminalEndRef = useRef(null);
     const [inputValue, setInputValue] = useState('');
     const inputRef = useRef(null);
@@ -13,6 +14,16 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
         return saved || '';
     });
     const [showGitConfig, setShowGitConfig] = useState(false);
+    // Access token for git push / private repos (browser mode). Kept in this browser only.
+    const [hasToken, setHasToken] = useState(() => !!getGitToken());
+    const [editingToken, setEditingToken] = useState(false);
+    const [tokenInput, setTokenInput] = useState('');
+    const saveToken = (value) => {
+        setGitToken(value);
+        setHasToken(!!value);
+        setTokenInput('');
+        setEditingToken(false);
+    };
 
     useEffect(() => {
         terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -101,7 +112,7 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
         { label: 'git clone', cmd: githubLink ? `git clone ${githubLink}` : 'git clone <url>' },
         { label: 'npm install', cmd: 'npm install' },
         { label: 'npm start', cmd: 'npm start' },
-        { label: 'ls / dir', cmd: 'dir' },
+        { label: 'ls / dir', cmd: browserGit ? 'ls' : 'dir' },
         { label: 'cd ..', cmd: 'cd ..' }
     ];
 
@@ -228,9 +239,53 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
                         >
                             ⚙️ Edit
                         </button>
+                        {browserGit && (
+                            <button
+                                onClick={() => setEditingToken(e => !e)}
+                                title={hasToken ? 'Access token saved in this browser. Click to change or remove it.' : 'Add an access token to push and to clone private repositories'}
+                                style={{
+                                    padding: '2px 6px',
+                                    backgroundColor: '#333',
+                                    color: hasToken ? '#6a9955' : '#d7ba7d',
+                                    border: '1px solid #444',
+                                    borderRadius: '3px',
+                                    cursor: 'pointer',
+                                    fontSize: '10px'
+                                }}
+                            >
+                                🔑 {hasToken ? 'Token ✓' : 'Token'}
+                            </button>
+                        )}
                     </>
                 )}
             </div>
+
+            {browserGit && editingToken && (
+                <div style={{ padding: '8px 10px', backgroundColor: '#2a2a2b', borderBottom: '1px solid #3e3e42', fontSize: '12px', color: '#bbb' }}>
+                    <div style={{ marginBottom: '6px', lineHeight: 1.5 }}>
+                        Paste a GitHub <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer" style={{ color: '#58a6ff' }}>fine-grained token</a> with
+                        {' '}<b>Contents: Read and write</b> for your repo (or a classic token with the <b>repo</b> scope).
+                        It stays in this browser and is only sent to GitHub.
+                    </div>
+                    <form
+                        onSubmit={(e) => { e.preventDefault(); if (tokenInput.trim()) saveToken(tokenInput.trim()); }}
+                        style={{ display: 'flex', gap: '6px' }}
+                    >
+                        <input
+                            type="password"
+                            autoComplete="off"
+                            value={tokenInput}
+                            onChange={(e) => setTokenInput(e.target.value)}
+                            placeholder={hasToken ? '•••••••• (saved; paste a new one to replace)' : 'github_pat_… or ghp_…'}
+                            aria-label="Git access token"
+                            style={{ flex: 1, padding: '4px 6px', backgroundColor: '#1e1e1e', border: '1px solid #444', color: '#e0e0e0', borderRadius: '3px', fontSize: 'inherit' }}
+                        />
+                        <button type="submit" disabled={!tokenInput.trim()} style={{ padding: '2px 10px', backgroundColor: '#007acc', color: '#fff', border: 'none', borderRadius: '3px', cursor: 'pointer', fontSize: 'inherit' }}>Save</button>
+                        {hasToken && <button type="button" onClick={() => saveToken('')} style={{ padding: '2px 10px', backgroundColor: '#5a1d1d', color: '#f48771', border: 'none', borderRadius: '3px', cursor: 'pointer', fontSize: 'inherit' }}>Remove</button>}
+                        <button type="button" onClick={() => setEditingToken(false)} style={{ padding: '2px 10px', backgroundColor: '#444', color: '#999', border: 'none', borderRadius: '3px', cursor: 'pointer', fontSize: 'inherit' }}>Close</button>
+                    </form>
+                </div>
+            )}
 
             {/* Quick command bar — only shown when no process is running */}
             {!isRunning && (
