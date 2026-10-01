@@ -4,6 +4,7 @@ const Schema = mongoose.Schema;
 // Log entry for each question answered during a session
 const QuestionLogSchema = new Schema({
     questionText: { type: String, required: true },
+    question: { type: Schema.Types.ObjectId, ref: 'Question' },
     questionType: { type: String, required: true },
     difficulty: { type: String, enum: ['Easy', 'Medium', 'Hard'], default: 'Medium' },
     difficultyElo: { type: Number, default: 1200 },
@@ -54,6 +55,11 @@ const AssessmentSessionSchema = new Schema(
         currentDifficultyElo: { type: Number, default: 1200 },
         currentType: { type: String, default: 'subjective' },
         currentIsFallback: { type: Boolean, default: false },
+        // Question-bank question being asked (its rating is the difficulty) and when it was shown
+        currentQuestionId: { type: Schema.Types.ObjectId, ref: 'Question', default: null },
+        currentCode: { type: String, default: '' },
+        currentExplanation: { type: String, default: '' },
+        currentServedAt: { type: Date, default: null },
 
         // All answered questions
         questionsLog: [QuestionLogSchema],

@@ -79,7 +79,15 @@ if (!mongoURI) {
     console.error('CRITICAL WARNING: MONGO_URI environment variable is not set. MongoDB will not connect.');
 } else {
     mongoose.connect(mongoURI)
-        .then(() => console.log('MongoDB Connected...'))
+        .then(() => {
+            console.log('MongoDB Connected...');
+            // Question bank: add any new hand-written questions, then keep low pools topped up
+            const bank = require('./questions/bank');
+            bank.seedBank()
+                .then(n => n && console.log(`[questions] Added ${n} seed questions to the bank`))
+                .catch(err => console.error('[questions] Seeding failed:', err.message));
+            bank.startTopUp();
+        })
         .catch(err => console.error('MongoDB Connection Error:', err.message));
 }
 
@@ -538,6 +546,7 @@ app.use('/api/git-proxy', require('./routes/gitProxy'));
 
 app.use('/api/matchmaking', require('./routes/matchmaking'));
 app.use('/api/assessment', require('./routes/assessment'));
+app.use('/api/questions', require('./routes/questions'));
 app.use('/api/ai', require('./routes/ai'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 

@@ -300,6 +300,8 @@
 .bt-lock { display: flex; justify-content: center; align-items: center; gap: 12px; padding: 4px 18px 14px; }
 .bt-reveal { margin: 0 18px 16px; padding: 14px 16px; border-radius: 12px; background: #0d1117; border: 1px solid #30363d; display: flex; flex-direction: column; gap: 10px; align-items: center; text-align: center; animation: bt-pop 0.3s ease-out; }
 .bt-reveal-answer { margin: 0; color: #e6edf3; line-height: 1.5; }
+.bt-report { background: none; border: none; padding: 0; font: inherit; font-size: 0.8rem; color: #8b949e; cursor: pointer; text-decoration: underline; }
+.bt-report:disabled { cursor: default; text-decoration: none; }
 .bt-reveal-scores { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
 .bt-reveal-score { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 150px; padding: 8px 12px; border-radius: 10px; background: #161b22; border: 1px solid #30363d; }
 .bt-reveal-score.me { border-color: #1f6feb; }
