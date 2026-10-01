@@ -2,14 +2,25 @@
 //
 // Code runs in a worker created from a data: URL, which gets an opaque origin: it can't read this
 // site's storage (login token, saved git repos, ...). That matters because players also re-run their
-// opponent's code to verify results. Python uses Pyodide (loaded once per worker); JavaScript runs
-// directly. A watchdog terminates the worker when a test takes too long (infinite loops).
+// opponent's code to verify results. Python uses Pyodide (loaded once per worker), SQL uses sql.js
+// (SQLite in WebAssembly, a fresh database per test); JavaScript runs directly. A watchdog terminates
+// the worker when a test takes too long (infinite loops).
 const PYODIDE_URL = 'https://cdn.jsdelivr.net/pyodide/v314.0.7/full/';
+const SQLJS_URL = 'https://cdn.jsdelivr.net/npm/sql.js@1.14.2/dist/';
 
 const WORKER_SOURCE = `
 const PYODIDE_URL = ${JSON.stringify(PYODIDE_URL)};
+const SQLJS_URL = ${JSON.stringify(SQLJS_URL)};
 let pyodide = null;
 let pyLoading = null;
+let SQL = null;
+async function loadSql(post) {
+  if (SQL) return SQL;
+  post({ type: 'status', text: 'Loading SQLite…' });
+  importScripts(SQLJS_URL + 'sql-wasm.js');
+  SQL = await initSqlJs({ locateFile: (f) => SQLJS_URL + f });
+  return SQL;
+}
 const fmt = (v) => { try { return typeof v === 'string' ? v : JSON.stringify(v); } catch (e) { return String(v); } };
 const clean = (msg) => {
   const lines = String(msg).split('\\n').filter((l) => l.trim());
@@ -32,19 +43,37 @@ async function loadPython(post) {
   return pyodide;
 }
 self.onmessage = async (e) => {
-  const { id, kind, language, code, fnName, inputs } = e.data;
+  const { id, kind, language, code, fnName, inputs, harness, schema } = e.data;
   const post = (msg) => self.postMessage(Object.assign({ id }, msg));
-  if (kind === 'warm') { try { if (language === 'python') await loadPython(post); post({ type: 'warm' }); } catch (err) { post({ type: 'warm', error: String(err) }); } return; }
+  if (kind === 'warm') { try { if (language === 'python') await loadPython(post); if (language === 'sql') await loadSql(post); post({ type: 'warm' }); } catch (err) { post({ type: 'warm', error: String(err) }); } return; }
   const logs = [];
   const log = (s) => { if (logs.length < 300) logs.push(String(s).slice(0, 2000)); };
   const outputs = [];
   try {
-    if (language === 'javascript') {
+    if (language === 'sql') {
+      const sql = await loadSql(post);
+      for (let i = 0; i < inputs.length; i++) {
+        post({ type: 'progress', i });
+        const t0 = performance.now();
+        const db = new sql.Database();
+        try {
+          db.run((schema || '') + '\\n' + inputs[i][0]);
+          const results = db.exec(code);
+          const rows = results.length ? results[results.length - 1].values : [];
+          if (i === 0 && results.length) log('columns: ' + results[results.length - 1].columns.join(', '));
+          outputs.push({ ok: true, value: JSON.stringify(rows), ms: Math.round(performance.now() - t0) });
+        } catch (err) {
+          outputs.push({ ok: false, error: String(err && err.message || err), ms: Math.round(performance.now() - t0) });
+        } finally {
+          db.close();
+        }
+      }
+    } else if (language === 'javascript') {
       const say = (...a) => log(a.map(fmt).join(' '));
       const shim = { log: say, info: say, warn: say, error: say, debug: say, table: say };
       let fn;
       try {
-        fn = new Function('console', '"use strict";\\n' + code + '\\n;return typeof ' + fnName + ' === "function" ? ' + fnName + ' : undefined;')(shim);
+        fn = new Function('console', '"use strict";\\n' + code + '\\n' + (harness || '') + '\\n;return typeof ' + fnName + ' === "function" ? ' + fnName + ' : undefined;')(shim);
       } catch (err) {
         return post({ type: 'done', compileError: (err && err.name ? err.name + ': ' : '') + (err && err.message || err), outputs, logs });
       }
@@ -95,7 +124,8 @@ self.onmessage = async (e) => {
 `;
 
 const WORKER_URL = `data:text/javascript;charset=utf-8,${encodeURIComponent(WORKER_SOURCE)}`;
-const PER_TEST_MS = { javascript: 2500, python: 4000 };
+const PER_TEST_MS = { javascript: 2500, python: 4000, sql: 3000 };
+const SLOW_START = ['python', 'sql']; // need a runtime downloaded first
 const PY_LOAD_MS = 60000;
 
 /**
@@ -104,14 +134,14 @@ const PY_LOAD_MS = 60000;
  */
 export function createRunner({ slack = 1 } = {}) {
     let worker = null;
-    let pyReady = false;
+    const ready = new Set(); // languages whose runtime is loaded in this worker
     let seq = 0;
     let pending = null;
 
     const ensure = () => {
         if (!worker) {
             worker = new Worker(WORKER_URL);
-            pyReady = false;
+            ready.clear();
             worker.onmessage = (e) => pending?.onMessage(e.data);
             worker.onerror = (e) => pending?.onMessage({ id: pending.id, type: 'done', compileError: e.message || 'The code runner crashed', outputs: [] });
         }
@@ -121,25 +151,25 @@ export function createRunner({ slack = 1 } = {}) {
     const kill = () => {
         worker?.terminate();
         worker = null;
-        pyReady = false;
+        ready.clear();
     };
 
-    /** Starts loading Python in the background so the first run is fast. */
+    /** Starts loading Python / SQLite in the background so the first run is fast. */
     const warm = (language) => {
-        if (language !== 'python' || pyReady || pending) return;
+        if (!SLOW_START.includes(language) || ready.has(language) || pending) return;
         const id = ++seq;
         pending = {
             id,
             onMessage: (m) => {
                 if (m.id !== id) return;
-                if (m.type === 'warm') { pyReady = !m.error; pending = null; }
+                if (m.type === 'warm') { if (!m.error) ready.add(language); pending = null; }
             }
         };
         ensure().postMessage({ id, kind: 'warm', language });
     };
 
-    const run = ({ language, code, fnName, inputs, onStatus }) => new Promise((resolve) => {
-        if (!/^[A-Za-z_$][\w$]*$/.test(fnName || '')) return resolve({ outputs: [], logs: [], compileError: 'Invalid function name' });
+    const run = ({ language, code, fnName, inputs, harness, schema, onStatus }) => new Promise((resolve) => {
+        if (language !== 'sql' && !/^[A-Za-z_$][\w$]*$/.test(fnName || '')) return resolve({ outputs: [], logs: [], compileError: 'Invalid function name' });
         if (pending) { kill(); pending = null; }
         const id = ++seq;
         const perTest = PER_TEST_MS[language] * slack;
@@ -166,7 +196,7 @@ export function createRunner({ slack = 1 } = {}) {
                 if (m.type === 'status') { onStatus?.(m.text); arm(PY_LOAD_MS); return; }
                 if (m.type === 'progress') {
                     current = m.i;
-                    if (language === 'python') pyReady = true;
+                    ready.add(language);
                     arm(perTest);
                     return;
                 }
@@ -179,8 +209,8 @@ export function createRunner({ slack = 1 } = {}) {
                 }
             }
         };
-        arm(language === 'python' && !pyReady ? PY_LOAD_MS : perTest);
-        ensure().postMessage({ id, kind: 'run', language, code, fnName, inputs });
+        arm(SLOW_START.includes(language) && !ready.has(language) ? PY_LOAD_MS : perTest);
+        ensure().postMessage({ id, kind: 'run', language, code, fnName, inputs, harness, schema });
     });
 
     return { run, warm, dispose: kill };
