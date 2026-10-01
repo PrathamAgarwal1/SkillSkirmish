@@ -35,7 +35,9 @@ Deployed sites are stored in the database. Each deploy is limited to 20 MB (`DEP
 2. Fill in `MONGO_URI`, `CLIENT_URL` (your Vercel URL from step 3) and, optionally, the AI keys. `JWT_SECRET`, `SECRETS_KEY` and `ADMIN_KEY` are generated for you.
 3. Wait for the deploy to finish, then note the URL, e.g. `https://skillskirmish-api.onrender.com`.
 
-Free Render services sleep after 15 minutes without traffic, so the first request after that takes about 50 seconds.
+Free Render services sleep after 15 minutes without traffic, so the first request after that takes about 50 seconds. While it wakes, the site shows a "Waking up the server…" banner and retries on its own. To stop it from sleeping at all, the repository includes a GitHub Actions workflow (`.github/workflows/keep-awake.yml`) that pings `/api/health` every 10 minutes. It runs automatically once the workflow is on your default branch. If your API isn't at `https://skillskirmish.onrender.com`, set the repository variable `KEEP_AWAKE_URL` to `https://<your-api>/api/health`. One always-on service fits within Render's 750 free hours a month.
+
+Google sign-in: add `https://<your-api>/api/auth/google/callback` to **Allowed Callback URLs** in your Auth0 application. You don't need `AUTH0_CALLBACK_URL` on Render; the server works it out from its own address.
 
 ### 3. Web client: Vercel
 1. On [vercel.com](https://vercel.com): **Add New → Project**, pick this repository, and set **Root Directory** to `collab-platform/client`.
@@ -43,6 +45,13 @@ Free Render services sleep after 15 minutes without traffic, so the first reques
 3. Put the Vercel URL into Render's `CLIENT_URL` and redeploy the API.
 
 `vercel.json` already sends the headers the in-browser runtime needs (`Cross-Origin-Opener-Policy` and `Cross-Origin-Embedder-Policy: credentialless`).
+
+### 4. Check the deploy
+From `collab-platform/server`, run the read-only smoke check against your live URLs. It checks the API, database, CORS, Google sign-in redirects, published apps and the website's headers, and tells you which setting to fix:
+
+```bash
+npm run smoke -- https://your-api.onrender.com --client https://your-site.vercel.app
+```
 
 ### Voice & video calls
 Calls are **peer-to-peer WebRTC**: the server only passes small signaling messages over Socket.IO, so calls work on Render's free plan. Audio and video go directly between browsers.

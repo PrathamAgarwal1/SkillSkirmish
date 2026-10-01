@@ -7,6 +7,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import Navbar from './components/layout/Navbar';
 import PrivateRoute from './components/routing/PrivateRoute';
 import AISidebar from './components/AI/AISidebar';
+import ServerStatusBanner from './components/layout/ServerStatusBanner';
 
 // Pages
 import HomePage from './pages/HomePage';
@@ -19,6 +20,7 @@ import IDEPage from './pages/IDEPage';
 import AssessmentPage from './pages/AssessmentPage';
 import ForumPage from './pages/ForumPage';
 import GoogleCallbackPage from './pages/GoogleCallbackPage';
+import GalleryPage from './pages/GalleryPage';
 
 // Context and Socket
 import AuthContext from './context/AuthContext';
@@ -58,7 +60,8 @@ const AppContent = () => {
           draggable: true,
           progress: undefined,
           theme: "dark",
-          onClick: () => navigateRef.current('/dashboard')
+          // @mentions open the room they came from
+          onClick: () => navigateRef.current(notification.type === 'mention' && notification.relatedId ? `/rooms/${notification.relatedId}` : '/dashboard')
         });
       };
 
@@ -77,6 +80,7 @@ const AppContent = () => {
   return (
     <VoiceProvider>
       <div className="crt-overlay"></div>
+      <ServerStatusBanner />
       <Navbar />
       <main className="app-content">
         <Routes>
@@ -85,6 +89,7 @@ const AppContent = () => {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/auth/google/callback" element={<GoogleCallbackPage />} />
+          <Route path="/gallery" element={<GalleryPage />} />
 
           {/* Private Routes */}
           <Route path="/dashboard" element={<PrivateRoute><DashboardPage /></PrivateRoute>} />

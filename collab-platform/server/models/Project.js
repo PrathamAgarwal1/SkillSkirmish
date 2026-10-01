@@ -34,6 +34,11 @@ const ProjectSchema = new Schema({
     }],
     // Environment variables / secrets for runs and deployments. Values are AES-GCM encrypted
     // (utils/secrets.js) and never sent back to the client in plain text.
+    // Set when the project was forked from a gallery app
+    forkedFrom: {
+        project: { type: Schema.Types.ObjectId, ref: 'Project' },
+        slug: String
+    },
     envVars: [{
         _id: false,
         key: { type: String, required: true },

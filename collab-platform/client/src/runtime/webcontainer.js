@@ -164,6 +164,10 @@ export const installDependencies = async (steps, { env, onLine } = {}) => {
     for (const step of steps || []) {
         const dir = step.dir || '';
         const prefix = dir ? `${dir}/` : '';
+        if (!(await readText(wc, `${prefix}package.json`))) {
+            onLine && onLine(`⚠ No package.json${dir ? ` in ${dir}` : ''}, so there is nothing to install there; skipping.`, 'warning');
+            continue;
+        }
         const stamp = `${await readText(wc, `${prefix}package.json`)}\n${await readText(wc, `${prefix}package-lock.json`)}`;
         if (installStamps.get(dir) === stamp && await hasDir(wc, `${prefix}node_modules`)) continue;
         onLine && onLine(`📦 Installing dependencies${dir ? ` in ${dir}` : ''} (in your browser)…`, 'info');

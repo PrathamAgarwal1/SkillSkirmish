@@ -5,6 +5,7 @@ import AuthContext from '../context/AuthContext';
 import { socket } from '../socket';
 import VoiceChannelList from '../components/voice/VoiceChannelList';
 import VoiceStage from '../components/voice/VoiceStage';
+import RoomChat from '../components/chat/RoomChat';
 import CreateProjectModal from '../components/projects/CreateProjectModal';
 import ManageMembersModal from '../components/projects/ManageMembersModal';
 import { VscFolder, VscFileCode, VscChevronDown, VscChevronRight, VscNewFile, VscNewFolder, VscRefresh, VscEllipsis, VscAccount, VscSignOut, VscTrash, VscOrganization, VscAdd, VscCallOutgoing } from "react-icons/vsc";
@@ -16,7 +17,6 @@ const RoomPage = () => {
     const { user } = useContext(AuthContext);
     const [room, setRoom] = useState(null);
     const [messages, setMessages] = useState([]);
-    const [newMessage, setNewMessage] = useState('');
     const [activeUsers, setActiveUsers] = useState([]);
 
     // Projects State
@@ -32,9 +32,6 @@ const RoomPage = () => {
     // Track users who have already sent join message to prevent duplicates.
     // A ref, not state: the socket handlers are created once per room, so state would be stale.
     const usersJoinedNotifiedRef = useRef(new Set());
-
-    // Refs
-    const chatEndRef = useRef(null);
 
     // --- 1. Load Data ---
     useEffect(() => {
@@ -84,6 +81,7 @@ const RoomPage = () => {
 
         // Listeners
         const handleReceiveMessage = (msg) => {
+            if (msg.parent) return; // thread replies are shown in their thread (RoomChat)
             // Filter out duplicate join messages
             const isJoinMessage = msg.sender?.username === 'System' && msg.text?.includes('has joined the room');
             if (isJoinMessage) {
@@ -160,26 +158,7 @@ const RoomPage = () => {
         };
     }, [id, user, navigate]);
 
-    // --- 3. Auto-scroll Chat ---
-    useEffect(() => {
-        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, [messages]);
-
     // --- 5. Handlers ---
-    const handleSendMessage = async (e) => {
-        e.preventDefault();
-        if (!newMessage.trim()) return;
-
-        const payload = {
-            roomId: id,
-            text: newMessage,
-            senderId: user._id
-        };
-
-        socket.emit('chatMessage', payload);
-        setNewMessage('');
-    };
-
     const handleAddTask = (e) => {
         e.preventDefault();
         if (!taskInput.trim()) return;
@@ -472,37 +451,21 @@ const RoomPage = () => {
             {/* COLUMN 3: TERMINAL CHAT */}
             <div className={`tiled-chat ${!isChatOpen ? 'collapsed' : ''}`}>
                 <div className="terminal-header">
-                    <span>TERMINAL LOG (~/chat)</span>
+                    <span>CHAT · #{room.name}</span>
                     <button className="icon-btn" onClick={() => setIsChatOpen(false)} title="Hide Terminal">_</button>
                 </div>
 
-                <div className="terminal-log-area">
-                    {/* Welcome / System Message */}
-                    <div className="log-entry">
-                        <span className="log-timestamp">[{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}]</span>
-                        <span className="log-system">System: Connected to {room.name}...</span>
+                {/* Shared goals for the session */}
+                <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border-subtle)', background: '#0d1117' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#8b949e', marginBottom: '4px' }}>
+                        GOALS ({tasks.filter(t => t.completed).length}/{tasks.length})
                     </div>
-
-                    {messages.map((m, i) => (
-                        <div key={i} className="log-entry">
-                            <span className="log-timestamp">[{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}]</span>
-                            <span className="log-user" style={{ color: m.sender?._id === user._id ? '#f0883e' : '#3fb950' }}>{m.sender?.username || 'Anon'}:</span>
-                            <span className="log-content">{m.text}</span>
-                        </div>
-                    ))}
-                    <div ref={chatEndRef} />
-                </div>
-
-                {/* Tasks / Controls Mini-Panel */}
-                <div style={{ padding: '10px', borderTop: '1px solid var(--border-subtle)', background: '#0d1117' }}>
-                    <div style={{ fontSize: '0.75rem', color: '#8b949e', marginBottom: '5px', display: 'flex', justifyContent: 'space-between' }}>
-                        <span>GOALS ({tasks.filter(t => t.completed).length}/{tasks.length})</span>
-                    </div>
-                    <div style={{ maxHeight: '80px', overflowY: 'auto', marginBottom: '8px' }}>
+                    <div style={{ maxHeight: '70px', overflowY: 'auto', marginBottom: '4px' }}>
                         {tasks.map(t => (
                             <div key={t.id} style={{ display: 'flex', alignItems: 'center', fontSize: '0.8rem', marginBottom: '2px', color: '#c9d1d9' }}>
                                 <span style={{ color: t.completed ? '#3fb950' : '#8b949e', marginRight: '6px' }}>{t.completed ? '[x]' : '[ ]'}</span>
-                                <span style={{ textDecoration: t.completed ? 'line-through' : 'none', opacity: t.completed ? 0.6 : 1, cursor: 'pointer' }} onClick={() => toggleTask(t.id)}>{t.text}</span>
+                                <span style={{ textDecoration: t.completed ? 'line-through' : 'none', opacity: t.completed ? 0.6 : 1, cursor: 'pointer', flex: 1 }} onClick={() => toggleTask(t.id)}>{t.text}</span>
+                                <span style={{ color: '#6e7681', cursor: 'pointer', marginLeft: '6px' }} onClick={() => removeTask(t.id)} title="Remove">×</span>
                             </div>
                         ))}
                     </div>
@@ -510,25 +473,21 @@ const RoomPage = () => {
                         <input
                             className="cmd-input"
                             style={{ padding: '4px', fontSize: '0.75rem', border: 'none', borderBottom: '1px solid #30363d', borderRadius: 0 }}
-                            placeholder="+ Add task..."
+                            placeholder="+ Add goal…"
                             value={taskInput}
                             onChange={(e) => setTaskInput(e.target.value)}
                         />
                     </form>
                 </div>
 
-                <div className="terminal-input-area">
-                    <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: '0' }}>
-                        <span style={{ padding: '8px', color: '#3fb950', fontWeight: 'bold' }}>$</span>
-                        <input
-                            className="cmd-input"
-                            placeholder="echo 'Hello world...'"
-                            value={newMessage}
-                            onChange={(e) => setNewMessage(e.target.value)}
-                            autoFocus
-                        />
-                    </form>
-                </div>
+                <RoomChat
+                    roomId={id}
+                    roomName={room.name}
+                    messages={messages}
+                    setMessages={setMessages}
+                    members={roomMembers}
+                    currentUser={user}
+                />
             </div>
 
             {/* Modals */}

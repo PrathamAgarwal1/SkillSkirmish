@@ -196,6 +196,52 @@ describe('run config detection', () => {
         });
     }
 
+    const detectFiles = (type, files) => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-detect-'));
+        for (const [p, content] of Object.entries(files)) {
+            fs.mkdirSync(path.dirname(path.join(dir, p)), { recursive: true });
+            fs.writeFileSync(path.join(dir, p), content);
+        }
+        const cfg = detectRunConfig(dir, type);
+        fs.rmSync(dir, { recursive: true, force: true });
+        return cfg;
+    };
+
+    test('a top-level index.html is a static site, despite serve.py or a nested package.json', () => {
+        const cfg = detectFiles('React App', {
+            'index.html': '<h1>hi</h1>', 'style.css': '', 'DESIGN.md': '',
+            'serve.py': 'import http.server\nhttp.server.test()',
+            'src/package.json': '{"name":"tools"}', 'src/main.js': ''
+        });
+        assert.equal(cfg.label, 'Static website');
+        assert.equal(cfg.install.length, 0);
+        assert.equal(cfg.deploy.kind, 'static');
+    });
+
+    test('a site inside one folder runs from there, ignoring a script-less package.json at the top', () => {
+        const cfg = detectFiles('React App', {
+            'package.json': '{"dependencies":{"vite":"^8.0.0"}}',
+            'My Portfolio/index.html': '<h1>hi</h1>', 'My Portfolio/serve.py': 'import http.server',
+            'My Portfolio/src/app.js': ''
+        });
+        assert.equal(cfg.label, 'Static website (My Portfolio/)');
+        assert.equal(cfg.deploy.output, 'My Portfolio');
+        assert.match(cfg.targets[0].cmd, /^http-server 'My Portfolio' /);
+    });
+
+    test('a real Vite project at the top level is still a Vite app', () => {
+        const cfg = detectFiles('React App', {
+            'package.json': '{"scripts":{"dev":"vite","build":"vite build"},"devDependencies":{"vite":"^8.0.0"}}',
+            'index.html': '<div id="root"></div>'
+        });
+        assert.notEqual(cfg.label.startsWith('Static'), true);
+    });
+
+    test('index.html next to a Flask app still runs the Python app', () => {
+        const cfg = detectFiles('Vanilla Web', { 'index.html': '', 'app.py': 'from flask import Flask\napp = Flask(__name__)' });
+        assert.equal(cfg.env, 'python');
+    });
+
     test('ML projects offer JupyterLab and the Streamlit app', () => {
         assert.deepEqual(detectFor('Machine Learning (Jupyter)').targets.map(t => t.id), ['jupyter', 'streamlit']);
     });

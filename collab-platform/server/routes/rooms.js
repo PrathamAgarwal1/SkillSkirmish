@@ -267,8 +267,8 @@ router.get('/:id/messages', auth, async (req, res) => {
         if (!room) return res.status(404).json({ msg: 'Room not found' });
         if (!isRoomMember(room, req.user.id)) return res.status(403).json({ msg: 'Access Denied' });
 
-        // Newest N messages, returned oldest-first for display
-        const messages = await Message.find({ room: req.params.id })
+        // Newest N top-level messages (thread replies load separately), returned oldest-first for display
+        const messages = await Message.find({ room: req.params.id, parent: null })
             .populate('sender', 'username')
             .sort({ createdAt: -1 })
             .limit(MESSAGE_HISTORY_LIMIT);
@@ -276,6 +276,27 @@ router.get('/:id/messages', auth, async (req, res) => {
     } catch (err) {
         console.error('Chat Load Error:', err.message);
         res.status(500).send('Server Error');
+    }
+});
+
+// @route   GET api/rooms/:id/messages/:messageId/replies — a thread: the message and its replies
+router.get('/:id/messages/:messageId/replies', auth, async (req, res) => {
+    try {
+        if (!isValidId(req.params.id) || !isValidId(req.params.messageId)) return res.status(404).json({ msg: 'Not found' });
+        const room = await Room.findById(req.params.id).select('owner members');
+        if (!room) return res.status(404).json({ msg: 'Room not found' });
+        if (!isRoomMember(room, req.user.id)) return res.status(403).json({ msg: 'Access Denied' });
+
+        const parent = await Message.findOne({ _id: req.params.messageId, room: req.params.id, parent: null }).populate('sender', 'username');
+        if (!parent) return res.status(404).json({ msg: 'Message not found' });
+        const replies = await Message.find({ room: req.params.id, parent: parent._id })
+            .populate('sender', 'username')
+            .sort({ createdAt: 1 })
+            .limit(500);
+        res.json({ parent, replies });
+    } catch (err) {
+        console.error('Thread Load Error:', err.message);
+        res.status(500).json({ msg: 'Server Error' });
     }
 });
 
