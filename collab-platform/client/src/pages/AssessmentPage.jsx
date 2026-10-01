@@ -68,8 +68,8 @@ const AssessmentPage = () => {
 
     const getTypeBadge = (type) => {
         const colors = { coding: '#f0883e', mcq: 'var(--term-blue)', subjective: 'var(--term-purple)' };
-        const labels = { coding: '⌘ CODING', mcq: '☰ MCQ', subjective: '⊳ SUBJECTIVE' };
-        return { color: colors[type] || 'var(--text-muted)', label: labels[type] || type?.toUpperCase() };
+        const labels = { coding: 'Coding', mcq: 'Multiple choice', subjective: 'Written answer' };
+        return { color: colors[type] || 'var(--text-muted)', label: labels[type] || type, name: labels[type] || type };
     };
 
     // =========================
@@ -155,7 +155,7 @@ const AssessmentPage = () => {
     const handleSkip = async () => {
         if (loading) return;
         setLoading(true);
-        addToHistory('user', '[SKIPPED]');
+        addToHistory('user', '(skipped)');
 
         try {
             const res = await axios.post('/api/assessment/skip');
@@ -204,63 +204,20 @@ const AssessmentPage = () => {
     // ==========================================================
     if (phase === 'intro') {
         return (
-            <div style={{
-                height: '100%', display: 'flex', flexDirection: 'column',
-                alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-deep)',
-                color: 'var(--text-main)', fontFamily: 'var(--font-mono)', gap: '2rem'
-            }}>
-                <div className="term-card" style={{ maxWidth: '600px', width: '90%' }}>
-                    <div className="term-header">
-                        <div className="window-dots">
-                            <div className="dot dot-red"></div>
-                            <div className="dot dot-yellow"></div>
-                            <div className="dot dot-green"></div>
-                        </div>
-                        <span>assessment_init.sh</span>
-                    </div>
-                    <div className="term-body" style={{ padding: '2rem', textAlign: 'center' }}>
-                        <h1 style={{ color: 'var(--term-blue)', fontSize: '1.8rem', marginBottom: '0.5rem' }}>
-                            SKILL ASSESSMENT
-                        </h1>
-                        <p style={{ color: 'var(--text-muted)', fontSize: '1rem' }}>
-                            Target: <span style={{ color: '#f0883e', fontWeight: 'bold' }}>{skill}</span>
-                        </p>
-                        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.5rem' }}>
-                            20 questions • All types included • Skip any question • Submit anytime
-                        </p>
-
-                        {/* Assessment category cards */}
-                        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center', margin: '2rem 0' }}>
-                            {[
-                                { icon: '⌘', label: 'Coding', desc: '8 coding challenges', color: '#f0883e' },
-                                { icon: '☰', label: 'MCQ', desc: '6 multiple choice', color: 'var(--term-blue)' },
-                                { icon: '⊳', label: 'Subjective', desc: '6 open-ended', color: 'var(--term-purple)' }
-                            ].map(m => (
-                                <div key={m.label} style={{
-                                    width: '160px', padding: '1.2rem',
-                                    backgroundColor: 'rgba(255,255,255,0.03)',
-                                    border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)',
-                                    textAlign: 'center', transition: 'all 0.2s'
-                                }}>
-                                    <div style={{ fontSize: '2rem', marginBottom: '0.8rem' }}>{m.icon}</div>
-                                    <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: m.color, marginBottom: '0.3rem' }}>{m.label}</div>
-                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{m.desc}</div>
-                                </div>
-                            ))}
-                        </div>
-
-                        <button className="btn-term-primary" onClick={startAssessment} style={{
-                            padding: '0.8rem 3rem', fontSize: '1rem', letterSpacing: '1px',
-                            borderRadius: 'var(--radius-md)', marginBottom: '1rem'
-                        }}>
-                            {'▸'} START ASSESSMENT
-                        </button>
-
-                        <div>
-                            <button onClick={() => navigate('/profile')} className="btn-term" style={{
-                                fontSize: '0.85rem', padding: '0.5rem 1.5rem'
-                            }}>← Back to Profile</button>
-                        </div>
+            <div className="auth-wrap">
+                <div className="ui-card" style={{ width: 'min(560px, 100%)', padding: 28 }}>
+                    <h1 style={{ margin: '0 0 6px', fontSize: 26, color: 'var(--text-bright)' }}>{skill} assessment</h1>
+                    <p className="ui-muted" style={{ margin: '0 0 18px', lineHeight: 1.6 }}>
+                        Up to 20 questions: multiple choice, written answers and coding. Questions adapt to your level and
+                        you won't get ones you've already seen. Skip anything, and finish whenever you like.
+                    </p>
+                    <ul className="ui-list" style={{ marginBottom: 20 }}>
+                        <li className="ui-row"><span className="ui-row-main">Your rating changes based on how hard the questions you get right are.</span></li>
+                        <li className="ui-row"><span className="ui-row-main">Spot a wrong or unclear question? Report it with the 🚩 link after you answer.</span></li>
+                    </ul>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <button className="ui-btn primary" onClick={startAssessment} style={{ padding: '10px 22px', fontSize: 15 }}>Start assessment</button>
+                        <button className="ui-btn ghost" onClick={() => navigate('/profile')}>Back to profile</button>
                     </div>
                 </div>
             </div>
@@ -276,85 +233,42 @@ const AssessmentPage = () => {
         const changeSign = resultData.ratingChange >= 0 ? '+' : '';
 
         return (
-            <div style={{
-                height: '100%', display: 'flex', flexDirection: 'column',
-                alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-deep)',
-                color: 'var(--text-main)', fontFamily: 'var(--font-mono)', gap: '2rem'
-            }}>
-                <div className="term-card" style={{ maxWidth: '500px', width: '90%' }}>
-                    <div className="term-header">
-                        <div className="window-dots">
-                            <div className="dot dot-red"></div>
-                            <div className="dot dot-yellow"></div>
-                            <div className="dot dot-green"></div>
-                        </div>
-                        <span>results.log</span>
+            <div className="auth-wrap">
+                <div className="ui-card" style={{ width: 'min(500px, 100%)', padding: 28, textAlign: 'center' }}>
+                    <h1 style={{ margin: '0 0 20px', fontSize: 24, color: 'var(--text-bright)' }}>Assessment complete</h1>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
+                        {[['Answered', resultData.attempted], ['Correct', resultData.correct], ['Accuracy', `${resultData.accuracy}%`]].map(([label, value]) => (
+                            <div key={label} style={{ background: 'var(--bg-input)', borderRadius: 8, padding: '12px 8px' }}>
+                                <div className="ui-muted ui-small">{label}</div>
+                                <div className="ui-num" style={{ fontSize: 24, marginTop: 2 }}>{value}</div>
+                            </div>
+                        ))}
                     </div>
-                    <div className="term-body" style={{ padding: '2.5rem', textAlign: 'center' }}>
-                        <h1 style={{ color: 'var(--term-blue)', fontSize: '1.5rem', marginBottom: '2rem', letterSpacing: '2px' }}>
-                            ASSESSMENT COMPLETE
-                        </h1>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
-                            <div>
-                                <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginBottom: '0.3rem' }}>ATTEMPTED</div>
-                                <div style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--text-bright)' }}>{resultData.attempted}</div>
-                            </div>
-                            <div>
-                                <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginBottom: '0.3rem' }}>CORRECT</div>
-                                <div style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--term-green)' }}>{resultData.correct}</div>
-                            </div>
-                            <div>
-                                <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginBottom: '0.3rem' }}>ACCURACY</div>
-                                <div style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--term-gold)' }}>{resultData.accuracy}%</div>
-                            </div>
-                        </div>
+                    {resultData.unratedQuestions > 0 && (
+                        <p className="ui-small" style={{ color: 'var(--term-gold)', margin: '0 0 16px' }}>
+                            {resultData.unratedQuestions} practice question{resultData.unratedQuestions === 1 ? ' was' : 's were'} not counted towards your rating.
+                        </p>
+                    )}
 
-                        {resultData.unratedQuestions > 0 && (
-                            <div style={{ color: 'var(--term-gold)', fontSize: '0.8rem', marginBottom: '1.5rem' }}>
-                                ⚠ {resultData.unratedQuestions} question(s) were practice-only (AI unavailable) and did not affect your rating.
-                            </div>
-                        )}
-
+                    <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 18, marginBottom: 22 }}>
                         {isFirstRating ? (
-                            /* First assessment — show initial placement */
-                            <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '1.5rem', marginBottom: '2rem' }}>
-                                <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '0.5rem' }}>INITIAL RATING</div>
-                                <div style={{ fontSize: '3rem', fontWeight: 'bold', color: 'var(--term-blue)' }}>
-                                    {resultData.newRating}
-                                </div>
-                                <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.5rem' }}>
-                                    Your first rating has been established!
-                                </div>
-                            </div>
-                        ) : (
-                            /* Returning user — show change */
                             <>
-                                <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '1.5rem', marginBottom: '1.5rem' }}>
-                                    <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '0.5rem' }}>RATING CHANGE</div>
-                                    <div style={{ fontSize: '3rem', fontWeight: 'bold', color: changeColor }}>
-                                        {changeSign}{resultData.ratingChange}
-                                    </div>
-                                </div>
-
-                                <div style={{ display: 'flex', justifyContent: 'center', gap: '2rem', marginBottom: '2rem' }}>
-                                    <div>
-                                        <div style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>OLD RATING</div>
-                                        <div style={{ fontSize: '1.3rem', color: 'var(--text-bright)' }}>{resultData.oldRating}</div>
-                                    </div>
-                                    <div style={{ color: 'var(--border-subtle)', fontSize: '1.5rem', alignSelf: 'center' }}>→</div>
-                                    <div>
-                                        <div style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>NEW RATING</div>
-                                        <div style={{ fontSize: '1.3rem', color: 'var(--term-blue)', fontWeight: 'bold' }}>{resultData.newRating}</div>
-                                    </div>
+                                <div className="ui-muted ui-small">Your first {skill} rating</div>
+                                <div className="ui-num" style={{ fontSize: 44, color: 'var(--term-blue)' }}>{resultData.newRating}</div>
+                            </>
+                        ) : (
+                            <>
+                                <div className="ui-muted ui-small">{skill} rating</div>
+                                <div style={{ fontSize: 40, fontWeight: 700, color: changeColor }}>{changeSign}{resultData.ratingChange}</div>
+                                <div className="ui-muted">
+                                    <span className="ui-num">{resultData.oldRating}</span> → <span className="ui-num" style={{ color: 'var(--term-blue)' }}>{resultData.newRating}</span>
                                 </div>
                             </>
                         )}
-
-                        <button className="btn-term-primary" onClick={() => navigate('/profile')} style={{
-                            padding: '0.8rem 2rem', fontSize: '1rem', borderRadius: 'var(--radius-md)'
-                        }}>RETURN TO PROFILE</button>
                     </div>
+
+                    <button className="ui-btn primary" onClick={() => navigate('/profile')} style={{ padding: '10px 22px' }}>Back to profile</button>
                 </div>
             </div>
         );
@@ -370,9 +284,8 @@ const AssessmentPage = () => {
 
     return (
         <div className="assessment-layout" style={{
-            height: '100%', display: 'grid', gridTemplateColumns: '250px 1fr 280px',
-            backgroundColor: 'var(--bg-dark)', color: 'var(--text-main)',
-            fontFamily: 'var(--font-mono)'
+            height: '100%', display: 'grid', gridTemplateColumns: '240px 1fr',
+            backgroundColor: 'var(--bg-dark)', color: 'var(--text-main)'
         }}>
 
             {/* LEFT PANEL: Session Info */}
@@ -380,28 +293,18 @@ const AssessmentPage = () => {
                 borderRight: '1px solid var(--border-subtle)', padding: '1.5rem',
                 backgroundColor: 'var(--bg-input)', display: 'flex', flexDirection: 'column'
             }}>
-                <h3 style={{ color: 'var(--term-blue)', fontSize: '0.8rem', letterSpacing: '2px', marginBottom: '1.5rem' }}>// SESSION INFO</h3>
-
-                <div style={{ marginBottom: '1rem' }}>
-                    <div style={{ color: 'var(--text-muted)', fontSize: '0.7rem', marginBottom: '0.2rem' }}>TARGET SKILL</div>
-                    <div style={{ color: '#f0883e', fontWeight: 'bold' }}>{skill}</div>
-                </div>
-                <div style={{ marginBottom: '1rem' }}>
-                    <div style={{ color: 'var(--text-muted)', fontSize: '0.7rem', marginBottom: '0.2rem' }}>ASSESSMENT MODE</div>
-                    <div style={{ color: 'var(--term-purple)', fontWeight: 'bold' }}>MIXED</div>
-                </div>
-                <div style={{ marginBottom: '1rem' }}>
-                    <div style={{ color: 'var(--text-muted)', fontSize: '0.7rem', marginBottom: '0.2rem' }}>QUESTIONS ANSWERED</div>
-                    <div style={{ color: 'var(--text-bright)', fontWeight: 'bold' }}>{sessionStats.attempted} / {sessionStats.poolSize}</div>
-                </div>
-                <div style={{ marginBottom: '1rem' }}>
-                    <div style={{ color: 'var(--text-muted)', fontSize: '0.7rem', marginBottom: '0.2rem' }}>CORRECT</div>
-                    <div style={{ color: 'var(--term-green)', fontWeight: 'bold' }}>{sessionStats.correct}</div>
-                </div>
-                <div style={{ marginBottom: '1rem' }}>
-                    <div style={{ color: 'var(--text-muted)', fontSize: '0.7rem', marginBottom: '0.2rem' }}>SESSION STATUS</div>
-                    <div className="blink" style={{ color: 'var(--term-gold)', fontWeight: 'bold' }}>ACTIVE</div>
-                </div>
+                <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-bright)', marginBottom: 18 }}>{skill}</div>
+                {[
+                    ['Question', `${sessionData?.questionNumber || '—'} of ${sessionStats.poolSize}`],
+                    ['Answered', sessionStats.attempted],
+                    ['Correct', sessionStats.correct],
+                    ['Type', sessionData ? badge.name : '—'],
+                    ['Difficulty', sessionData?.difficulty || '—']
+                ].map(([label, value]) => (
+                    <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderTop: '1px solid #21262d', fontSize: 14 }}>
+                        <span className="ui-muted">{label}</span><span style={{ color: 'var(--text-bright)' }}>{value}</span>
+                    </div>
+                ))}
 
                 {/* Progress bar */}
                 <div style={{ marginTop: '0.5rem', marginBottom: '2rem' }}>
@@ -420,15 +323,8 @@ const AssessmentPage = () => {
                 <div style={{ marginTop: 'auto' }}>
                     <button onClick={handleFinishAssessment}
                         disabled={loading || sessionStats.attempted === 0}
-                        style={{
-                            width: '100%', padding: '0.8rem',
-                            backgroundColor: sessionStats.attempted > 0 ? 'var(--term-red)' : 'rgba(255,255,255,0.08)',
-                            color: 'var(--text-bright)', border: '1px solid rgba(240,246,252,0.1)',
-                            borderRadius: 'var(--radius-md)',
-                            cursor: sessionStats.attempted > 0 ? 'pointer' : 'not-allowed',
-                            fontWeight: '600', fontFamily: 'inherit', fontSize: '0.85rem', letterSpacing: '1px'
-                        }}>
-                        SUBMIT ASSESSMENT
+                        className="ui-btn" style={{ width: '100%', padding: 10 }}>
+                        Finish and see results
                     </button>
                 </div>
             </div>
@@ -438,7 +334,7 @@ const AssessmentPage = () => {
 
                 {/* Chat Output */}
                 <div ref={chatContainerRef} style={{
-                    flex: isCoding ? 0.3 : 1, overflowY: 'auto', padding: '1.5rem',
+                    flex: isCoding ? 0.3 : 1, overflowY: 'auto', padding: '1.5rem', fontFamily: 'var(--font-mono)',
                     scrollBehavior: 'smooth', borderBottom: '1px solid var(--border-subtle)'
                 }}>
                     {history.map((h, i) => (
@@ -474,7 +370,7 @@ const AssessmentPage = () => {
                             )}
                         </div>
                     ))}
-                    {loading && <div className="blink" style={{ color: 'var(--term-blue)', marginTop: '1rem' }}>_ processing...</div>}
+                    {loading && <div style={{ color: 'var(--text-muted)', marginTop: '1rem' }}>Checking…</div>}
                 </div>
 
                 {/* Input Area — changes based on question type */}
@@ -485,7 +381,7 @@ const AssessmentPage = () => {
                     {sessionData == null ? (
                         /* No current question (pool exhausted or loading) */
                         <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                            {sessionStats.attempted > 0 ? 'Click SUBMIT ASSESSMENT to see your results.' : 'Loading question...'}
+                            {sessionStats.attempted > 0 ? 'Click "Finish and see results" to see how you did.' : 'Loading question…'}
                         </div>
                     ) : isCoding ? (
                         /* CODING EDITOR */
@@ -495,11 +391,11 @@ const AssessmentPage = () => {
                                 borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-muted)', fontSize: '0.85rem',
                                 display: 'flex', justifyContent: 'space-between', alignItems: 'center'
                             }}>
-                                <span style={{ color: badge.color }}>[CODING] — {getEditorLanguage().toUpperCase()}</span>
+                                <span style={{ color: badge.color }}>Coding · {getEditorLanguage()}</span>
                                 <div style={{ display: 'flex', gap: '0.5rem' }}>
                                     <button onClick={handleSkip} disabled={loading} className="btn-term" style={{
                                         padding: '0.3rem 0.8rem', fontSize: '0.75rem'
-                                    }}>SKIP {'»'}</button>
+                                    }}>Skip</button>
                                 </div>
                             </div>
                             <Editor
@@ -522,16 +418,16 @@ const AssessmentPage = () => {
                                 <button onClick={() => setCode(sessionData?.codeTemplate || '')} className="btn-term"
                                     style={{ padding: '0.4rem 1rem', fontSize: '0.8rem' }}>RESET</button>
                                 <button onClick={handleSubmitAnswer} disabled={loading} className="btn-term-primary"
-                                    style={{ padding: '0.5rem 1.5rem' }}>SUBMIT CODE</button>
+                                    style={{ padding: '0.5rem 1.5rem' }}>Submit code</button>
                             </div>
                         </div>
                     ) : isMcq && sessionData?.options?.length ? (
                         /* MCQ OPTIONS */
                         <div style={{ padding: '1.5rem' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                                <span style={{ color: 'var(--term-blue)', fontSize: '0.85rem', fontWeight: 'bold' }}>☰ Select your answer:</span>
+                                <span style={{ color: 'var(--term-blue)', fontSize: '0.85rem', fontWeight: 'bold' }}>Choose an answer</span>
                                 <button onClick={handleSkip} disabled={loading} className="btn-term"
-                                    style={{ padding: '0.3rem 0.8rem', fontSize: '0.75rem' }}>SKIP {'»'}</button>
+                                    style={{ padding: '0.3rem 0.8rem', fontSize: '0.75rem' }}>Skip</button>
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem' }}>
                                 {sessionData.options.map((opt, idx) => (
@@ -557,9 +453,9 @@ const AssessmentPage = () => {
                         /* SUBJECTIVE TEXT INPUT */
                         <div style={{ padding: '1.5rem', backgroundColor: 'var(--bg-card)' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.8rem' }}>
-                                <span style={{ color: 'var(--term-purple)', fontSize: '0.85rem', fontWeight: 'bold' }}>⊳ Your answer:</span>
+                                <span style={{ color: 'var(--term-purple)', fontSize: '0.85rem', fontWeight: 'bold' }}>Your answer</span>
                                 <button onClick={handleSkip} disabled={loading} className="btn-term"
-                                    style={{ padding: '0.3rem 0.8rem', fontSize: '0.75rem' }}>SKIP {'»'}</button>
+                                    style={{ padding: '0.3rem 0.8rem', fontSize: '0.75rem' }}>Skip</button>
                             </div>
                             <form onSubmit={handleSubmitAnswer} style={{ display: 'flex', gap: '0.8rem', alignItems: 'center' }}>
                                 <span style={{ color: 'var(--term-green)', fontSize: '1.2rem' }}>{'>'}</span>
@@ -572,46 +468,13 @@ const AssessmentPage = () => {
                                     }}
                                 />
                                 <button type="submit" disabled={loading} className="btn-term-primary"
-                                    style={{ padding: '0.5rem 1rem' }}>SEND</button>
+                                    style={{ padding: '0.5rem 1rem' }}>Send</button>
                             </form>
                         </div>
                     )}
                 </div>
             </div>
 
-            {/* RIGHT PANEL */}
-            <div style={{
-                borderLeft: '1px solid var(--border-subtle)', padding: '1.5rem',
-                backgroundColor: 'var(--bg-input)'
-            }}>
-                <div style={{ marginBottom: '2rem' }}>
-                    <h4 style={{ color: 'var(--text-muted)', fontSize: '0.75rem', letterSpacing: '1px', marginBottom: '0.5rem' }}>CURRENT TYPE</h4>
-                    <span style={{
-                        backgroundColor: 'rgba(255,255,255,0.04)', color: badge.color, padding: '4px 10px',
-                        borderRadius: 'var(--radius-sm)', fontSize: '0.9rem',
-                        border: '1px solid var(--border-subtle)', fontWeight: 'bold'
-                    }}>{badge.label}</span>
-                </div>
-                <div style={{ marginBottom: '2rem' }}>
-                    <h4 style={{ color: 'var(--text-muted)', fontSize: '0.75rem', letterSpacing: '1px', marginBottom: '0.5rem' }}>DIFFICULTY</h4>
-                    <span style={{
-                        color: sessionData?.difficulty === 'Hard' ? 'var(--term-red)' :
-                            sessionData?.difficulty === 'Medium' ? 'var(--term-gold)' : 'var(--term-green)',
-                        fontWeight: 'bold', fontSize: '1.1rem'
-                    }}>{sessionData?.difficulty || '—'}</span>
-                </div>
-                <div style={{ marginBottom: '2rem' }}>
-                    <h4 style={{ color: 'var(--text-muted)', fontSize: '0.75rem', letterSpacing: '1px', marginBottom: '0.5rem' }}>QUESTION #</h4>
-                    <span style={{ color: 'var(--text-bright)', fontSize: '1.1rem', fontWeight: 'bold' }}>
-                        {sessionData?.questionNumber || '—'} / {sessionStats.poolSize}
-                    </span>
-                </div>
-            </div>
-
-            <style>{`
-                .blink { animation: blinker 1.5s linear infinite; }
-                @keyframes blinker { 50% { opacity: 0.3; } }
-            `}</style>
         </div>
     );
 };

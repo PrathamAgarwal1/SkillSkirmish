@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useContext, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
+import { toast } from 'react-toastify';
 import AuthContext from '../context/AuthContext';
 import { socket } from '../socket';
 import VoiceChannelList from '../components/voice/VoiceChannelList';
@@ -372,49 +373,21 @@ const RoomPage = () => {
                                 );
                             })}
                         </ul>
-                        {/* Invite Link */}
-                        <div style={{ padding: '12px 20px' }}>
+                        {/* Invite link + leave */}
+                        <div style={{ padding: '12px 20px', display: 'grid', gap: 8 }}>
                             <button
+                                className="ui-btn"
+                                style={{ width: '100%' }}
                                 onClick={() => {
-                                    navigator.clipboard.writeText(window.location.href);
-                                    alert('Invite Link Copied!');
-                                }}
-                                style={{
-                                    background: '#0e639c',
-                                    color: 'white',
-                                    border: 'none',
-                                    width: '100%',
-                                    padding: '10px',
-                                    cursor: 'pointer',
-                                    fontSize: '14px',
-                                    borderRadius: '4px',
-                                    fontWeight: '600'
+                                    navigator.clipboard.writeText(window.location.href)
+                                        .then(() => toast.success('Invite link copied'))
+                                        .catch(() => toast.error("Couldn't copy. Copy the address bar instead."));
                                 }}
                             >
-                                Copy Invite Link
+                                Copy invite link
                             </button>
-                        </div>
-                        {/* Leave Button */}
-                        <div style={{ padding: '0 20px 12px 20px' }}>
-                            <button
-                                onClick={handleLeaveRoom}
-                                style={{
-                                    background: '#d32f2f',
-                                    color: 'white',
-                                    border: 'none',
-                                    width: '100%',
-                                    padding: '10px',
-                                    cursor: 'pointer',
-                                    fontSize: '14px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: '8px',
-                                    borderRadius: '4px',
-                                    fontWeight: '600'
-                                }}
-                            >
-                                <VscSignOut style={{ fontSize: '16px' }} /> Leave Room
+                            <button className="ui-btn quiet danger" style={{ width: '100%' }} onClick={handleLeaveRoom}>
+                                <VscSignOut style={{ fontSize: '16px' }} /> Leave room
                             </button>
                         </div>
                     </div>
