@@ -21,6 +21,8 @@ import AssessmentPage from './pages/AssessmentPage';
 import ForumPage from './pages/ForumPage';
 import GoogleCallbackPage from './pages/GoogleCallbackPage';
 import GalleryPage from './pages/GalleryPage';
+import BattlePage, { BattleJoin } from './pages/BattlePage';
+import BattleArena from './pages/BattleArena';
 
 // Context and Socket
 import AuthContext from './context/AuthContext';
@@ -104,6 +106,11 @@ const AppContent = () => {
           <Route path="/profile/:userId" element={<PrivateRoute><ProfilePage /></PrivateRoute>} />
 
           <Route path="/forum" element={<PrivateRoute><ForumPage /></PrivateRoute>} />
+
+          {/* Code battles */}
+          <Route path="/battle" element={<PrivateRoute><BattlePage /></PrivateRoute>} />
+          <Route path="/battle/join/:code" element={<PrivateRoute><BattleJoin /></PrivateRoute>} />
+          <Route path="/battle/m/:matchId" element={<PrivateRoute><BattleArena /></PrivateRoute>} />
 
           {/* Room and Project Routes */}
           <Route path="/rooms/:roomId" element={<PrivateRoute><RoomPage /></PrivateRoute>} />

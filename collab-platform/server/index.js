@@ -149,11 +149,15 @@ const loadRoomIfMember = async (roomId, userId) => {
 // Discord-style voice channels: presence + WebRTC signaling (voice/voiceManager.js)
 const voice = require('./voice/voiceManager');
 voice.init(io);
+// Coding battles: matchmaking, live progress, judging (battles/battleManager.js)
+const battles = require('./battles/battleManager');
+battles.init(io);
 
 io.on('connection', (socket) => {
     const userId = socket.userId;
     userSocketMap[userId] = socket.id;
     voice.register(socket, { safe, ack });
+    battles.register(socket, { safe, ack });
 
     // Kept for older clients; identity is already known from the token.
     socket.on('register-user', () => {
@@ -526,6 +530,7 @@ app.use('/api/execute', require('./routes/execute'));
 
 app.use('/api/deployments', require('./routes/deployments'));
 app.use('/api/gallery', require('./routes/gallery'));
+app.use('/api/battles', require('./routes/battles'));
 // git clone/pull/push from the browser IDE (browser mode) — see routes/gitProxy.js
 app.use('/api/git-proxy', require('./routes/gitProxy'));
 
