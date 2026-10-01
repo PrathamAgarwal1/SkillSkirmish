@@ -13,6 +13,7 @@ import './index.css';
 import './modern-dark.css';
 import { AuthProvider } from './context/AuthContext.jsx';
 import axios from 'axios'; // <-- IMPORT AXIOS
+import { installNetworkResilience } from './utils/serverStatus';
 
 // --- Configure Monaco Editor to load from local bundle instead of CDN ---
 import { loader } from '@monaco-editor/react';
@@ -25,6 +26,9 @@ console.log("1. main.jsx is running");
 // Sets the base URL for all future Axios requests and strips any accidental trailing slash
 const rawServerUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:5000';
 axios.defaults.baseURL = rawServerUrl.replace(/\/+$/, '');
+
+// Retry safe requests while the server wakes up, and show readable errors instead of "Network Error"
+installNetworkResilience(axios);
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

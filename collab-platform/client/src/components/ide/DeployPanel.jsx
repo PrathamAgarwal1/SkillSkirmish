@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { socket } from '../../socket';
 import { buildAndPublish } from '../../runtime/publish';
+import ShareCard from './ShareCard';
 
 const STATUS_COLORS = { live: '#3fb950', building: '#d29922', failed: '#f85149', stopped: '#8b949e', idle: '#8b949e' };
 
@@ -243,6 +244,10 @@ const DeployPanel = ({ projectId, projectName, runConfig, onClose }) => {
                             </div>
 
                             <Pipeline stages={stagesFor(deployment, building, logLines)} />
+
+                            {deployment?.activeVersion && !building && (
+                                <ShareCard projectId={projectId} deployment={deployment} onChange={setDeployment} />
+                            )}
 
                             {deployment && (
                                 <div style={{ background: '#1e1e1e', border: '1px solid #3e3e42', borderRadius: 6, padding: '10px 12px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>

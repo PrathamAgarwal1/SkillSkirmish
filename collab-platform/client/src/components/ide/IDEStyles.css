@@ -580,15 +580,54 @@
     animation: livePulse 1.5s ease-in-out infinite;
 }
 
-/* Remote Cursor Styles */
-.remote-cursor-line {
-    border-left: 2px solid #4ECDC4;
+/* Remote cursors: a caret per collaborator, with a name tag while they're active.
+   Each person's color and name come from a per-user <style> (CodeEditorWindow.injectCursorStyle). */
+.rc-caret {
+    position: absolute;
+    height: 100%;
     margin-left: -1px;
-    position: relative;
+    border-left: 2px solid #4ECDC4;
+    box-sizing: border-box;
+    pointer-events: none;
 }
+.rc-caret::after {
+    position: absolute;
+    left: -2px;
+    bottom: 100%;
+    padding: 0 5px;
+    border-radius: 3px 3px 3px 0;
+    font: 600 10px/16px 'Inter', system-ui, sans-serif;
+    color: #0d1117;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.25s;
+    z-index: 10;
+}
+.rc-caret.rc-show::after { opacity: 1; }
+/* On the first line there's no room above, so the tag goes below */
+.rc-caret.rc-below::after { bottom: auto; top: 100%; border-radius: 0 3px 3px 3px; }
+.rc-sel { background-color: rgba(78, 205, 196, 0.2); }
 
-.remote-selection {
-    background-color: rgba(78, 205, 196, 0.2);
+/* Who else is in this file */
+.collab-avatars { display: inline-flex; margin-left: 10px; }
+.collab-avatar {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: inline-grid;
+    place-items: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: #0d1117;
+    border: 2px solid #252526;
+    margin-left: -6px;
+}
+.collab-avatar:first-child { margin-left: 0; }
+.collab-avatar.more { background: #3e3e42; color: #ddd; font-size: 9px; }
+
+@media (prefers-reduced-motion: reduce) {
+    .rc-caret::after { transition: none; }
 }
 
 /* Pulse Animations */
