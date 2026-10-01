@@ -370,3 +370,68 @@ describe('voice calls', () => {
         Object.assign(process.env, saved);
     });
 });
+
+describe('coding battles', () => {
+    const { PROBLEMS } = require('../battles/problems');
+    const { buildTests, grade, matches, publicProblem } = require('../battles/judge');
+    const { eloUpdate, decide } = require('../battles/battleManager');
+
+    test('every reference solution reproduces its own examples', () => {
+        for (const p of PROBLEMS) {
+            for (const ex of p.examples) {
+                assert.ok(matches(p.compare || 'exact', p.solve(...JSON.parse(JSON.stringify(ex.args))), ex.expected), `${p.id}: ${JSON.stringify(ex.args)}`);
+            }
+        }
+    });
+
+    test('tests are deterministic per seed and different across seeds', () => {
+        const a = buildTests('max-subarray', 42);
+        assert.deepEqual(a, buildTests('max-subarray', 42));
+        assert.notDeepEqual(a.map(t => t.args), buildTests('max-subarray', 43).map(t => t.args));
+    });
+
+    test('players never get expected outputs', () => {
+        for (const p of PROBLEMS) {
+            const pub = publicProblem(p);
+            assert.equal(pub.solve, undefined);
+            assert.equal(pub.generate, undefined);
+            assert.ok(pub.starter.python.includes(`def ${p.fn.python}(`));
+            assert.ok(pub.starter.javascript.includes(`function ${p.fn.javascript}(`));
+        }
+    });
+
+    test('grading: right, wrong, errors, order-insensitive and float answers', () => {
+        const tests = buildTests('two-sum', 7);
+        const right = tests.map(t => ({ ok: true, value: JSON.stringify([...t.expected].reverse()) }));
+        assert.equal(grade('two-sum', tests, right).passed, tests.length);
+        const wrong = right.map((o, i) => (i === 2 ? { ok: true, value: '[0,0]' } : o));
+        const r = grade('two-sum', tests, wrong);
+        assert.equal(r.passed, tests.length - 1);
+        assert.equal(r.firstFail.index, 2);
+        assert.equal(r.firstFail.expected, undefined, 'the expected answer is never revealed');
+        assert.equal(grade('two-sum', tests, [{ ok: false, error: 'boom' }]).passed, 0);
+        assert.ok(matches('float', 2.5000000001, 2.5));
+        assert.ok(matches('groups', [['tea', 'eat'], ['bat']], [['bat'], ['eat', 'tea']]));
+        assert.ok(!matches('exact', [1, 2], [2, 1]));
+    });
+
+    test('Elo: upsets move ratings more, totals are roughly conserved', () => {
+        const [a, b] = eloUpdate(1200, 1200, 1);
+        assert.ok(a > 1200 && b < 1200 && Math.abs((a - 1200) + (b - 1200)) <= 1);
+        const [low] = eloUpdate(1000, 1400, 1);
+        const [high] = eloUpdate(1400, 1000, 1);
+        assert.ok(low - 1000 > high - 1400);
+    });
+
+    test('deciding a winner', () => {
+        const player = (id, passed, at, solvedMs = null) => ({ userId: id, best: { passed, at }, solvedMs, forfeited: false });
+        const m = (a, b) => ({ mode: 'ranked', players: [a, b] });
+        assert.equal(decide(m(player('a', 3, 1), player('b', 15, 9, 5000)), 'time').winner, 'b');
+        assert.equal(decide(m(player('a', 15, 1, 4000), player('b', 15, 2, 5000)), 'solved').winner, 'a');
+        assert.equal(decide(m(player('a', 7, 5), player('b', 4, 1)), 'time').winner, 'a');
+        assert.equal(decide(m(player('a', 7, 5), player('b', 7, 9)), 'time').winner, 'a');
+        assert.equal(decide(m(player('a', 0, null), player('b', 0, null)), 'time').result, 'draw');
+        const quitter = { ...player('b', 9, 1), forfeited: true };
+        assert.equal(decide(m(player('a', 0, null), quitter), 'forfeit').winner, 'a');
+    });
+});

@@ -70,6 +70,17 @@ const UserSchema = new mongoose.Schema({
 
     // --- SKILLS ---
     skills: [SkillSchema],
+    // Coding battles (battles/battleManager.js): Elo rating and record
+    battle: {
+        rating: { type: Number, default: 1200 },
+        played: { type: Number, default: 0 },
+        wins: { type: Number, default: 0 },
+        losses: { type: Number, default: 0 },
+        draws: { type: Number, default: 0 },
+        streak: { type: Number, default: 0 },
+        bestStreak: { type: Number, default: 0 },
+        solved: [{ type: String }] // problem ids solved at least once (battles or practice)
+    },
 
     // --- SOCIALS ---
     socialLinks: {
