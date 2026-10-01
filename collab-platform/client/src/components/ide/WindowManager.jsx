@@ -290,7 +290,7 @@ const WindowManager = ({ projectId, projectType = 'React App', projectName, room
     const rt = useBrowserRuntime({
         enabled: browserMode, projectId, projectName, runConfig,
         addLog, addTerminalLog, setPreviewUrl, setShowBrowserWindow, setRunPhase, setIsProjectRunning,
-        setActiveFileProcessId, refreshFiles, openFile: openFileByPath
+        setActiveFileProcessId, refreshFiles, openFile: openFileByPath, user
     });
 
     // Keyboard Shortcuts
@@ -961,6 +961,7 @@ const WindowManager = ({ projectId, projectType = 'React App', projectName, room
                             isRunning={!!activeFileProcessId}
                             onCommand={handleCommandExec}
                             projectId={projectId}
+                            browserGit={browserMode}
                             collapsed={panelCollapsed.terminal}
                             onToggleCollapse={() => togglePanel('terminal')}
                         />

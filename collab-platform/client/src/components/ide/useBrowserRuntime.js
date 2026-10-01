@@ -5,6 +5,24 @@ import * as python from '../../runtime/python';
 import { openInSnack } from '../../runtime/snack';
 import { STLITE_FILE, stliteRequirements } from '../../runtime/publish';
 import { importKaggle } from '../../runtime/kaggle';
+import { runGit } from '../../runtime/git/gitCli';
+import { deleteRepo } from '../../runtime/git/store';
+
+/** Splits "a && b && c" at top-level && (not inside quotes). */
+const splitChain = (line) => {
+    const parts = [];
+    let cur = '';
+    let quote = null;
+    for (let i = 0; i < line.length; i++) {
+        const c = line[i];
+        if (quote) { if (c === quote) quote = null; cur += c; continue; }
+        if (c === '"' || c === "'") { quote = c; cur += c; continue; }
+        if (c === '&' && line[i + 1] === '&') { parts.push(cur.trim()); cur = ''; i++; continue; }
+        cur += c;
+    }
+    parts.push(cur.trim());
+    return parts.filter(Boolean);
+};
 
 /**
  * Browser mode: runs the project in the user's own browser instead of a server sandbox.
@@ -17,7 +35,7 @@ const NPM_PACKAGE = /^(@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*(@[\w.^~<>=*-]+)?$/i;
 export default function useBrowserRuntime({
     enabled, projectId, projectName, runConfig,
     addLog, addTerminalLog, setPreviewUrl, setShowBrowserWindow, setRunPhase, setIsProjectRunning,
-    setActiveFileProcessId, refreshFiles, openFile
+    setActiveFileProcessId, refreshFiles, openFile, user
 }) {
     const devProc = useRef(null);        // running dev server / project process (WebContainer)
     const fileProc = useRef(null);       // running file or terminal command: { kind: 'wc'|'py', handle }
@@ -236,9 +254,31 @@ export default function useBrowserRuntime({
         return code === 0 ? { success: true } : { success: false, message: `npm install failed (exit ${code})` };
     }, [plan, projectId, addLog, refreshFiles, requireSupport]);
 
-    const runCommand = useCallback(async (command, currentDir = '') => {
-        const cmd = command.trim();
-        addTerminalLog(`$ ${cmd}`, 'command');
+    // `git …` runs in the page (isomorphic-git) on the WebContainer's files
+    const runGitCommand = useCallback(async (cmd, cwd) => {
+        if (!supported) { addTerminalLog(wc.unsupportedReason(), 'error'); return; }
+        await wc.syncFromServer(projectId);
+        const { worktreeChanged } = await runGit(cmd, {
+            projectId,
+            cwd,
+            out: (text, type) => addTerminalLog(text, type),
+            author: user ? { name: user.username, email: user.email } : null
+        });
+        if (worktreeChanged) {
+            const { uploaded, deleted } = await wc.syncToServer(projectId).catch(() => ({}));
+            if (uploaded || deleted) {
+                addTerminalLog(`↻ Project files updated (${uploaded || 0} changed, ${deleted || 0} removed)`, 'system');
+                refreshFiles();
+            }
+        }
+    }, [projectId, supported, user, addTerminalLog, refreshFiles]);
+
+    const runOne = useCallback(async (cmd, currentDir, echo = true) => {
+        if (echo) addTerminalLog(`$ ${cmd}`, 'command');
+
+        if (/^git(\s|$)/.test(cmd)) { await runGitCommand(cmd, currentDir); return currentDir; }
+        // Deleting the repository: forget the copy saved in this browser too
+        if (!currentDir && /^rm\s+-[a-z]*r[a-z]*\s+(\.\/)?\.git\/?$/.test(cmd)) deleteRepo(projectId).catch(() => {});
 
         // Python projects: python/pip commands go to Pyodide
         const py = cmd.match(/^python3?\s+(\S+\.py)\s*$/);
@@ -252,7 +292,7 @@ export default function useBrowserRuntime({
             return currentDir;
         }
         // kaggle datasets download [-d] owner/name  |  kaggle competitions download [-c] name
-        const kaggle = cmd.match(/^kaggles+(datasets|competitions)s+downloads+(?:-[dc]s+)?(S+)/);
+        const kaggle = cmd.match(/^kaggle\s+(datasets|competitions)\s+download\s+(?:-[dc]\s+)?(\S+)/);
         if (kaggle) {
             try {
                 addTerminalLog('📥 Downloading from Kaggle…', 'info');
@@ -281,14 +321,23 @@ export default function useBrowserRuntime({
             }
             return next;
         }
-        if (/^git\b/.test(cmd)) {
-            addTerminalLog('git is not available in the in-browser runtime. Use the Explorer\'s import/upload instead.', 'warning');
-            return currentDir;
-        }
         const code = await runInWebContainer(cmd, { cwd: currentDir });
         if (code !== 0) addTerminalLog(`Command exited with code ${code}`, 'error');
         return currentDir;
-    }, [plan, projectId, supported, install, runPythonFile, runInWebContainer, addTerminalLog, refreshFiles]);
+    }, [plan, projectId, supported, install, runPythonFile, runInWebContainer, runGitCommand, addTerminalLog, refreshFiles]);
+
+    const runCommand = useCallback(async (command, currentDir = '') => {
+        const line = command.trim();
+        // "git add . && git commit -m …": run the parts in turn (git here, the rest in the shell)
+        const parts = splitChain(line);
+        if (parts.length > 1 && parts.some(p => /^git(\s|$)/.test(p))) {
+            addTerminalLog(`$ ${line}`, 'command');
+            let dir = currentDir;
+            for (const part of parts) dir = await runOne(part, dir, false);
+            return dir;
+        }
+        return runOne(line, currentDir);
+    }, [runOne, addTerminalLog]);
 
     /* ── File events from the editor ────────────────────────── */
     const onFileSaved = useCallback((path, content) => {
