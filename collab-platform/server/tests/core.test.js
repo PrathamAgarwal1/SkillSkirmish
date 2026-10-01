@@ -371,48 +371,121 @@ describe('voice calls', () => {
     });
 });
 
-describe('coding battles', () => {
-    const { PROBLEMS } = require('../battles/problems');
-    const { buildTests, grade, matches, publicProblem } = require('../battles/judge');
+describe('battles', () => {
+    const catalog = require('../battles/catalog');
+    const { buildTests, grade, matches, publicChallenge } = require('../battles/judge');
     const { eloUpdate, decide } = require('../battles/battleManager');
+    const rounds = require('../battles/rounds');
+    const { draw, targetImage } = require('../battles/rasterize');
+    const { TARGETS } = require('../battles/content/css');
+    const { rngFrom } = require('../battles/judge');
 
-    test('every reference solution reproduces its own examples', () => {
-        for (const p of PROBLEMS) {
-            for (const ex of p.examples) {
-                assert.ok(matches(p.compare || 'exact', p.solve(...JSON.parse(JSON.stringify(ex.args))), ex.expected), `${p.id}: ${JSON.stringify(ex.args)}`);
+    test('every mode has content', () => {
+        for (const kind of ['task', 'debug', 'algo']) assert.ok(catalog.codePool(kind).length >= 10, kind);
+        assert.ok(catalog.cssPool().length >= 8);
+        assert.ok(catalog.SKILLS.length >= 10);
+    });
+
+    test('every function reference reproduces its own examples', () => {
+        for (const kind of ['task', 'algo']) {
+            for (const ch of catalog.codePool(kind).filter(c => c.type !== 'sql')) {
+                for (const ex of ch.examples) {
+                    assert.ok(matches(ch.compare, ch.solve(...JSON.parse(JSON.stringify(ex.args))), ex.expected), `${ch.id}: ${JSON.stringify(ex.args)}`);
+                }
             }
         }
     });
 
-    test('tests are deterministic per seed and different across seeds', () => {
-        const a = buildTests('max-subarray', 42);
-        assert.deepEqual(a, buildTests('max-subarray', 42));
-        assert.notDeepEqual(a.map(t => t.args), buildTests('max-subarray', 43).map(t => t.args));
+    test('tests are deterministic per seed and different across seeds', async () => {
+        const ch = catalog.codeChallenge('algo', 'max-subarray');
+        const a = await buildTests(ch, 42);
+        assert.deepEqual(a, await buildTests(ch, 42));
+        assert.notDeepEqual(a.map(t => t.args), (await buildTests(ch, 43)).map(t => t.args));
     });
 
-    test('players never get expected outputs', () => {
-        for (const p of PROBLEMS) {
-            const pub = publicProblem(p);
-            assert.equal(pub.solve, undefined);
-            assert.equal(pub.generate, undefined);
-            assert.ok(pub.starter.python.includes(`def ${p.fn.python}(`));
-            assert.ok(pub.starter.javascript.includes(`function ${p.fn.javascript}(`));
+    test('SQL tasks: expected rows come from the reference query on a fresh database', async () => {
+        const ch = catalog.codeChallenge('task', 'sql-no-orders');
+        const tests = await buildTests(ch, 9);
+        assert.ok(tests.length >= 5);
+        for (const t of tests) assert.ok(Array.isArray(t.expected));
+        const pub = await publicChallenge(ch);
+        assert.ok(pub.sample.tables.some(t => t.name === 'users'));
+        assert.deepEqual(pub.languages, ['sql']);
+    });
+
+    test('players never get expected outputs or reference code', async () => {
+        for (const kind of ['task', 'debug', 'algo']) {
+            for (const ch of catalog.codePool(kind)) {
+                const pub = await publicChallenge(ch);
+                assert.equal(pub.solve, undefined);
+                assert.equal(pub.generate, undefined);
+                assert.equal(pub.reference, undefined);
+                for (const lang of pub.languages) assert.ok(pub.starter[lang], `${ch.id} starter for ${lang}`);
+            }
         }
     });
 
-    test('grading: right, wrong, errors, order-insensitive and float answers', () => {
-        const tests = buildTests('two-sum', 7);
+    test('debug races start from the buggy code', async () => {
+        const pub = await publicChallenge(catalog.codeChallenge('debug', 'debug-slugify'));
+        assert.match(pub.starter.javascript, /split\(\/\[\^a-z\]\+\/\)/);
+        assert.match(pub.statement, /2 bugs/);
+    });
+
+    test('grading: right, wrong, errors; the expected answer is never revealed', async () => {
+        const ch = catalog.codeChallenge('algo', 'two-sum');
+        const tests = await buildTests(ch, 7);
         const right = tests.map(t => ({ ok: true, value: JSON.stringify([...t.expected].reverse()) }));
-        assert.equal(grade('two-sum', tests, right).passed, tests.length);
+        assert.equal(grade(ch, tests, right).passed, tests.length);
         const wrong = right.map((o, i) => (i === 2 ? { ok: true, value: '[0,0]' } : o));
-        const r = grade('two-sum', tests, wrong);
+        const r = grade(ch, tests, wrong);
         assert.equal(r.passed, tests.length - 1);
         assert.equal(r.firstFail.index, 2);
-        assert.equal(r.firstFail.expected, undefined, 'the expected answer is never revealed');
-        assert.equal(grade('two-sum', tests, [{ ok: false, error: 'boom' }]).passed, 0);
+        assert.equal(r.firstFail.expected, undefined);
+        assert.equal(grade(ch, tests, [{ ok: false, error: 'boom' }]).passed, 0);
         assert.ok(matches('float', 2.5000000001, 2.5));
         assert.ok(matches('groups', [['tea', 'eat'], ['bat']], [['bat'], ['eat', 'tea']]));
-        assert.ok(!matches('exact', [1, 2], [2, 1]));
+    });
+
+    test('CodeGuessr: closer guesses score more', () => {
+        const [lang] = rounds.guessrRounds(rngFrom(1), 3).filter(r => r.type === 'language');
+        const exact = rounds.scoreGuess(lang, { x: lang.answer.x, y: lang.answer.y });
+        const near = rounds.scoreGuess(lang, { x: lang.answer.x + 40, y: lang.answer.y });
+        const far = rounds.scoreGuess(lang, { x: (lang.answer.x + 500) % 1000, y: (lang.answer.y + 300) % 620 });
+        assert.equal(exact.score, 5000);
+        assert.ok(near.score > far.score && near.score < 5000);
+        assert.equal(rounds.scoreGuess(lang, { x: -5, y: 10 }), null, 'off the map');
+
+        const bug = rounds.guessrRounds(rngFrom(2), 3).find(r => r.type === 'bug');
+        assert.equal(rounds.scoreGuess(bug, { line: bug.answer.lines[0] }).score, 5000);
+        assert.ok(rounds.scoreGuess(bug, { line: bug.answer.lines[0] + 1 }).score > rounds.scoreGuess(bug, { line: bug.answer.lines[0] + 4 })?.score || bug.prompt.lines < bug.answer.lines[0] + 4);
+
+        const est = rounds.guessrRounds(rngFrom(3), 3).find(r => r.type === 'estimate');
+        assert.equal(rounds.scoreGuess(est, { value: est.answer.value }).score, 5000);
+        assert.equal(rounds.scoreGuess(est, { value: est.answer.value * 20 }).score, 0, '10x+ off scores nothing');
+        assert.ok(rounds.scoreGuess(est, { value: est.answer.value * 1.1 }).score > 4000);
+    });
+
+    test('quiz: options are shuffled, the answer stays on the server, fast right answers score more', () => {
+        const qs = rounds.quizRounds(rngFrom(5), 'JavaScript', 7);
+        assert.equal(qs.length, 7);
+        assert.ok(qs.some(q => q.answer.index !== 0), 'right answers are not always first');
+        for (const q of qs) assert.equal(q.prompt.answer, undefined);
+        const q = qs[0];
+        const fast = rounds.scoreGuess(q, { index: q.answer.index }, 1000).score;
+        const slow = rounds.scoreGuess(q, { index: q.answer.index }, 14000).score;
+        assert.ok(fast > slow && slow >= 500);
+        assert.equal(rounds.scoreGuess(q, { index: (q.answer.index + 1) % 4 }, 1000).score, 0);
+    });
+
+    test('CodeGuessr damage grows in later rounds', () => {
+        assert.equal(rounds.multiplierFor(0), 1);
+        assert.ok(rounds.multiplierFor(6) > rounds.multiplierFor(3));
+    });
+
+    test('CSS targets render to a 400×300 PNG', () => {
+        const px = draw(TARGETS[0]);
+        assert.equal(px.length, 400 * 300 * 4);
+        assert.match(targetImage(TARGETS[1]), /^data:image\/png;base64,/);
     });
 
     test('Elo: upsets move ratings more, totals are roughly conserved', () => {
@@ -423,16 +496,20 @@ describe('coding battles', () => {
         assert.ok(low - 1000 > high - 1400);
     });
 
-    test('deciding a winner', () => {
-        const player = (id, passed, at, solvedMs = null) => ({ userId: id, best: { passed, at }, solvedMs, forfeited: false });
-        const m = (a, b) => ({ mode: 'ranked', players: [a, b] });
-        assert.equal(decide(m(player('a', 3, 1), player('b', 15, 9, 5000)), 'time').winner, 'b');
-        assert.equal(decide(m(player('a', 15, 1, 4000), player('b', 15, 2, 5000)), 'solved').winner, 'a');
-        assert.equal(decide(m(player('a', 7, 5), player('b', 4, 1)), 'time').winner, 'a');
-        assert.equal(decide(m(player('a', 7, 5), player('b', 7, 9)), 'time').winner, 'a');
-        assert.equal(decide(m(player('a', 0, null), player('b', 0, null)), 'time').result, 'draw');
-        const quitter = { ...player('b', 9, 1), forfeited: true };
-        assert.equal(decide(m(player('a', 0, null), quitter), 'forfeit').winner, 'a');
+    test('deciding a winner in each engine', () => {
+        const player = (id, o = {}) => ({ userId: id, best: { passed: 0, score: 0, at: null, ...o.best }, solvedMs: o.solvedMs ?? null, forfeited: !!o.forfeited, hp: o.hp ?? 6000, points: o.points ?? 0 });
+        const m = (kind, engine, a, b) => ({ kind, engine, mode: 'ranked', players: [a, b] });
+        // code
+        assert.equal(decide(m('algo', 'code', player('a', { best: { passed: 3, at: 1 } }), player('b', { best: { passed: 15, at: 9 }, solvedMs: 5000 })), 'time').winner, 'b');
+        assert.equal(decide(m('task', 'code', player('a', { best: { passed: 7, at: 5 } }), player('b', { best: { passed: 7, at: 9 } })), 'time').winner, 'a');
+        // rounds
+        assert.equal(decide(m('guessr', 'rounds', player('a', { hp: 0 }), player('b', { hp: 1200 })), 'knockout').winner, 'b');
+        assert.equal(decide(m('quiz', 'rounds', player('a', { points: 3100 }), player('b', { points: 2900 })), 'rounds').winner, 'a');
+        assert.equal(decide(m('quiz', 'rounds', player('a', { points: 900 }), player('b', { points: 900 })), 'rounds').result, 'draw');
+        // css
+        assert.equal(decide(m('css', 'css', player('a', { best: { score: 97.5, at: 3 } }), player('b', { best: { score: 92, at: 1 } })), 'time').winner, 'a');
+        // forfeits
+        assert.equal(decide(m('guessr', 'rounds', player('a'), player('b', { forfeited: true })), 'forfeit').winner, 'a');
     });
 });
 

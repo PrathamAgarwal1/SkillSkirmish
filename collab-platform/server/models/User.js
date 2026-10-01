@@ -1,6 +1,17 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
+// Battle record for one mode (battles/catalog.js: guessr, quiz, task, debug, css, algo)
+const modeStats = () => ({
+    rating: { type: Number, default: 1200 },
+    played: { type: Number, default: 0 },
+    wins: { type: Number, default: 0 },
+    losses: { type: Number, default: 0 },
+    draws: { type: Number, default: 0 },
+    streak: { type: Number, default: 0 },
+    bestStreak: { type: Number, default: 0 }
+});
+
 // Sub-document schema for skills
 const SkillSchema = new mongoose.Schema({
     name: { type: String, required: true },
@@ -79,7 +90,18 @@ const UserSchema = new mongoose.Schema({
         draws: { type: Number, default: 0 },
         streak: { type: Number, default: 0 },
         bestStreak: { type: Number, default: 0 },
-        solved: [{ type: String }] // problem ids solved at least once (battles or practice)
+        solved: [{ type: String }], // "<kind>:<id>" solved at least once (battles or practice)
+        // Separate rating per mode, like blitz/rapid in chess
+        modes: {
+            guessr: modeStats(),
+            quiz: modeStats(),
+            task: modeStats(),
+            debug: modeStats(),
+            css: modeStats(),
+            algo: modeStats()
+        },
+        dailyStreak: { type: Number, default: 0 },
+        lastDaily: { type: String, default: '' } // "YYYY-MM-DD"
     },
 
     // --- SOCIALS ---
