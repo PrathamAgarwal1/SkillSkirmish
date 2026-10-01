@@ -85,6 +85,8 @@ appsRouter.all('/:slug/*', async (req, res) => {
         const { slug } = req.params;
         const app = await deployService().resolveApp(slug);
         if (!app) return res.status(404).type('html').send(notLivePage);
+        // Private / friends-only apps need an access pass (sandbox/appAccess.js)
+        if (!(await require('./appAccess').gate(req, res, { slug, base: `/apps/${slug}` }))) return;
         const rel = req.params[0] || '';
         if (app.type === 'db') return serveStored(req, res, { slug, version: app.version, rel, base: `/apps/${slug}` });
         // Disk/container deployments are served on their own subdomain

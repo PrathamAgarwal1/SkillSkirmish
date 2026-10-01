@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const auth = require('../middleware/auth');
 const Deployment = require('../models/Deployment');
 const Project = require('../models/Project');
@@ -10,6 +11,7 @@ const File = require('../models/File');
 const User = require('../models/User');
 const { appUrl } = require('../services/deployService');
 const { isValidId, isRoomMember, idEquals } = require('../utils/access');
+const { friendIdsOf } = require('../utils/friends');
 
 const PAGE_SIZE = 24;
 const MAX_FORK_BYTES = 40 * 1024 * 1024;
@@ -39,13 +41,24 @@ router.get('/', async (req, res) => {
         const page = Math.max(0, Math.min(100, parseInt(req.query.page, 10) || 0));
         const q = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 60) : '';
 
-        const match = { 'gallery.listed': true, status: 'live' };
+        // scope=friends: apps your friends listed publicly or shared with friends
+        const scope = req.query.scope === 'friends' && userId ? 'friends' : 'all';
+        const friendIds = scope === 'friends' ? (await friendIdsOf(userId)).map(id => new mongoose.Types.ObjectId(id)) : [];
+        const match = scope === 'friends'
+            ? {
+                status: 'live',
+                $or: [
+                    { 'gallery.listed': true, visibility: { $in: [null, 'public'] }, 'gallery.listedBy': { $in: friendIds } },
+                    { visibility: 'friends', visibilityOwner: { $in: friendIds } }
+                ]
+            }
+            : { 'gallery.listed': true, status: 'live', visibility: { $in: [null, 'public'] } };
         if (q) {
             const projects = await Project.find({ name: { $regex: escapeRegex(q), $options: 'i' } }).select('_id').limit(500).lean();
-            match.$or = [
+            match.$and = [{ $or: [
                 { project: { $in: projects.map(p => p._id) } },
                 { 'gallery.description': { $regex: escapeRegex(q), $options: 'i' } }
-            ];
+            ] }];
         }
 
         const docs = await Deployment.aggregate([
@@ -61,7 +74,7 @@ router.get('/', async (req, res) => {
 
         const [projects, authors] = await Promise.all([
             Project.find({ _id: { $in: items.map(d => d.project) } }).select('name projectType').lean(),
-            User.find({ _id: { $in: items.map(d => d.gallery?.listedBy).filter(Boolean) } }).select('username profilePicture').lean()
+            User.find({ _id: { $in: items.map(d => d.gallery?.listedBy || d.visibilityOwner).filter(Boolean) } }).select('username profilePicture').lean()
         ]);
         const projectById = new Map(projects.map(p => [String(p._id), p]));
         const authorById = new Map(authors.map(u => [String(u._id), u]));
@@ -69,7 +82,7 @@ router.get('/', async (req, res) => {
         res.json({
             items: items.map(d => {
                 const project = projectById.get(String(d.project));
-                const author = authorById.get(String(d.gallery?.listedBy));
+                const author = authorById.get(String(d.gallery?.listedBy || d.visibilityOwner));
                 return {
                     slug: d.slug,
                     url: appUrl(d.slug),
@@ -81,7 +94,8 @@ router.get('/', async (req, res) => {
                     likes: d.likeCount,
                     liked: !!userId && (d.likes || []).some(id => idEquals(id, userId)),
                     forks: d.forks || 0,
-                    forkable: !!d.gallery?.forkable,
+                    forkable: !!d.gallery?.forkable && (d.visibility || 'public') === 'public',
+                    visibility: d.visibility || 'public',
                     listedAt: d.gallery?.listedAt,
                     updatedAt: d.updatedAt
                 };
@@ -96,7 +110,7 @@ router.get('/', async (req, res) => {
 
 const loadListed = async (slug) => {
     if (!SLUG_RE.test(String(slug))) return null;
-    return Deployment.findOne({ slug, 'gallery.listed': true, status: 'live' });
+    return Deployment.findOne({ slug, 'gallery.listed': true, status: 'live', visibility: { $in: [null, 'public'] } });
 };
 
 // @route POST /api/gallery/:slug/like — toggles your like

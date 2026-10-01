@@ -1,5 +1,6 @@
 import React, { useState, useContext } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { takeDestination } from '../utils/afterLogin';
 import { FcGoogle } from 'react-icons/fc';
 import AuthContext from '../context/AuthContext';
 
@@ -19,7 +20,7 @@ const RegisterPage = () => {
         setSubmitting(true);
         try {
             await register(formData);
-            navigate('/dashboard');
+            navigate(takeDestination());
         } catch (err) {
             setError(err.message);
         } finally {

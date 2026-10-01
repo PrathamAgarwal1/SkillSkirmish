@@ -99,6 +99,7 @@ const GalleryPage = () => {
     const { isAuthenticated } = useContext(AuthContext);
     const navigate = useNavigate();
     const [sort, setSort] = useState('popular');
+    const [scope, setScope] = useState('all'); // all | friends
     const [query, setQuery] = useState('');
     const [search, setSearch] = useState('');
     const [items, setItems] = useState([]);
@@ -118,7 +119,7 @@ const GalleryPage = () => {
         setLoading(true);
         setError('');
         try {
-            const res = await axios.get('/api/gallery', { params: { sort, q: search || undefined, page: pageNo } });
+            const res = await axios.get('/api/gallery', { params: { sort, scope, q: search || undefined, page: pageNo } });
             setItems(prev => (pageNo === 0 ? res.data.items : [...prev, ...res.data.items]));
             setHasMore(res.data.hasMore);
             setPage(pageNo);
@@ -127,7 +128,7 @@ const GalleryPage = () => {
         } finally {
             setLoading(false);
         }
-    }, [sort, search]);
+    }, [sort, search, scope]);
 
     useEffect(() => { load(0); }, [load]);
 
@@ -151,6 +152,12 @@ const GalleryPage = () => {
                     <p className="gl-muted">Apps built and published on SkillSkirmish. Open them, like them, or fork the code and make it yours.</p>
                 </div>
                 <div className="gl-controls">
+                    {isAuthenticated && (
+                        <div className="gl-tabs" role="tablist" aria-label="Whose apps">
+                            <button role="tab" aria-selected={scope === 'all'} className={scope === 'all' ? 'active' : ''} onClick={() => setScope('all')}>🌍 Everyone</button>
+                            <button role="tab" aria-selected={scope === 'friends'} className={scope === 'friends' ? 'active' : ''} onClick={() => setScope('friends')}>👥 Friends</button>
+                        </div>
+                    )}
                     <input
                         type="search"
                         className="gl-search"
@@ -172,21 +179,29 @@ const GalleryPage = () => {
             {!loading && !error && items.length === 0 && (
                 <div className="gl-empty">
                     <div style={{ fontSize: 42 }}>🖼️</div>
-                    <h3>{search ? 'No apps match your search' : 'No apps in the gallery yet'}</h3>
-                    <p className="gl-muted">Publish a project from the IDE (🚀 Deploy), then tick “Show in the public gallery”.</p>
+                    <h3>{search ? 'No apps match your search' : scope === 'friends' ? 'Your friends haven\'t shared any apps yet' : 'No apps in the gallery yet'}</h3>
+                    <p className="gl-muted">{scope === 'friends'
+                        ? <>Apps your friends list publicly or share with friends show up here. <Link to="/friends">Find friends</Link></>
+                        : 'Publish a project from the IDE (🚀 Deploy), then tick “Show in the public gallery”.'}</p>
                 </div>
             )}
 
             <div className="gl-grid">
-                {items.map(app => (
+                {items.map(app => {
+                    // Friends-only apps open through an access pass (/open/<slug>)
+                    const openUrl = app.visibility === 'public' ? app.url : `#/open/${app.slug}`;
+                    return (
                     <article key={app.slug} className="gl-card">
-                        <a href={app.url} target="_blank" rel="noreferrer" className="gl-thumb-link" aria-label={`Open ${app.name}`}>
-                            <Thumbnail url={app.url} name={app.name} />
+                        <a href={openUrl} target="_blank" rel="noreferrer" className="gl-thumb-link" aria-label={`Open ${app.name}`}>
+                            {app.visibility === 'public'
+                                ? <Thumbnail url={app.url} name={app.name} />
+                                : <div className="gl-thumb"><div className="gl-thumb-placeholder">👥</div></div>}
                         </a>
                         <div className="gl-card-body">
                             <div className="gl-card-title">
                                 <span title={app.projectType}>{TYPE_ICONS[app.projectType] || '📦'}</span>
                                 <h3>{app.name}</h3>
+                                {app.visibility === 'friends' && <span className="gl-badge" title="Only friends can open it">Friends only</span>}
                             </div>
                             {app.description && <p className="gl-desc">{app.description}</p>}
                             <div className="gl-meta">
@@ -194,7 +209,7 @@ const GalleryPage = () => {
                                 <span className="gl-stats" title="Views · forks">👁 {compact(app.views)}{app.forks > 0 && <> · ⑂ {compact(app.forks)}</>}</span>
                             </div>
                             <div className="gl-actions">
-                                <a className="gl-btn primary" href={app.url} target="_blank" rel="noreferrer">Open ↗</a>
+                                <a className="gl-btn primary" href={openUrl} target="_blank" rel="noreferrer">Open ↗</a>
                                 <button className={`gl-btn ${app.liked ? 'liked' : ''}`} onClick={() => like(app)} aria-pressed={app.liked} title={app.liked ? 'Unlike' : 'Like'}>
                                     {app.liked ? '❤' : '♡'} {compact(app.likes)}
                                 </button>
@@ -204,7 +219,8 @@ const GalleryPage = () => {
                             </div>
                         </div>
                     </article>
-                ))}
+                    );
+                })}
             </div>
 
             {loading && <p className="gl-muted gl-center">Loading apps… (the first load can take a minute if the server was asleep)</p>}
