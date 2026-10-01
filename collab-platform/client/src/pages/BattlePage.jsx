@@ -1,19 +1,20 @@
-// pages/BattlePage.jsx — the battle lobby: ranked queue, challenge a friend, practice, leaderboard.
+// pages/BattlePage.jsx — the battle lobby: pick a mode, then ranked / challenge a friend / practice;
+// the CodeGuessr daily challenge; per-mode leaderboards; your recent battles.
 import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import AuthContext from '../context/AuthContext';
 import { socket } from '../socket';
+import { emit } from '../battle/useMatch';
 import '../battle/battle.css';
 
+const MAIN_KINDS = ['guessr', 'quiz', 'task', 'debug', 'css'];
 const DIFFS = [['any', 'Any'], ['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard']];
-const RESULT_LABEL = { win: 'Win', draw: 'Draw', 'no-contest': 'No contest', solved: 'Solved', unsolved: 'Unsolved' };
-
-const emit = (event, payload) => new Promise((resolve) => {
-    socket.timeout(15000).emit(event, payload, (err, res) => resolve(err ? { error: "Couldn't reach the server. Try again." } : res));
-});
-
+const RESULT_LABEL = { win: 'Win', draw: 'Draw', 'no-contest': 'No contest', solved: 'Solved', unsolved: 'Unsolved', finished: 'Done' };
+const KIND_ICON = { guessr: '🧭', quiz: '🧠', task: '🛠️', debug: '🐛', css: '🎨', algo: '🧮' };
+const fmt = (n) => Math.round(n || 0).toLocaleString('en-US');
 const fmtWait = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+const LAST_KIND = 'ss-battle-kind';
 
 export function BattleJoin() {
     const { code } = useParams();
@@ -24,8 +25,7 @@ export function BattleJoin() {
         const join = async () => {
             const res = await emit('battle:join-friend', { code });
             if (cancelled) return;
-            if (res?.ok) navigate(`/battle/m/${res.matchId}`, { replace: true });
-            else if (res?.matchId) navigate(`/battle/m/${res.matchId}`, { replace: true });
+            if (res?.matchId) navigate(`/battle/m/${res.matchId}`, { replace: true });
             else setError(res?.error || 'Could not join this battle');
         };
         if (socket.connected) join(); else socket.once('connect', join);
@@ -47,12 +47,16 @@ export function BattleJoin() {
 const BattlePage = () => {
     const { user } = useContext(AuthContext);
     const navigate = useNavigate();
+    const [catalog, setCatalog] = useState(null);
     const [me, setMe] = useState(null);
-    const [board, setBoard] = useState(null);
-    const [problems, setProblems] = useState(null);
+    const [daily, setDaily] = useState(null);
+    const [kind, setKind] = useState(() => { try { return localStorage.getItem(LAST_KIND) || 'guessr'; } catch { return 'guessr'; } });
     const [difficulty, setDifficulty] = useState('any');
-    const [queued, setQueued] = useState(null); // { since, inQueue }
-    const [friendDiff, setFriendDiff] = useState('easy');
+    const [skill, setSkill] = useState('JavaScript');
+    const [boardKind, setBoardKind] = useState(null);
+    const [board, setBoard] = useState(null);
+    const [queued, setQueued] = useState(null);
+    const [showList, setShowList] = useState(false);
     const [error, setError] = useState('');
     const [, tick] = useState(0);
     const queuedRef = useRef(null);
@@ -60,13 +64,19 @@ const BattlePage = () => {
 
     const load = useCallback(() => {
         axios.get('/api/battles/me').then(r => setMe(r.data)).catch(() => {});
-        axios.get('/api/battles/leaderboard').then(r => setBoard(r.data)).catch(() => {});
+        axios.get('/api/battles/daily').then(r => setDaily(r.data)).catch(() => {});
     }, []);
 
     useEffect(() => {
         load();
-        axios.get('/api/battles/problems').then(r => setProblems(r.data.problems)).catch(() => {});
+        axios.get('/api/battles/catalog').then(r => setCatalog(r.data)).catch(err => setError(err.response?.data?.msg || err.message));
     }, [load]);
+
+    const shownBoard = boardKind || kind;
+    useEffect(() => {
+        setBoard(null);
+        axios.get('/api/battles/leaderboard', { params: { kind: shownBoard } }).then(r => setBoard(r.data)).catch(() => {});
+    }, [shownBoard]);
 
     useEffect(() => {
         const onMatched = ({ matchId }) => navigate(`/battle/m/${matchId}`);
@@ -86,69 +96,123 @@ const BattlePage = () => {
         return () => clearInterval(id);
     }, [queued]);
 
+    const pickKind = (k) => {
+        if (queued) return;
+        setKind(k);
+        setBoardKind(null);
+        setShowList(false);
+        setDifficulty('any');
+        try { localStorage.setItem(LAST_KIND, k); } catch { /* ignore */ }
+    };
+
+    const options = () => ({ kind, difficulty: difficulty === 'any' ? undefined : difficulty, skill: kind === 'quiz' ? skill : undefined });
+    const go = (res) => {
+        if (res?.matchId) navigate(`/battle/m/${res.matchId}`);
+        else setError(res?.error || 'Something went wrong');
+    };
+
     const findMatch = async () => {
         setError('');
-        const res = await emit('battle:queue', { difficulty });
+        const res = await emit('battle:queue', { ...options(), difficulty });
         if (res?.matchId) return navigate(`/battle/m/${res.matchId}`);
         if (!res?.ok) return setError(res?.error || 'Could not join the queue');
-        setQueued({ since: Date.now(), inQueue: res.inQueue });
+        setQueued({ since: Date.now(), inQueue: res.inQueue, kind });
     };
     const cancelQueue = () => { socket.emit('battle:cancel-queue'); setQueued(null); };
+    const invite = async () => { setError(''); go(await emit('battle:create-friend', { ...options(), difficulty: difficulty === 'any' ? 'easy' : difficulty })); };
+    const practice = async (problemId) => { setError(''); go(await emit('battle:practice', { ...options(), problemId })); };
+    const playDaily = async () => { setError(''); go(await emit('battle:practice', { kind: 'guessr', daily: true })); };
 
-    const createInvite = async () => {
-        setError('');
-        const res = await emit('battle:create-friend', { difficulty: friendDiff });
-        if (res?.matchId && !res.ok) return navigate(`/battle/m/${res.matchId}`);
-        if (!res?.ok) return setError(res?.error || 'Could not create the invite');
-        navigate(`/battle/m/${res.matchId}`);
-    };
+    if (!catalog) return <div className="bt-page bt-center"><p className="bt-muted">{error || 'Loading battles…'}</p></div>;
 
-    const practice = async (problemId) => {
-        setError('');
-        const res = await emit('battle:practice', { problemId });
-        if (res?.matchId) return navigate(`/battle/m/${res.matchId}`);
-        setError(res?.error || 'Could not start practice');
-    };
-
-    const b = me?.battle;
+    const K = catalog.kinds;
+    const stats = me?.modes?.[kind];
+    const list = catalog.practice[kind];
     const waited = queued ? Math.round((Date.now() - queued.since) / 1000) : 0;
+    const hasDifficulty = !['guessr', 'quiz'].includes(kind);
 
     return (
         <div className="bt-page">
             <header className="bt-hero">
                 <div>
-                    <h1>⚔️ Code Battles</h1>
-                    <p className="bt-muted">Same problem, live race. Pass every hidden test first to win. Python or JavaScript, judged in real time.</p>
-                </div>
-                <div className="bt-rating-card">
-                    <div className="bt-rating">{b ? b.rating : '—'}</div>
-                    <div className="bt-muted">rating{me?.rank ? ` · #${me.rank}` : ''}</div>
-                    {b && (
-                        <div className="bt-record">
-                            <span className="w">{b.wins}W</span> <span className="l">{b.losses}L</span> <span>{b.draws}D</span>
-                            {b.streak > 1 && <span className="bt-streak">🔥 {b.streak}</span>}
-                        </div>
-                    )}
+                    <h1>⚔️ Battles</h1>
+                    <p className="bt-muted">Duel other developers live: guess, quiz, build, debug and style. Every mode has its own rating.</p>
                 </div>
             </header>
 
             {me?.active && (
                 <div className="bt-banner">
-                    You're in a battle right now.
+                    You're in a {K[me.active.kind]?.name || ''} battle right now.
                     <button className="bt-btn primary" onClick={() => navigate(`/battle/m/${me.active.matchId}`)}>Rejoin</button>
                 </div>
             )}
-            {error && <div className="bt-banner error">{error}</div>}
+            {error && <div className="bt-banner error">{error} <button className="bt-btn ghost" onClick={() => setError('')}>✕</button></div>}
+
+            {/* Daily CodeGuessr */}
+            <section className="bt-daily">
+                <div className="bt-daily-main">
+                    <div className="bt-daily-tag">DAILY CHALLENGE · {daily?.date || ''}</div>
+                    <h2>🧭 Today's CodeGuessr</h2>
+                    <p className="bt-muted">5 rounds, the same for everyone. Your first run counts for today's board.</p>
+                    {me?.daily?.played ? (
+                        <div className="bt-daily-done">
+                            <b>{fmt(me.daily.score)}</b> points{daily?.mine?.rank ? ` · #${daily.mine.rank} of ${daily.players}` : ''}
+                            {me.daily.streak > 0 && <span className="bt-streak"> · 🔥 {me.daily.streak}-day streak</span>}
+                            <button className="bt-btn ghost" onClick={playDaily} title="Play again (won't count)">Play again</button>
+                        </div>
+                    ) : (
+                        <button className="bt-btn primary big-inline" onClick={playDaily}>Play today's challenge</button>
+                    )}
+                </div>
+                <ol className="bt-daily-board">
+                    {daily?.top?.slice(0, 5).map(r => (
+                        <li key={r.userId} className={String(r.userId) === String(user?._id) ? 'me' : ''}>
+                            <span className="rank">{r.rank}</span><span className="name">{r.username}</span><b>{fmt(r.score)}</b>
+                        </li>
+                    ))}
+                    {daily && !daily.top.length && <li className="bt-muted">No scores yet today. Be the first!</li>}
+                </ol>
+            </section>
+
+            {/* Mode picker */}
+            <div className="bt-modes" role="radiogroup" aria-label="Battle mode">
+                {MAIN_KINDS.map(k => (
+                    <button key={k} role="radio" aria-checked={kind === k} className={`bt-mode ${kind === k ? 'active' : ''} ${k === 'guessr' ? 'featured' : ''}`} onClick={() => pickKind(k)} disabled={!!queued && kind !== k}>
+                        <span className="bt-mode-icon">{K[k].icon}</span>
+                        <span className="bt-mode-name">{K[k].name}</span>
+                        <span className="bt-mode-blurb">{K[k].blurb}</span>
+                        <span className="bt-mode-rating">{me?.modes?.[k]?.played ? `${me.modes[k].rating} · ${me.modes[k].wins}W ${me.modes[k].losses}L` : 'Unrated'}</span>
+                    </button>
+                ))}
+                <button role="radio" aria-checked={kind === 'algo'} className={`bt-mode side ${kind === 'algo' ? 'active' : ''}`} onClick={() => pickKind('algo')} disabled={!!queued && kind !== 'algo'}>
+                    <span className="bt-mode-icon">{K.algo.icon}</span>
+                    <span className="bt-mode-name">{K.algo.name}</span>
+                    <span className="bt-mode-rating">{me?.modes?.algo?.played ? me.modes.algo.rating : 'side mode'}</span>
+                </button>
+            </div>
 
             <div className="bt-grid">
                 <section className="bt-card bt-play">
-                    <h2>Ranked match</h2>
-                    <p className="bt-muted">Matched with someone near your rating. Wins and losses change your rating.</p>
-                    <div className="bt-chips" role="radiogroup" aria-label="Difficulty">
-                        {DIFFS.map(([id, label]) => (
-                            <button key={id} role="radio" aria-checked={difficulty === id} className={difficulty === id ? 'active' : ''} onClick={() => setDifficulty(id)} disabled={!!queued}>{label}</button>
-                        ))}
-                    </div>
+                    <h2>{K[kind].icon} {K[kind].name}</h2>
+                    <p className="bt-muted">{K[kind].blurb}</p>
+                    {stats?.played > 0 && <p className="bt-muted bt-small">Your rating <b className="bt-gold">{stats.rating}</b> · {stats.wins}W {stats.losses}L {stats.draws}D{stats.streak > 1 ? ` · 🔥 ${stats.streak}` : ''}</p>}
+
+                    {hasDifficulty && (
+                        <div className="bt-chips" role="radiogroup" aria-label="Difficulty">
+                            {DIFFS.map(([id, label]) => (
+                                <button key={id} role="radio" aria-checked={difficulty === id} className={difficulty === id ? 'active' : ''} onClick={() => setDifficulty(id)} disabled={!!queued}>{label}</button>
+                            ))}
+                        </div>
+                    )}
+                    {kind === 'quiz' && (
+                        <label className="bt-field">
+                            Skill
+                            <select value={skill} onChange={(e) => setSkill(e.target.value)} disabled={!!queued}>
+                                {catalog.skills.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                        </label>
+                    )}
+
                     {queued ? (
                         <div className="bt-searching">
                             <span className="bt-spinner" aria-hidden="true" />
@@ -159,26 +223,53 @@ const BattlePage = () => {
                             <button className="bt-btn" onClick={cancelQueue}>Cancel</button>
                         </div>
                     ) : (
-                        <button className="bt-btn primary big" onClick={findMatch}>Find opponent</button>
+                        <div className="bt-play-actions">
+                            <button className="bt-btn primary big" onClick={findMatch}>Find opponent (ranked)</button>
+                            <div className="bt-play-row">
+                                <button className="bt-btn" onClick={invite}>Challenge a friend</button>
+                                <button className="bt-btn" onClick={() => practice()}>{kind === 'guessr' ? 'Solo game (5 rounds)' : kind === 'quiz' ? 'Practice quiz' : 'Random practice'}</button>
+                            </div>
+                        </div>
                     )}
-                    {board && <div className="bt-muted bt-live">● {board.live} live battle{board.live === 1 ? '' : 's'} · {board.inQueue} searching</div>}
-                </section>
+                    {me && (
+                        <div className="bt-muted bt-live">
+                            ● {me.live?.[kind] || 0} live · {me.searching?.[kind] || 0} searching
+                        </div>
+                    )}
 
-                <section className="bt-card">
-                    <h2>Challenge a friend</h2>
-                    <p className="bt-muted">Get a link to send to anyone. Friendly battles don't change ratings.</p>
-                    <div className="bt-chips">
-                        {DIFFS.slice(1).map(([id, label]) => (
-                            <button key={id} className={friendDiff === id ? 'active' : ''} onClick={() => setFriendDiff(id)}>{label}</button>
-                        ))}
-                    </div>
-                    <button className="bt-btn big" onClick={createInvite} disabled={!!queued}>Create invite link</button>
+                    {list && (
+                        <div className="bt-practice-list">
+                            <button className="bt-linkish" onClick={() => setShowList(s => !s)}>
+                                {showList ? '▾' : '▸'} Pick a {kind === 'css' ? 'target' : 'challenge'} to practice ({list.filter(p => p.solved).length}/{list.length} solved)
+                            </button>
+                            {showList && ['easy', 'medium', 'hard'].map(d => list.some(p => p.difficulty === d) && (
+                                <div key={d} className="bt-plist">
+                                    <h3 className={`bt-diff ${d}`}>{d}</h3>
+                                    <ul>
+                                        {list.filter(p => p.difficulty === d).map(p => (
+                                            <li key={p.id}>
+                                                <button onClick={() => practice(p.id)} title={p.tags.join(', ')}>
+                                                    <span className={`bt-check ${p.solved ? 'on' : ''}`}>{p.solved ? '✓' : '○'}</span>{p.title}
+                                                </button>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </section>
 
                 <section className="bt-card bt-board">
                     <h2>Leaderboard</h2>
+                    <div className="bt-board-tabs" role="tablist">
+                        {[...MAIN_KINDS, 'algo'].map(k => (
+                            <button key={k} role="tab" aria-selected={shownBoard === k} className={shownBoard === k ? 'active' : ''} onClick={() => setBoardKind(k)} title={K[k].name}>{KIND_ICON[k]}</button>
+                        ))}
+                    </div>
+                    <div className="bt-muted bt-small">{K[shownBoard].name}</div>
                     {!board && <p className="bt-muted">Loading…</p>}
-                    {board && !board.players.length && <p className="bt-muted">No ranked battles yet. Be the first!</p>}
+                    {board && !board.players.length && <p className="bt-muted">No ranked {K[shownBoard].name} battles yet.</p>}
                     <ol>
                         {board?.players.slice(0, 15).map(p => (
                             <li key={p.userId} className={String(p.userId) === String(user?._id) ? 'me' : ''}>
@@ -191,26 +282,6 @@ const BattlePage = () => {
                     </ol>
                 </section>
 
-                <section className="bt-card bt-practice">
-                    <h2>Practice <span className="bt-muted" style={{ fontWeight: 400, fontSize: 13 }}>{problems ? `${problems.filter(p => p.solved).length}/${problems.length} solved` : ''}</span></h2>
-                    <p className="bt-muted">Any problem, on your own, no clock and no rating.</p>
-                    {['easy', 'medium', 'hard'].map(d => (
-                        <div key={d} className="bt-plist">
-                            <h3 className={`bt-diff ${d}`}>{d}</h3>
-                            <ul>
-                                {problems?.filter(p => p.difficulty === d).map(p => (
-                                    <li key={p.id}>
-                                        <button onClick={() => practice(p.id)} title={p.tags.join(', ')}>
-                                            <span className={`bt-check ${p.solved ? 'on' : ''}`} aria-label={p.solved ? 'solved' : 'not solved'}>{p.solved ? '✓' : '○'}</span>
-                                            {p.title}
-                                        </button>
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-                    ))}
-                </section>
-
                 <section className="bt-card bt-history">
                     <h2>Your recent battles</h2>
                     {!me?.recent?.length && <p className="bt-muted">Nothing yet.</p>}
@@ -220,11 +291,12 @@ const BattlePage = () => {
                             const other = r.players.find(p => String(p.userId) !== String(user?._id));
                             const delta = mine && mine.ratingAfter != null && mine.ratingBefore != null ? mine.ratingAfter - mine.ratingBefore : 0;
                             const label = r.result === 'win' ? (r.won ? 'Won' : 'Lost') : RESULT_LABEL[r.result];
+                            const title = r.kind === 'quiz' ? `${r.skill || r.problem} quiz` : r.kind === 'guessr' ? (r.mode === 'daily' ? 'Daily CodeGuessr' : 'CodeGuessr') : catalog.practice[r.kind]?.find(p => p.id === r.problem)?.title || r.problem;
                             return (
                                 <li key={r.id}>
                                     <span className={`bt-res ${r.result === 'win' ? (r.won ? 'won' : 'lost') : r.result}`}>{label}</span>
-                                    <span className="title">{problems?.find(p => p.id === r.problem)?.title || r.problem}</span>
-                                    <span className="bt-muted">{other ? `vs ${other.username}` : r.mode}</span>
+                                    <span className="title">{KIND_ICON[r.kind]} {title}</span>
+                                    <span className="bt-muted">{other ? `vs ${other.username}` : r.mode}{mine?.score != null && r.kind === 'guessr' && !other ? ` · ${fmt(mine.score)} pts` : ''}</span>
                                     {r.mode === 'ranked' && delta !== 0 && <b className={delta > 0 ? 'up' : 'down'}>{delta > 0 ? `+${delta}` : delta}</b>}
                                 </li>
                             );

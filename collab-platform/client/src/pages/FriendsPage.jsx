@@ -56,8 +56,8 @@ const FriendsPage = () => {
         }
     };
 
-    const challenge = async (friend, difficulty) => {
-        const res = await emit('battle:create-friend', { difficulty, inviteUserId: friend._id });
+    const challenge = async (friend, kind) => {
+        const res = await emit('battle:create-friend', { kind, difficulty: 'easy', inviteUserId: friend._id });
         if (res?.matchId) navigate(`/battle/m/${res.matchId}`);
         else setError(res?.error || 'Could not create the challenge');
     };
@@ -118,7 +118,9 @@ const FriendsPage = () => {
                         </div>
                         {challenging === u._id ? (
                             <span className="fr-challenge">
-                                {['easy', 'medium', 'hard'].map(d => <button key={d} className={`fr-btn diff ${d}`} onClick={() => challenge(u, d)}>{d}</button>)}
+                                {[['guessr', '🧭', 'CodeGuessr'], ['quiz', '🧠', 'Skill quiz (JavaScript)'], ['task', '🛠️', 'Dev task'], ['debug', '🐛', 'Debug race'], ['css', '🎨', 'CSS battle']].map(([kind, icon, name]) => (
+                                    <button key={kind} className="fr-btn" onClick={() => challenge(u, kind)} title={name} aria-label={`Challenge to ${name}`}>{icon}</button>
+                                ))}
                                 <button className="fr-btn ghost" onClick={() => setChallenging(null)}>✕</button>
                             </span>
                         ) : (
