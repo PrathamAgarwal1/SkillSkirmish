@@ -190,6 +190,19 @@ const DeployPanel = ({ projectId, projectName, runConfig, onClose }) => {
         }
     };
 
+    // Remove the deployment completely (all versions, files, and its URL)
+    const destroy = async () => {
+        if (!window.confirm('Delete this deployment? Every version is removed and the link stops working. You can deploy again later (with a new link).')) return;
+        setError('');
+        try {
+            await axios.delete(`/api/deployments/${projectId}`);
+            setDeployment(null);
+            setLogLines([]);
+        } catch (err) {
+            setError(err.response?.data?.message || err.message);
+        }
+    };
+
     const showLog = async (number) => {
         try {
             const res = await axios.get(`/api/deployments/${projectId}/versions/${number}/log`);
@@ -299,6 +312,16 @@ const DeployPanel = ({ projectId, projectName, runConfig, onClose }) => {
                     )}
 
                     {tab === 'env' && <EnvEditor projectId={projectId} />}
+
+                    {tab === 'deploy' && deployment && !building && (
+                        <div style={{ marginTop: 14, padding: '10px 12px', border: '1px solid #5a1d1d', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                            <div style={{ flex: 1, minWidth: 220, fontSize: 12, color: '#8b949e' }}>
+                                <b style={{ color: '#f85149' }}>Remove</b> · Stop takes the app offline but keeps its versions. Delete removes everything, including the link.
+                            </div>
+                            {deployment.status === 'live' && <button className="btn-secondary-ide" onClick={() => action('stop')}>Stop (take offline)</button>}
+                            <button className="btn-secondary-ide" style={{ color: '#f85149', borderColor: '#5a1d1d' }} onClick={destroy}>Delete deployment</button>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
