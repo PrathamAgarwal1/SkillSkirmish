@@ -15,6 +15,8 @@ const User = require('../models/User');
 const Battle = require('../models/Battle');
 const { PROBLEMS, byId, DURATION_MIN } = require('./problems');
 const { buildTests, publicProblem, grade } = require('./judge');
+const Notification = require('../models/Notification');
+const { areFriends } = require('../utils/friends');
 
 const COUNTDOWN_MS = 5000;
 const RECONNECT_GRACE_MS = 60000;
@@ -371,7 +373,7 @@ function register(socket, { safe, ack }) {
 
     socket.on('battle:cancel-queue', () => { if (queue.get(userId)?.socketId === socket.id) queue.delete(userId); });
 
-    socket.on('battle:create-friend', safe('battle:create-friend', async ({ difficulty = 'easy', problemId } = {}, cb) => {
+    socket.on('battle:create-friend', safe('battle:create-friend', async ({ difficulty = 'easy', problemId, inviteUserId } = {}, cb) => {
         const reply = ack(cb);
         if (busy()) return reply({ error: 'You are already in a battle', matchId: busy().id });
         queue.delete(userId);
@@ -391,6 +393,18 @@ function register(socket, { safe, ack }) {
         later(match, 30 * 60000, () => { if (match.status === 'waiting') { match.decision = { result: 'no-contest', reason: 'Nobody joined' }; conclude(match); } });
         reply({ ok: true, matchId: match.id, code: match.code });
         broadcast(match);
+
+        // Challenging a friend directly: they get a notification that opens the invite
+        if (inviteUserId && mongoose.Types.ObjectId.isValid(String(inviteUserId)) && await areFriends(userId, inviteUserId)) {
+            const n = await new Notification({
+                user: inviteUserId,
+                sender: userId,
+                type: 'battle',
+                message: `⚔️ ${me.username} challenged you to a ${match.difficulty} code battle`,
+                link: `/battle/join/${match.code}`
+            }).save();
+            for (const s of io.sockets.sockets.values()) if (String(s.userId) === String(inviteUserId)) s.emit('new-notification', n);
+        }
     }));
 
     socket.on('battle:join-friend', safe('battle:join-friend', async ({ code } = {}, cb) => {

@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import axios from 'axios';
+import FriendButton from '../components/friends/FriendButton';
+import '../components/friends/friends.css';
 import { useParams, useNavigate } from 'react-router-dom';
 import AIAssessmentModal from '../components/assessment/AIAssessmentModal';
 import InviteModal from '../components/rooms/InviteModal';
@@ -248,6 +250,7 @@ const ProfilePage = () => {
                                 border: '1px solid var(--term-gold)', padding: '1px 6px',
                                 borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-mono)'
                             }}>VIEWING</span>
+                            <FriendButton userId={profile._id} />
                             <button className="btn-term-sm" style={{ borderColor: '#00ff00', color: '#00ff00' }} onClick={() => setShowInviteModal(true)}>
                                 INVITE TO ROOM
                             </button>

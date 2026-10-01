@@ -435,3 +435,33 @@ describe('coding battles', () => {
         assert.equal(decide(m(player('a', 0, null), quitter), 'forfeit').winner, 'a');
     });
 });
+
+describe('friends and app access', () => {
+    const { pairKey } = require('../utils/friends');
+    const { issuePass, readPass, cookieName, canView } = require('../sandbox/appAccess');
+
+    test('a friendship has one key per pair, whoever asked', () => {
+        assert.equal(pairKey('b', 'a'), pairKey('a', 'b'));
+    });
+
+    test('access passes are tied to one app', () => {
+        const prev = process.env.JWT_SECRET;
+        process.env.JWT_SECRET = 'test-secret';
+        const pass = issuePass('my-app', 'u1');
+        assert.equal(readPass(pass, 'my-app').sub, 'u1');
+        assert.equal(readPass(pass, 'other-app'), null, 'a pass for one app does not open another');
+        assert.equal(readPass(`${pass}x`, 'my-app'), null);
+        process.env.JWT_SECRET = prev;
+    });
+
+    test('cookie names are safe and per app', () => {
+        assert.equal(cookieName('my-app-12ab'), 'ss_app_my_app_12ab');
+    });
+
+    test('public apps are open to everyone, others need a signed-in user', async () => {
+        assert.equal(await canView({ visibility: 'public' }, null), true);
+        assert.equal(await canView({}, null), true);
+        assert.equal(await canView({ visibility: 'private', project: 'x' }, null), false);
+        assert.equal(await canView({ visibility: 'friends', project: 'x' }, null), false);
+    });
+});

@@ -57,6 +57,7 @@ const serialize = (dep) => dep && {
     url: appUrl(dep.slug),
     status: dep.status,
     activeVersion: dep.activeVersion,
+    visibility: dep.visibility || 'public',
     gallery: {
         listed: !!dep.gallery?.listed,
         forkable: !!dep.gallery?.forkable,

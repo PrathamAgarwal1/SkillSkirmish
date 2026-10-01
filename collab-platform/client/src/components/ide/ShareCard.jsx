@@ -2,8 +2,16 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import QRCode from 'qrcode';
 
+const VISIBILITY = [
+    ['public', '🌍 Public', 'Anyone with the link can open it.'],
+    ['friends', '👥 Friends', 'Only your friends and the project team (they sign in to open it).'],
+    ['private', '🔒 Private', 'Only the project team (they sign in to open it).']
+];
+
 const box = { background: '#1e1e1e', border: '1px solid #3e3e42', borderRadius: 6, padding: 12, marginBottom: 12 };
-const label = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer', color: '#ccc' };
+const label = { display: 'flex', alignItems: 'center', justifyContent: 'flex-start', flexWrap: 'wrap', gap: 8, fontSize: 13, cursor: 'pointer', color: '#ccc', width: '100%' };
+// (the app's global styles stretch inputs to full width)
+const checkbox = { width: 'auto', margin: 0, flex: 'none' };
 
 /** Share a live deployment: copy link, QR code for phones, and public-gallery settings. */
 const ShareCard = ({ projectId, deployment, onChange }) => {
@@ -15,6 +23,35 @@ const ShareCard = ({ projectId, deployment, onChange }) => {
     const [message, setMessage] = useState('');
     const live = deployment.status === 'live';
     const gallery = deployment.gallery || {};
+    const visibility = deployment.visibility || 'public';
+
+    const setVisibility = async (value) => {
+        if (value === visibility) return;
+        setSaving(true);
+        setMessage('');
+        try {
+            const res = await axios.put(`/api/deployments/${projectId}/visibility`, { visibility: value });
+            onChange(res.data.deployment);
+            setMessage(value === 'public' ? '✓ Anyone with the link can open it' : value === 'friends' ? '✓ Now only your friends and the team can open it' : '✓ Now only the project team can open it');
+        } catch (err) {
+            setMessage(`✕ ${err.response?.data?.message || err.message}`);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    // Non-public apps need an access pass, so "Open" asks the server for a signed link first
+    const openApp = async () => {
+        if (visibility === 'public') return window.open(deployment.url, '_blank', 'noopener');
+        const tab = window.open('', '_blank');
+        try {
+            const res = await axios.post(`/api/apps/${deployment.slug}/access`);
+            if (tab) tab.location.href = res.data.url; else window.location.href = res.data.url;
+        } catch (err) {
+            tab?.close();
+            setMessage(`✕ ${err.response?.data?.msg || err.message}`);
+        }
+    };
 
     useEffect(() => { setDescription(deployment.gallery?.description || ''); }, [deployment.gallery?.description]);
 
@@ -76,7 +113,8 @@ const ShareCard = ({ projectId, deployment, onChange }) => {
                     aria-label="Public link"
                     style={{ flex: 1, minWidth: 200, background: '#252526', border: '1px solid #3e3e42', color: '#4fc1ff', padding: '6px 8px', borderRadius: 4, fontFamily: 'monospace', fontSize: 12 }}
                 />
-                <button className="btn-primary-ide" onClick={copy} disabled={!live}>{copied ? '✓ Copied' : 'Copy link'}</button>
+                <button className="btn-primary-ide" onClick={openApp} disabled={!live}>Open ↗</button>
+                <button className="btn-secondary-ide" onClick={copy} disabled={!live}>{copied ? '✓ Copied' : 'Copy link'}</button>
                 <button className="btn-secondary-ide" onClick={() => setShowQr(s => !s)} disabled={!live}>{showQr ? 'Hide QR' : 'QR code'}</button>
                 {typeof navigator.share === 'function' && <button className="btn-secondary-ide" onClick={nativeShare} disabled={!live}>Share…</button>}
             </div>
@@ -93,12 +131,36 @@ const ShareCard = ({ projectId, deployment, onChange }) => {
             )}
 
             <div style={{ borderTop: '1px solid #333', marginTop: 12, paddingTop: 10 }}>
-                <label style={label}>
-                    <input type="checkbox" checked={!!gallery.listed} disabled={saving || (!live && !gallery.listed)} onChange={(e) => save({ listed: e.target.checked, description })} />
+                <div style={{ fontSize: 12, color: '#8b949e', marginBottom: 6 }}>Who can open it</div>
+                <div role="radiogroup" aria-label="Who can open the app" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {VISIBILITY.map(([id, text, hint]) => (
+                        <button
+                            key={id}
+                            role="radio"
+                            aria-checked={visibility === id}
+                            title={hint}
+                            disabled={saving}
+                            onClick={() => setVisibility(id)}
+                            style={{
+                                padding: '5px 12px', borderRadius: 14, fontSize: 12, cursor: 'pointer',
+                                background: visibility === id ? '#0e639c' : '#2d2d30',
+                                color: visibility === id ? '#fff' : '#ccc',
+                                border: `1px solid ${visibility === id ? '#1177bb' : '#3e3e42'}`
+                            }}
+                        >{text}</button>
+                    ))}
+                </div>
+                <div style={{ fontSize: 12, color: '#8b949e', margin: '6px 0 10px' }}>{VISIBILITY.find(v => v[0] === visibility)[2]}</div>
+            </div>
+
+            <div style={{ borderTop: '1px solid #333', paddingTop: 10, opacity: visibility === 'public' ? 1 : 0.5 }}>
+                <label style={label} title={visibility === 'public' ? '' : 'Only public apps can be listed in the gallery'}>
+                    <input type="checkbox" style={checkbox} checked={!!gallery.listed} disabled={saving || visibility !== 'public' || (!live && !gallery.listed)} onChange={(e) => save({ listed: e.target.checked, description })} />
                     Show in the public <a href="#/gallery" target="_blank" rel="noreferrer" style={{ color: '#4fc1ff' }}>gallery</a>
+                    {visibility !== 'public' && <span style={{ color: '#8b949e', fontSize: 12 }}>· make it public first</span>}
                 </label>
                 <label style={{ ...label, marginTop: 6 }}>
-                    <input type="checkbox" checked={!!gallery.forkable} disabled={saving} onChange={(e) => save({ forkable: e.target.checked })} />
+                    <input type="checkbox" style={checkbox} checked={!!gallery.forkable} disabled={saving || visibility !== 'public'} onChange={(e) => save({ forkable: e.target.checked })} />
                     Let others fork (copy) the source code <span style={{ color: '#8b949e', fontSize: 12 }}>· environment variables are never copied</span>
                 </label>
                 <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>

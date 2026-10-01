@@ -1,5 +1,6 @@
 import React, { useState, useContext, useEffect } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
+import { takeDestination } from '../utils/afterLogin';
 import { FcGoogle } from 'react-icons/fc';
 import AuthContext from '../context/AuthContext';
 
@@ -26,7 +27,7 @@ const LoginPage = () => {
                 sessionStorage.removeItem('inviteRoomId');
                 navigate(`/rooms/${inviteRoomId}`);
             } else {
-                navigate('/dashboard');
+                navigate(takeDestination());
             }
         }
     }, [isAuthenticated, navigate]);

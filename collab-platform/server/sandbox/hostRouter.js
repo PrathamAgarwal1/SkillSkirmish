@@ -173,6 +173,7 @@ const handleRequest = async (req, res) => {
     req.ssRoute = route;
     try {
         const target = await resolveTarget(route);
+        if (route.kind !== 'preview' && !target.page && !(await require('./appAccess').gate(req, res, { slug: route.id }))) return;
         if (target.page) {
             res.writeHead(target.status, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
             return res.end(target.page);
@@ -196,6 +197,7 @@ const handleUpgrade = async (req, socket, head) => {
     try {
         const target = await resolveTarget(route);
         if (!target.port) return socket.destroy();
+        if (route.kind !== 'preview' && !(await require('./appAccess').allowsUpgrade(req, route.id))) return socket.destroy();
         proxy.ws(req, socket, head, { target: `http://127.0.0.1:${target.port}` });
     } catch {
         socket.destroy();

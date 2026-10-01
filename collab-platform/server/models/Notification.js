@@ -22,6 +22,8 @@ const NotificationSchema = new Schema({
     relatedId: {
         type: Schema.Types.ObjectId // Stores the Room ID or other links
     },
+    // Where clicking the notification goes (a client route like "/friends" or "/battle/join/AB12CD")
+    link: { type: String, default: '' },
     read: {
         type: Boolean,
         default: false

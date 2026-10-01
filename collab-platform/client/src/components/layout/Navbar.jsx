@@ -24,6 +24,7 @@ const Navbar = () => {
                         <li><Link to="/dashboard" className="nav-link" style={{ color: 'var(--text-main)' }}>./dashboard</Link></li>
                         <li><Link to="/battle" className="nav-link" style={{ color: 'var(--text-main)' }}>./battle</Link></li>
                         <li><Link to="/gallery" className="nav-link" style={{ color: 'var(--text-main)' }}>./gallery</Link></li>
+                        <li><Link to="/friends" className="nav-link" style={{ color: 'var(--text-main)' }}>./friends</Link></li>
                         <li><Link to="/forum" className="nav-link" style={{ color: 'var(--text-main)' }}>./forum</Link></li>
                         <li><Link to="/profile" className="nav-link" style={{ color: 'var(--text-main)' }}>./profile</Link></li>
                         <li>

@@ -37,6 +37,10 @@ const DeploymentSchema = new Schema({
         listedBy: { type: Schema.Types.ObjectId, ref: 'User' },
         listedAt: Date
     },
+    // Who may open the app: anyone with the link / the project's team + friends of visibilityOwner /
+    // the project's team only (sandbox/appAccess.js)
+    visibility: { type: String, enum: ['public', 'friends', 'private'], default: 'public' },
+    visibilityOwner: { type: Schema.Types.ObjectId, ref: 'User' },
     views: { type: Number, default: 0 },
     likes: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     forks: { type: Number, default: 0 }
