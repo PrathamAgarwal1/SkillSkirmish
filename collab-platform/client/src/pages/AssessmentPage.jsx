@@ -36,8 +36,23 @@ const AssessmentPage = () => {
         setAnswer('');
     }, [sessionData, skill]);
 
-    const addToHistory = (type, text) => {
-        setHistory(prev => [...prev, { type, text, timestamp: new Date() }]);
+    const addToHistory = (type, text, extra = {}) => {
+        setHistory(prev => [...prev, { type, text, timestamp: new Date(), ...extra }]);
+    };
+
+    // 🚩 Flag a question as wrong/unclear (3 reports pull it from the bank for review)
+    const [reported, setReported] = useState({});
+    const reportQuestion = async (id) => {
+        if (reported[id]) return;
+        const reason = window.prompt("What's wrong with this question? (optional)");
+        if (reason === null) return;
+        setReported(r => ({ ...r, [id]: 'sending' }));
+        try {
+            await axios.post(`/api/questions/${id}/report`, { reason });
+            setReported(r => ({ ...r, [id]: 'done' }));
+        } catch {
+            setReported(r => ({ ...r, [id]: undefined }));
+        }
     };
 
     // Language detection for Monaco
@@ -65,9 +80,10 @@ const AssessmentPage = () => {
         setSessionData(q);
         const badge = getTypeBadge(q.type);
         addToHistory('bot', `${leadingNewline ? '\n' : ''}[${badge.label}] — Difficulty: ${q.difficulty}`);
-        if (q.unrated) addToHistory('bot', '⚠ AI question service is unavailable — this is a practice question and will not affect your rating.');
+        if (q.unrated) addToHistory('bot', '⚠ No rated question is available right now — this practice question will not affect your rating.');
         if (q.title) addToHistory('bot', `Title: ${q.title}`);
         addToHistory('bot', q.question);
+        if (q.code) addToHistory('bot', q.code, { code: true });
     };
 
     const errorText = (err) => err.response?.data?.msg || err.message || 'Connection failed.';
@@ -111,6 +127,7 @@ const AssessmentPage = () => {
             const resultMsg = data.scorePercentage === 100 ? '✅ CORRECT!' : `Score: ${data.scorePercentage}%`;
             addToHistory('bot', resultMsg);
             if (data.feedback) addToHistory('bot', `Analysis: ${data.feedback}`);
+            if (data.questionId) addToHistory('bot', '', { reportId: data.questionId });
 
             setSessionStats({ attempted: data.attempted, correct: data.correct, poolSize: data.poolSize });
             setAnswer('');
@@ -143,6 +160,7 @@ const AssessmentPage = () => {
         try {
             const res = await axios.post('/api/assessment/skip');
             const data = res.data;
+            if (data.skippedQuestionId) addToHistory('bot', '', { reportId: data.skippedQuestionId });
 
             if (data.reachedPoolLimit) {
                 addToHistory('bot', '🏁 All questions exhausted. Calculating your results...');
@@ -436,7 +454,24 @@ const AssessmentPage = () => {
                             {h.type === 'bot'
                                 ? <span style={{ color: 'var(--term-blue)', fontWeight: 'bold' }}>$ </span>
                                 : <span style={{ color: 'var(--term-green)', fontWeight: 'bold' }}>{'>'} </span>}
-                            <span style={{ lineHeight: '1.6' }}>{h.text}</span>
+                            {h.code ? (
+                                <pre style={{
+                                    margin: '0.4rem 0 0', padding: '0.7rem 0.9rem', background: 'rgba(0,0,0,0.35)',
+                                    border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)',
+                                    fontSize: '0.85rem', overflowX: 'auto', whiteSpace: 'pre'
+                                }}>{h.text}</pre>
+                            ) : h.reportId ? (
+                                <button type="button" onClick={() => reportQuestion(h.reportId)} disabled={!!reported[h.reportId]}
+                                    title="Report a wrong answer, a typo or an unclear question"
+                                    style={{
+                                        background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', fontSize: '0.8rem',
+                                        color: 'var(--text-muted)', cursor: reported[h.reportId] ? 'default' : 'pointer', textDecoration: reported[h.reportId] ? 'none' : 'underline'
+                                    }}>
+                                    {reported[h.reportId] === 'done' ? '🚩 Reported — thanks!' : reported[h.reportId] ? '🚩 Sending…' : '🚩 Something wrong with this question?'}
+                                </button>
+                            ) : (
+                                <span style={{ lineHeight: '1.6' }}>{h.text}</span>
+                            )}
                         </div>
                     ))}
                     {loading && <div className="blink" style={{ color: 'var(--term-blue)', marginTop: '1rem' }}>_ processing...</div>}

@@ -1,5 +1,6 @@
 // battle/RoundsArena.jsx — CodeGuessr (Language Map, Bug Locator, Output Estimate) and skill quizzes.
 import React, { useEffect, useMemo, useState } from 'react';
+import axios from 'axios';
 import { socket } from '../socket';
 import { emit, clock } from './useMatch';
 import LanguageMap from './LanguageMap';
@@ -261,6 +262,7 @@ export default function RoundsArena({ m, myId }) {
             {reveal && (
                 <div className="bt-reveal">
                     <p className="bt-reveal-answer">{summary}</p>
+                    {reveal.prompt?.questionId && <ReportLink id={reveal.prompt.questionId} />}
                     <div className="bt-reveal-scores">
                         {[myResult, theirResult].filter(Boolean).map(r => (
                             <div key={r.userId} className={`bt-reveal-score ${r.userId === myId ? 'me' : ''}`}>
@@ -277,5 +279,27 @@ export default function RoundsArena({ m, myId }) {
                 </div>
             )}
         </div>
+    );
+}
+
+/** 🚩 Flag a quiz question as wrong or unclear (3 reports pull it for review). */
+function ReportLink({ id }) {
+    const [state, setState] = useState('');
+    useEffect(() => setState(''), [id]);
+    const send = async () => {
+        const reason = window.prompt("What's wrong with this question? (optional)");
+        if (reason === null) return;
+        setState('sending');
+        try {
+            await axios.post(`/api/questions/${id}/report`, { reason });
+            setState('done');
+        } catch {
+            setState('');
+        }
+    };
+    return (
+        <button type="button" className="bt-report" onClick={send} disabled={!!state}>
+            {state === 'done' ? '🚩 Reported, thanks!' : state ? '🚩 Sending…' : '🚩 Wrong or unclear question?'}
+        </button>
     );
 }
