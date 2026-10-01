@@ -11,6 +11,8 @@ const Message = require('./models/Message');
 const User = require('./models/User');
 const Room = require('./models/Room');
 const File = require('./models/File');
+const Notification = require('./models/Notification');
+const { resolveMentions } = require('./utils/mentions');
 
 // Import mediasoup manager
 const mediasoupManager = require('./mediasoup/mediasoupManager');
@@ -62,6 +64,16 @@ app.get('/', (req, res) => {
     res.status(200).send('SkillSkirmish API is online and running.');
 });
 
+// Health check for the client's "waking up" banner, uptime monitors and the keep-awake workflow
+app.get('/api/health', (req, res) => {
+    res.set('Cache-Control', 'no-store').json({
+        ok: true,
+        db: mongoose.connection.readyState === 1,
+        mode: require('./sandbox').getMode(),
+        uptime: Math.round(process.uptime())
+    });
+});
+
 const mongoURI = process.env.MONGO_URI;
 if (!mongoURI) {
     console.error('CRITICAL WARNING: MONGO_URI environment variable is not set. MongoDB will not connect.');
@@ -96,7 +108,7 @@ const socketProjects = {}; // { socketId: Set<projectId> }
 
 const roomUsers = {}; // { roomId: [ { userId, username, socketId } ] }
 
-const MAX_CHAT_LENGTH = 2000;
+const MAX_CHAT_LENGTH = 4000; // room for a code snippet
 const msRoomKey = (callId) => `ms:${callId}`;
 
 // Every socket must present the same JWT the REST API uses. The user id comes from the token,
@@ -197,15 +209,49 @@ io.on('connection', (socket) => {
     });
 
     // --- CHAT ---
-    socket.on('chatMessage', safe('chatMessage', async ({ roomId, text } = {}) => {
+    socket.on('chatMessage', safe('chatMessage', async ({ roomId, text, parentId } = {}) => {
         // Sender is always the authenticated user, and only sockets inside the room may post
         if (!socket.rooms.has(roomId)) return;
         const body = typeof text === 'string' ? text.trim().slice(0, MAX_CHAT_LENGTH) : '';
         if (!body) return;
 
-        const message = await new Message({ room: roomId, sender: userId, text: body }).save();
-        const sender = await User.findById(userId).select('username');
+        // Thread reply: the parent must be a top-level message of the same room
+        let parent = null;
+        if (parentId) {
+            if (!isValidId(String(parentId))) return;
+            parent = await Message.findOne({ _id: parentId, room: roomId, parent: null }).select('_id');
+            if (!parent) return;
+        }
+
+        const room = await Room.findById(roomId).select('name owner members');
+        if (!room) return;
+        const members = await User.find({ _id: { $in: [room.owner, ...room.members] } }).select('username');
+        const mentioned = resolveMentions(body, members, userId);
+        const sender = members.find(m => idEquals(m._id, userId)) || await User.findById(userId).select('username');
+
+        const message = await new Message({
+            room: roomId, sender: userId, text: body, parent: parent?._id || null, mentions: mentioned.map(u => u._id)
+        }).save();
         io.to(roomId).emit('message', { ...message.toObject(), sender: { _id: userId, username: sender?.username || 'Unknown' } });
+
+        if (parent) {
+            const updated = await Message.findByIdAndUpdate(parent._id, { $inc: { replyCount: 1 }, lastReplyAt: message.createdAt }, { new: true }).select('replyCount lastReplyAt');
+            io.to(roomId).emit('message-thread', { parentId: String(parent._id), replyCount: updated?.replyCount || 0, lastReplyAt: updated?.lastReplyAt });
+        }
+
+        // @mentions: a notification (and a toast for anyone online)
+        const snippet = body.replace(/```[\s\S]*?(```|$)/g, '[code]').replace(/\s+/g, ' ').slice(0, 80);
+        for (const user of mentioned) {
+            const notification = await new Notification({
+                user: user._id,
+                sender: userId,
+                type: 'mention',
+                relatedId: room._id,
+                message: `${sender?.username || 'Someone'} mentioned you in ${room.name}: "${snippet}${body.length > 80 ? '…' : ''}"`
+            }).save();
+            const target = userSocketMap[String(user._id)];
+            if (target) io.to(target).emit('new-notification', notification);
+        }
     }));
 
     // --- PROFILE ALERTS ---
@@ -371,6 +417,8 @@ io.on('connection', (socket) => {
 
         const fullState = collabManager.getFullState(docKey);
         io.to(projectRoomKey(projectId)).emit('collab:presence', collabManager.getProjectPresence(projectId));
+        // Others in the file re-send their cursors so the newcomer sees them right away
+        socket.to(`collab:${docKey}`).emit('collab:cursor-request', { fileId: String(fileId) });
 
         reply({
             state: fullState ? Array.from(fullState) : null,
@@ -408,8 +456,21 @@ io.on('connection', (socket) => {
     // Receive cursor position updates and broadcast to others
     socket.on('collab:cursor-update', ({ projectId, fileId, cursor } = {}) => {
         const fileRoom = `collab:${projectId}:${fileId}`;
-        if (!socket.rooms.has(fileRoom)) return;
-        socket.to(fileRoom).emit('collab:cursor-update', { socketId: socket.id, cursor });
+        if (!socket.rooms.has(fileRoom) || !cursor || typeof cursor !== 'object') return;
+        const num = (n) => (Number.isFinite(n) ? Math.max(1, Math.min(1e7, Math.floor(n))) : 1);
+        const pos = (p) => (p && typeof p === 'object' ? { lineNumber: num(p.lineNumber), column: num(p.column) } : null);
+        const sel = cursor.selection;
+        socket.to(fileRoom).emit('collab:cursor-update', {
+            socketId: socket.id,
+            cursor: {
+                position: pos(cursor.position),
+                selection: sel && typeof sel === 'object' ? {
+                    startLineNumber: num(sel.startLineNumber), startColumn: num(sel.startColumn),
+                    endLineNumber: num(sel.endLineNumber), endColumn: num(sel.endColumn)
+                } : null,
+                username: typeof cursor.username === 'string' ? cursor.username.slice(0, 40) : ''
+            }
+        });
     });
 
     // Request current presence for a project
@@ -464,6 +525,7 @@ app.use('/api/files', require('./routes/files'));
 app.use('/api/execute', require('./routes/execute'));
 
 app.use('/api/deployments', require('./routes/deployments'));
+app.use('/api/gallery', require('./routes/gallery'));
 
 app.use('/api/matchmaking', require('./routes/matchmaking'));
 app.use('/api/assessment', require('./routes/assessment'));

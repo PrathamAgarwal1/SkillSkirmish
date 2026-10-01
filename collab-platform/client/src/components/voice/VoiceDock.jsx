@@ -7,6 +7,7 @@ import { useVoice } from '../../voice/voiceContext';
 import { pingColor } from '../../voice/ui';
 import Avatar from './Avatar';
 import VideoView from './VideoView';
+import { OPEN_CALL_EVENT } from './FloatingCall';
 import './voice.css';
 
 /**
@@ -40,7 +41,10 @@ const VoiceDock = () => {
     if (!channel || onRoomPage) return null;
 
     const reconnecting = voice.status !== 'connected';
-    const goToRoom = () => navigate(`/rooms/${channel.roomId}`);
+    // In the IDE of the same room, open the floating call window instead of leaving the editor
+    const goToRoom = () => (window.__ssCallWindow === channel.roomId
+        ? window.dispatchEvent(new Event(OPEN_CALL_EVENT))
+        : navigate(`/rooms/${channel.roomId}`));
 
     if (minimized) {
         return (

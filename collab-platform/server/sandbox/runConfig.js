@@ -180,6 +180,35 @@ function detectPython(dir, files, projectType) {
     };
 }
 
+const staticSite = (siteDir = '') => ({
+    env: 'node',
+    root: '',
+    install: [],
+    label: siteDir ? `Static website (${siteDir}/)` : 'Static website',
+    targets: [{ id: 'dev', label: 'Static server', preview: true, cmd: `http-server ${siteDir ? q(siteDir) : '.'} -p $PORT -a 0.0.0.0 -c-1 --cors` }],
+    deploy: { kind: 'static', build: null, output: siteDir || '.' }
+});
+
+/**
+ * The whole site sits in one folder (e.g. an uploaded "my-portfolio/" folder): that folder, if exactly
+ * one top-level folder has an index.html.
+ */
+const nestedSiteDir = (files) => {
+    const dirs = files.filter(f => /^[^/]+\/index\.html$/.test(f)).map(f => f.split('/')[0]);
+    return dirs.length === 1 ? dirs[0] : '';
+};
+
+/** A package.json with no scripts, e.g. left behind by running `npm install <pkg>` in the wrong folder. */
+const hasScripts = (dir) => Object.keys(readJson(path.join(dir, 'package.json'))?.scripts || {}).length > 0;
+
+/** Notebooks, requirements.txt, or a Streamlit/FastAPI/Flask app at the top level. */
+const isPythonApp = (dir, files, projectType) => {
+    if (projectType.startsWith('Python') || projectType === 'Machine Learning (Jupyter)') return true;
+    if (files.includes('requirements.txt') || files.some(f => f.endsWith('.ipynb'))) return true;
+    return files.filter(f => f.endsWith('.py') && !f.includes('/'))
+        .some(f => /import\s+streamlit|from\s+streamlit|FastAPI\s*\(|Flask\s*\(/.test(readText(path.join(dir, f)) || ''));
+};
+
 /**
  * Returns { env, root, label, install: [{dir, cmd, sources, stampFile}], targets: [...], deploy: {...} }
  */
@@ -190,21 +219,24 @@ function detectRunConfig(projectDir, projectType = '') {
         .sort((a, b) => a.split('/').length - b.split('/').length);
     const hasPython = files.some(f => f.endsWith('.py') || f.endsWith('.ipynb')) || files.includes('requirements.txt');
 
+    // A site with index.html at the top (and no package.json there) is a static website, even if it
+    // carries helper scripts (serve.py) or tooling in a subfolder — unless it's clearly a Python app.
+    if (files.includes('index.html') && !files.includes('package.json') && !isPythonApp(projectDir, files, projectType)) {
+        return staticSite();
+    }
+    // Same, for a site inside a single folder, ignoring a script-less package.json at the top
+    const siteDir = files.includes('index.html') ? '' : nestedSiteDir(files);
+    if (siteDir && !files.includes(`${siteDir}/package.json`) && (!files.includes('package.json') || !hasScripts(projectDir)) &&
+        !isPythonApp(projectDir, files, projectType)) {
+        return staticSite(siteDir);
+    }
+
     if (pkgFiles.length > 0 && !(hasPython && projectType.startsWith('Python')) && projectType !== 'Machine Learning (Jupyter)') {
         return detectNode(projectDir, files, pkgFiles[0]);
     }
     if (hasPython) return detectPython(projectDir, files, projectType);
 
-    if (files.some(f => f.endsWith('.html'))) {
-        return {
-            env: 'node',
-            root: '',
-            install: [],
-            label: 'Static website',
-            targets: [{ id: 'dev', label: 'Static server', preview: true, cmd: 'http-server . -p $PORT -a 0.0.0.0 -c-1 --cors' }],
-            deploy: { kind: 'static', build: null, output: '.' }
-        };
-    }
+    if (files.some(f => f.endsWith('.html'))) return staticSite();
 
     return {
         env: 'node',

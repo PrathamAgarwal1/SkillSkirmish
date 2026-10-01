@@ -23,7 +23,7 @@ const CodeEditorWindow = ({
     const [isDirty, setIsDirty] = useState(false);
     const [isConnected, setIsConnected] = useState(socket.connected);
     const [isEditorMounted, setIsEditorMounted] = useState(false);
-    const [collaborators, setCollaborators] = useState([]); // users editing this same file
+    const [collaborators, setCollaborators] = useState([]); // others editing this same file
     const editorRef = useRef(null);
     const monacoRef = useRef(null);
     const cleanupRef = useRef(null);
@@ -35,6 +35,10 @@ const CodeEditorWindow = ({
     const prevFileIdRef = useRef(null);
     const remoteCursorsRef = useRef(new Map()); // socketId -> decorationIds
     const decorationsRef = useRef([]); // Monaco decoration collection
+    const presenceRef = useRef(new Map()); // socketId -> { userId, username, activeFileId } (from the server)
+    const cursorStateRef = useRef(new Map()); // socketId -> { cursor, timer } (name-tag fade-out)
+    const currentFileIdRef = useRef(null);
+    currentFileIdRef.current = currentFile?._id || null;
 
     // Sync internal content state when fileContent prop changes (new file selected)
     // Only used when collab is NOT active (fallback mode)
@@ -67,6 +71,26 @@ const CodeEditorWindow = ({
             socket.off('disconnect', onDisconnect);
         };
     }, []);
+
+    // --- WHO'S HERE: presence for this project (names for cursors, avatars, removing stale cursors) ---
+    useEffect(() => {
+        if (!projectId) return undefined;
+        const apply = (list) => {
+            if (!Array.isArray(list)) return;
+            presenceRef.current = new Map(list.map(p => [p.socketId, p]));
+            const fileId = currentFileIdRef.current;
+            const here = list.filter(p => p.socketId !== socket.id && fileId && p.activeFileId === fileId);
+            setCollaborators(here);
+            // Cursors of people who closed this file or left
+            const hereIds = new Set(here.map(p => p.socketId));
+            for (const id of [...remoteCursorsRef.current.keys()]) {
+                if (!hereIds.has(id)) removeRemoteCursor(editorRef.current, id);
+            }
+        };
+        socket.on('collab:presence', apply);
+        socket.emit('collab:get-presence', { projectId }, apply);
+        return () => socket.off('collab:presence', apply);
+    }, [projectId, currentFile?._id]);
 
     // --- COLLABORATIVE EDITING SETUP ---
     useEffect(() => {
@@ -160,6 +184,29 @@ const CodeEditorWindow = ({
                 };
                 socket.on('collab:cursor-update', handleRemoteCursor);
 
+                // Someone just opened this file: tell them where we are
+                const sendCursor = () => {
+                    const position = editor.getPosition();
+                    const selection = editor.getSelection();
+                    if (!position) return;
+                    socket.emit('collab:cursor-update', {
+                        projectId,
+                        fileId,
+                        cursor: {
+                            position,
+                            selection: selection ? {
+                                startLineNumber: selection.startLineNumber,
+                                startColumn: selection.startColumn,
+                                endLineNumber: selection.endLineNumber,
+                                endColumn: selection.endColumn
+                            } : null,
+                            username: user?.username || 'Anonymous'
+                        }
+                    });
+                };
+                const handleCursorRequest = (data) => { if (data?.fileId === fileId) sendCursor(); };
+                socket.on('collab:cursor-request', handleCursorRequest);
+
                 // Send own cursor position on selection change
                 const cursorDisposable = editor.onDidChangeCursorPosition((e) => {
                     const selection = editor.getSelection();
@@ -183,6 +230,7 @@ const CodeEditorWindow = ({
                 cleanupRef.current = () => {
                     socket.off('collab:sync-update', handleRemoteUpdate);
                     socket.off('collab:cursor-update', handleRemoteCursor);
+                    socket.off('collab:cursor-request', handleCursorRequest);
                     ydoc.off('update', handleLocalUpdate);
                     ytext.unobserve(handleYTextChange);
                     cursorDisposable.dispose();
@@ -225,67 +273,70 @@ const CodeEditorWindow = ({
     };
 
     // --- REMOTE CURSOR RENDERING ---
-    const updateRemoteCursor = (editor, monaco, socketId, cursor) => {
-        if (!editor || !monaco) return;
+    // Each collaborator gets their own color (by user, so it's stable across reconnects), a caret,
+    // a selection highlight and a name tag that shows while they're active.
+    const colorFor = (key) => CURSOR_COLORS[Math.abs(hashString(String(key))) % CURSOR_COLORS.length];
+    const cursorClass = (socketId) => `rc-${String(socketId).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
 
-        const colorIndex = Math.abs(hashString(socketId)) % CURSOR_COLORS.length;
-        const color = CURSOR_COLORS[colorIndex];
-        const username = cursor.username || 'User';
+    const updateRemoteCursor = (editor, monaco, socketId, cursor, showName = true) => {
+        if (!editor || !monaco || !cursor) return;
 
-        // Create decoration for cursor position
+        // Names come from the server's presence list (not from the cursor message, which anyone could fake)
+        const info = presenceRef.current.get(socketId);
+        const username = info?.username || cursor.username || 'Someone';
+        const color = colorFor(info?.userId || socketId);
+        const cls = cursorClass(socketId);
+        const lineCount = editor.getModel()?.getLineCount() || 1;
+        const clampLine = (n) => Math.min(Math.max(1, n || 1), lineCount);
+
         const decorations = [];
-
-        // Cursor line decoration
         if (cursor.position) {
+            const line = clampLine(cursor.position.lineNumber);
             decorations.push({
-                range: new monaco.Range(
-                    cursor.position.lineNumber,
-                    cursor.position.column,
-                    cursor.position.lineNumber,
-                    cursor.position.column + 1
-                ),
+                range: new monaco.Range(line, cursor.position.column, line, cursor.position.column),
                 options: {
-                    className: `remote-cursor`,
-                    beforeContentClassName: `remote-cursor-line`,
+                    afterContentClassName: `rc-caret ${cls}${showName ? ' rc-show' : ''}${line === 1 ? ' rc-below' : ''}`,
                     stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
                     hoverMessage: { value: `**${username}**` }
                 }
             });
         }
 
-        // Selection highlight
-        if (cursor.selection &&
-            (cursor.selection.startLineNumber !== cursor.selection.endLineNumber ||
-             cursor.selection.startColumn !== cursor.selection.endColumn)) {
+        const sel = cursor.selection;
+        if (sel && (sel.startLineNumber !== sel.endLineNumber || sel.startColumn !== sel.endColumn)) {
             decorations.push({
-                range: new monaco.Range(
-                    cursor.selection.startLineNumber,
-                    cursor.selection.startColumn,
-                    cursor.selection.endLineNumber,
-                    cursor.selection.endColumn
-                ),
+                range: new monaco.Range(clampLine(sel.startLineNumber), sel.startColumn, clampLine(sel.endLineNumber), sel.endColumn),
                 options: {
-                    className: `remote-selection`,
+                    className: `rc-sel ${cls}-sel`,
                     stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges
                 }
             });
         }
 
-        // Apply decorations — use deltaDecorations to update
         const prevDecorationIds = remoteCursorsRef.current.get(socketId) || [];
-        const newDecorationIds = editor.deltaDecorations(prevDecorationIds, decorations);
-        remoteCursorsRef.current.set(socketId, newDecorationIds);
+        remoteCursorsRef.current.set(socketId, editor.deltaDecorations(prevDecorationIds, decorations));
+        injectCursorStyle(cls, color, username);
 
-        // Inject dynamic CSS for this user's cursor color
-        injectCursorStyle(socketId, color, username);
+        // Show the name tag for a few seconds after each move, then just the caret
+        if (showName) {
+            const state = cursorStateRef.current.get(socketId) || {};
+            clearTimeout(state.timer);
+            const timer = setTimeout(() => updateRemoteCursor(editor, monaco, socketId, cursor, false), 3000);
+            cursorStateRef.current.set(socketId, { cursor, timer });
+        }
+    };
+
+    const removeRemoteCursor = (editor, socketId) => {
+        const ids = remoteCursorsRef.current.get(socketId);
+        if (ids && editor) editor.deltaDecorations(ids, []);
+        remoteCursorsRef.current.delete(socketId);
+        clearTimeout(cursorStateRef.current.get(socketId)?.timer);
+        cursorStateRef.current.delete(socketId);
     };
 
     const clearAllRemoteCursors = (editor) => {
         if (!editor) return;
-        for (const [socketId, decorationIds] of remoteCursorsRef.current.entries()) {
-            editor.deltaDecorations(decorationIds, []);
-        }
-        remoteCursorsRef.current.clear();
+        for (const socketId of [...remoteCursorsRef.current.keys()]) removeRemoteCursor(editor, socketId);
     };
 
     // --- UTILITY ---
@@ -299,23 +350,24 @@ const CodeEditorWindow = ({
         return hash;
     };
 
-    const injectCursorStyle = (socketId, color, username) => {
-        const styleId = `cursor-style-${socketId}`;
+    // One <style> per collaborator: their color and name tag
+    const injectCursorStyle = (cls, color, username) => {
+        const styleId = `cursor-style-${cls}`;
         let styleEl = document.getElementById(styleId);
         if (!styleEl) {
             styleEl = document.createElement('style');
             styleEl.id = styleId;
             document.head.appendChild(styleEl);
         }
-        styleEl.textContent = `
-            .remote-cursor-line {
-                border-left: 2px solid ${color} !important;
-                margin-left: -1px;
-            }
-            .remote-selection {
-                background-color: ${color}33 !important;
-            }
+        // CSS string escaping: the name ends up inside content: "…"
+        // eslint-disable-next-line no-control-regex
+        const label = String(username).slice(0, 30).replace(/[\\"]/g, '\\$&').replace(/[\u0000-\u001f\u007f]/g, ' ');
+        const css = `
+            .${cls} { border-color: ${color}; }
+            .${cls}::after { content: "${label}"; background: ${color}; }
+            .${cls}-sel { background-color: ${color}40; }
         `;
+        if (styleEl.textContent !== css) styleEl.textContent = css;
     };
 
     const handleChange = (newContent) => {
@@ -461,6 +513,21 @@ const CodeEditorWindow = ({
                     {isCollabActiveRef.current && (
                         <span className="collab-badge" title="Live collaboration active">
                             🔴 LIVE
+                        </span>
+                    )}
+                    {collaborators.length > 0 && (
+                        <span className="collab-avatars" aria-label={`Also editing: ${collaborators.map(c => c.username).join(', ')}`}>
+                            {collaborators.slice(0, 5).map(c => (
+                                <span
+                                    key={c.socketId}
+                                    className="collab-avatar"
+                                    style={{ background: colorFor(c.userId || c.socketId) }}
+                                    title={`${c.username} is editing this file`}
+                                >
+                                    {(c.username || '?').slice(0, 1).toUpperCase()}
+                                </span>
+                            ))}
+                            {collaborators.length > 5 && <span className="collab-avatar more">+{collaborators.length - 5}</span>}
                         </span>
                     )}
                 </h3>

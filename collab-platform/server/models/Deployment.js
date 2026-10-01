@@ -28,7 +28,20 @@ const DeploymentSchema = new Schema({
     slug: { type: String, required: true, unique: true },
     status: { type: String, enum: ['idle', 'building', 'live', 'failed', 'stopped'], default: 'idle' },
     activeVersion: { type: Number, default: null },
-    versions: [VersionSchema]
+    versions: [VersionSchema],
+    // Public gallery: listed apps show up at /gallery; forkable ones let anyone copy the source
+    gallery: {
+        listed: { type: Boolean, default: false },
+        forkable: { type: Boolean, default: false },
+        description: { type: String, default: '', maxlength: 280 },
+        listedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+        listedAt: Date
+    },
+    views: { type: Number, default: 0 },
+    likes: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    forks: { type: Number, default: 0 }
 }, { timestamps: true });
+
+DeploymentSchema.index({ 'gallery.listed': 1, status: 1 });
 
 module.exports = mongoose.model('Deployment', DeploymentSchema);

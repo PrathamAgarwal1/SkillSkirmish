@@ -50,6 +50,27 @@ router.post('/:projectId/rollback', auth, requireProjectAccess(fromParams), hand
     res.status(result.success ? 200 : 400).json(result);
 }));
 
+// Public gallery settings: list the live app at /gallery, allow forking, short description
+router.put('/:projectId/gallery', auth, requireProjectAccess(fromParams), handle(async (req, res) => {
+    const Deployment = require('../models/Deployment');
+    const dep = await Deployment.findOne({ project: req.params.projectId });
+    if (!dep) return res.status(404).json({ message: 'Deploy the project first' });
+
+    const { listed, forkable, description } = req.body || {};
+    if (listed === true && dep.status !== 'live') return res.status(400).json({ message: 'Only live apps can be listed in the gallery' });
+    if (typeof listed === 'boolean') {
+        if (listed && !dep.gallery.listed) {
+            dep.gallery.listedAt = new Date();
+            dep.gallery.listedBy = req.user.id;
+        }
+        dep.gallery.listed = listed;
+    }
+    if (typeof forkable === 'boolean') dep.gallery.forkable = forkable;
+    if (typeof description === 'string') dep.gallery.description = description.trim().slice(0, 280);
+    await dep.save();
+    res.json({ success: true, deployment: await deployService.getDeployment(req.params.projectId) });
+}));
+
 // Take the app offline
 router.post('/:projectId/stop', auth, requireProjectAccess(fromParams), handle(async (req, res) => {
     const result = await deployService.stopDeployment(req.params.projectId, io(req));

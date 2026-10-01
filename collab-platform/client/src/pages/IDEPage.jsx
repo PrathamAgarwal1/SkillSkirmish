@@ -3,12 +3,14 @@ import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import WindowManager from '../components/ide/WindowManager';
 import AuthContext from '../context/AuthContext';
+import FloatingCall from '../components/voice/FloatingCall';
 
 const IDEPage = () => {
     const { projectId, roomId } = useParams();
     const { user } = useContext(AuthContext);
     const [project, setProject] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [roomName, setRoomName] = useState('');
 
     useEffect(() => {
         const fetchProject = async () => {
@@ -16,6 +18,8 @@ const IDEPage = () => {
                 const res = await axios.get(`/api/projects/${projectId}`);
                 setProject(res.data);
                 setLoading(false);
+                // For the voice window's title (non-critical)
+                axios.get(`/api/rooms/${res.data.room}`).then(r => setRoomName(r.data.name)).catch(() => {});
             } catch (err) {
                 console.error("Failed to fetch project", err);
                 setLoading(false);
@@ -34,13 +38,16 @@ const IDEPage = () => {
     }
 
     return (
-        <WindowManager 
-            projectId={projectId}
-            projectType={project.projectType || 'React App'}
-            projectName={project.name}
-            roomId={roomId}
-            user={user}
-        />
+        <>
+            <WindowManager
+                projectId={projectId}
+                projectType={project.projectType || 'React App'}
+                projectName={project.name}
+                roomId={roomId}
+                user={user}
+            />
+            <FloatingCall roomId={String(project.room)} roomName={roomName} />
+        </>
     );
 };
 
