@@ -23,6 +23,8 @@ import GoogleCallbackPage from './pages/GoogleCallbackPage';
 import GalleryPage from './pages/GalleryPage';
 import BattlePage, { BattleJoin } from './pages/BattlePage';
 import BattleArena from './pages/BattleArena';
+import FriendsPage from './pages/FriendsPage';
+import OpenAppPage from './pages/OpenAppPage';
 
 // Context and Socket
 import AuthContext from './context/AuthContext';
@@ -63,7 +65,7 @@ const AppContent = () => {
           progress: undefined,
           theme: "dark",
           // @mentions open the room they came from
-          onClick: () => navigateRef.current(notification.type === 'mention' && notification.relatedId ? `/rooms/${notification.relatedId}` : '/dashboard')
+          onClick: () => navigateRef.current(notification.link || (notification.type === 'mention' && notification.relatedId ? `/rooms/${notification.relatedId}` : '/dashboard'))
         });
       };
 
@@ -106,6 +108,9 @@ const AppContent = () => {
           <Route path="/profile/:userId" element={<PrivateRoute><ProfilePage /></PrivateRoute>} />
 
           <Route path="/forum" element={<PrivateRoute><ForumPage /></PrivateRoute>} />
+
+          <Route path="/friends" element={<PrivateRoute><FriendsPage /></PrivateRoute>} />
+          <Route path="/open/:slug" element={<PrivateRoute><OpenAppPage /></PrivateRoute>} />
 
           {/* Code battles */}
           <Route path="/battle" element={<PrivateRoute><BattlePage /></PrivateRoute>} />

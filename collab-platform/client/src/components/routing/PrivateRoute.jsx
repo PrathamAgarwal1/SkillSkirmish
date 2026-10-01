@@ -1,10 +1,12 @@
 // src/components/routing/PrivateRoute.jsx
 import React, { useContext } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
+import { rememberDestination } from '../../utils/afterLogin';
 import AuthContext from '../../context/AuthContext';
 
 const PrivateRoute = ({ children }) => {
     const { isAuthenticated, loading } = useContext(AuthContext); // <-- Get loading state
+    const location = useLocation();
 
     // While verifying the token, show a loading message
     if (loading) {
@@ -12,7 +14,10 @@ const PrivateRoute = ({ children }) => {
     }
 
     // After loading, if not authenticated, redirect to login
-    return isAuthenticated ? children : <Navigate to="/login" />;
+    if (isAuthenticated) return children;
+    // Come back here after signing in
+    rememberDestination(location.pathname + location.search);
+    return <Navigate to="/login" />;
 };
 
 export default PrivateRoute;

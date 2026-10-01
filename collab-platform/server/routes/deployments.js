@@ -58,6 +58,7 @@ router.put('/:projectId/gallery', auth, requireProjectAccess(fromParams), handle
 
     const { listed, forkable, description } = req.body || {};
     if (listed === true && dep.status !== 'live') return res.status(400).json({ message: 'Only live apps can be listed in the gallery' });
+    if (listed === true && (dep.visibility || 'public') !== 'public') return res.status(400).json({ message: 'Make the app public to list it in the gallery' });
     if (typeof listed === 'boolean') {
         if (listed && !dep.gallery.listed) {
             dep.gallery.listedAt = new Date();
@@ -69,6 +70,29 @@ router.put('/:projectId/gallery', auth, requireProjectAccess(fromParams), handle
     if (typeof description === 'string') dep.gallery.description = description.trim().slice(0, 280);
     await dep.save();
     res.json({ success: true, deployment: await deployService.getDeployment(req.params.projectId) });
+}));
+
+// Who may open the app: public | friends | private. Non-public apps leave the public gallery.
+router.put('/:projectId/visibility', auth, requireProjectAccess(fromParams), handle(async (req, res) => {
+    const Deployment = require('../models/Deployment');
+    const { VISIBILITIES, forget } = require('../sandbox/appAccess');
+    const { visibility } = req.body || {};
+    if (!VISIBILITIES.includes(visibility)) return res.status(400).json({ message: 'Choose public, friends or private' });
+    const dep = await Deployment.findOne({ project: req.params.projectId });
+    if (!dep) return res.status(404).json({ message: 'Deploy the project first' });
+    dep.visibility = visibility;
+    dep.visibilityOwner = req.user.id;
+    if (visibility !== 'public') dep.gallery.listed = false;
+    await dep.save();
+    forget(dep.slug);
+    res.json({ success: true, deployment: await deployService.getDeployment(req.params.projectId) });
+}));
+
+// Delete the deployment completely: every version and file, and its URL
+router.delete('/:projectId', auth, requireProjectAccess(fromParams), handle(async (req, res) => {
+    if (deployService.isBuilding(req.params.projectId)) return res.status(409).json({ success: false, message: 'Wait for the current deploy to finish' });
+    await deployService.destroyDeployment(req.params.projectId);
+    res.json({ success: true, deployment: null });
 }));
 
 // Take the app offline

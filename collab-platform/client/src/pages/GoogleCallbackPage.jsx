@@ -4,6 +4,7 @@
 
 import React, { useEffect, useContext, useState, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { takeDestination } from '../utils/afterLogin';
 import AuthContext from '../context/AuthContext';
 
 const GoogleCallbackPage = () => {
@@ -40,7 +41,7 @@ const GoogleCallbackPage = () => {
     // Redirect to dashboard once authentication is confirmed
     useEffect(() => {
         if (isAuthenticated) {
-            navigate('/dashboard');
+            navigate(takeDestination(), { replace: true });
         }
     }, [isAuthenticated, navigate]);
 

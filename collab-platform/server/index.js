@@ -531,6 +531,8 @@ app.use('/api/execute', require('./routes/execute'));
 app.use('/api/deployments', require('./routes/deployments'));
 app.use('/api/gallery', require('./routes/gallery'));
 app.use('/api/battles', require('./routes/battles'));
+app.use('/api/friends', require('./routes/friends'));
+app.use('/api/apps', require('./routes/apps'));
 // git clone/pull/push from the browser IDE (browser mode) — see routes/gitProxy.js
 app.use('/api/git-proxy', require('./routes/gitProxy'));
 
