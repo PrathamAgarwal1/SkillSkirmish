@@ -20,15 +20,25 @@ const returnOrigin = (state) => {
     }
 };
 
+// Where Auth0 sends the user back. A localhost AUTH0_CALLBACK_URL copied from a local .env would
+// strand deployed users on localhost, so a deployed server ignores it and uses its own public URL.
+const isLocalUrl = (url) => /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/i.test(url);
+const callbackUrl = (req) => {
+    const configured = String(process.env.AUTH0_CALLBACK_URL || '').trim();
+    const base = String(process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || `${req.protocol}://${req.get('host')}`).trim().replace(/\/+$/, '');
+    if (configured && !(isLocalUrl(configured) && !isLocalUrl(base))) return configured;
+    return `${base}/api/auth/google/callback`;
+};
+
 // ============================================================
 // @route   GET /api/auth/google/login
 // @desc    Redirect user to Auth0's Universal Login (Google)
 // @access  Public
 // ============================================================
 router.get('/login', (req, res) => {
-    const { AUTH0_DOMAIN, AUTH0_CLIENT_ID, AUTH0_CALLBACK_URL } = process.env;
+    const { AUTH0_DOMAIN, AUTH0_CLIENT_ID } = process.env;
 
-    if (!AUTH0_DOMAIN || !AUTH0_CLIENT_ID || !AUTH0_CALLBACK_URL) {
+    if (!AUTH0_DOMAIN || !AUTH0_CLIENT_ID) {
         return res.status(500).json({ msg: 'Auth0 environment variables are not configured.' });
     }
 
@@ -36,7 +46,7 @@ router.get('/login', (req, res) => {
     const authUrl = `https://${AUTH0_DOMAIN}/authorize?` +
         `response_type=code&` +
         `client_id=${AUTH0_CLIENT_ID}&` +
-        `redirect_uri=${encodeURIComponent(AUTH0_CALLBACK_URL)}&` +
+        `redirect_uri=${encodeURIComponent(callbackUrl(req))}&` +
         `scope=openid%20profile%20email&` +
         `connection=google-oauth2`;
     const from = originOf(req.get('referer'));
@@ -69,7 +79,7 @@ router.get('/callback', async (req, res) => {
     }
 
     try {
-        const { AUTH0_DOMAIN, AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET, AUTH0_CALLBACK_URL } = process.env;
+        const { AUTH0_DOMAIN, AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET } = process.env;
 
         // ----- Step 1: Exchange authorization code for tokens -----
         const tokenResponse = await axios.post(`https://${AUTH0_DOMAIN}/oauth/token`, {
@@ -77,7 +87,7 @@ router.get('/callback', async (req, res) => {
             client_id: AUTH0_CLIENT_ID,
             client_secret: AUTH0_CLIENT_SECRET,
             code,
-            redirect_uri: AUTH0_CALLBACK_URL
+            redirect_uri: callbackUrl(req)
         }, {
             headers: { 'Content-Type': 'application/json' }
         });
@@ -167,3 +177,4 @@ function getFrontendUrl() {
 }
 
 module.exports = router;
+module.exports.callbackUrl = callbackUrl;
