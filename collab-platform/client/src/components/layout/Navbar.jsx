@@ -1,5 +1,5 @@
 // src/components/layout/Navbar.jsx
-import React, { useContext } from 'react';
+import React, { useContext, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import AuthContext from '../../context/AuthContext';
 
@@ -14,6 +14,22 @@ const LINKS = [
 ];
 
 const itemClass = ({ isActive }) => `nav-item${isActive ? ' active' : ''}`;
+
+/** Switches between the classic (dark terminal) and cozy (warm, late-night café) themes. */
+function ThemeSwitch() {
+    const [theme, setTheme] = useState(() => document.documentElement.dataset.theme || 'classic');
+    const next = theme === 'cozy' ? 'classic' : 'cozy';
+    const toggle = () => {
+        document.documentElement.dataset.theme = next;
+        try { localStorage.setItem('ss-theme', next); } catch { /* storage blocked */ }
+        setTheme(next);
+    };
+    return (
+        <button className="nav-theme" onClick={toggle} aria-label={`Switch to the ${next} theme`} title={`Switch to the ${next} theme`}>
+            {theme === 'cozy' ? '☕' : '🌙'}
+        </button>
+    );
+}
 
 const Navbar = () => {
     const { isAuthenticated, logout, loading, user } = useContext(AuthContext);
@@ -36,6 +52,7 @@ const Navbar = () => {
                         ))}
                     </ul>
                     <div className="nav-user">
+                        <ThemeSwitch />
                         <NavLink to="/profile" end className={({ isActive }) => `nav-profile${isActive ? ' active' : ''}`} aria-label="Your profile">
                             <span className="nav-avatar" aria-hidden="true">{(user?.username || '?').slice(0, 1).toUpperCase()}</span>
                             <span className="nav-username">{user?.username || 'Profile'}</span>

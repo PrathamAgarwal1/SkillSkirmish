@@ -6,6 +6,7 @@ import AuthContext from '../context/AuthContext';
 import EditRoomModal from '../components/rooms/EditRoomModal';
 import { socket } from '../socket';
 import PageTitle from '../components/layout/PageTitle';
+import CozyCat from '../components/layout/CozyCat';
 
 const errMsg = (err, fallback = 'Something went wrong') => err.response?.data?.msg || err.response?.data?.reason || fallback;
 
@@ -17,6 +18,15 @@ const timeAgo = (timestamp) => {
     if (mins < 1440) return `${Math.floor(mins / 60)}h ago`;
     if (mins < 10080) return `${Math.floor(mins / 1440)}d ago`;
     return new Date(timestamp).toLocaleDateString();
+};
+
+const greeting = () => {
+    const h = new Date().getHours();
+    if (h < 5) return 'Still up';
+    if (h < 12) return 'Good morning';
+    if (h < 17) return 'Good afternoon';
+    if (h < 22) return 'Good evening';
+    return 'Late-night coding';
 };
 
 const EMPTY_ROOM = { name: '', description: '', discoverable: false, projectDescription: '', skills: '', minRating: '', capacity: '', tags: '' };
@@ -224,7 +234,7 @@ const DashboardPage = () => {
             {showCreate && <CreateRoomModal onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); fetchRooms(); fetchDashboardData(); }} />}
             {editingRoom && <EditRoomModal room={editingRoom} onClose={() => setEditingRoom(null)} onRoomUpdated={() => { setEditingRoom(null); fetchRooms(); }} />}
 
-            <PageTitle path={`~/home/${user.username}`} title={`Welcome back, ${user.username}`} sub={summary || 'Create a room to start building with others, or jump into a battle.'}>
+            <PageTitle path={`~/home/${user.username}`} title={`${greeting()}, ${user.username}`} sub={summary || 'Create a room to start building with others, or jump into a battle.'}>
                 <div style={{ display: 'flex', gap: 8 }}>
                     <Link className="ui-btn" to="/forum">Find teammates</Link>
                     <button className="ui-btn primary" onClick={() => setShowCreate(true)}>New room</button>
@@ -251,7 +261,8 @@ const DashboardPage = () => {
 
             <div className="ui-grid">
                 <div className="ui-stack">
-                    <section className="ui-card">
+                    <section className="ui-card" style={{ position: 'relative' }}>
+                        <CozyCat style={{ position: 'absolute', top: -60, left: 210, width: 112, height: 75 }} />
                         <div className="ui-card-head" style={{ flexWrap: 'wrap' }}>
                             <h2>Your rooms</h2>
                             <form onSubmit={handleSearch} className="ui-inline" role="search" style={{ maxWidth: 320, width: '100%' }}>

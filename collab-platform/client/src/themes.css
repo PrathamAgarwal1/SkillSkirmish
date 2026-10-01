@@ -1,0 +1,79 @@
+/* themes.css — site themes. The default ("classic") is the GitHub-dark look defined in the other
+   stylesheets; other themes override the shared tokens on <html data-theme="...">. */
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800&display=swap');
+
+/* ── Cozy: late-night café. Warm plum-black, lamp glow, peach + lavender ── */
+:root[data-theme='cozy'] {
+    --bg-deep: #17131a;
+    --bg-body: #17131a;
+    --bg-app: #17131a;
+    --bg-dark: #211b25;
+    --bg-card: #2a2230;
+    --bg-input: #1a151d;
+    --border-subtle: #3a3040;
+    --border-active: #8a7a86;
+    --text-bright: #fbf1e9;
+    --text-main: #e2d6cd;
+    --text-muted: #a8999f;
+    --term-blue: #c6a0f6;
+    --term-green: #a6da95;
+    --term-gold: #eed49f;
+    --term-red: #ed8796;
+    --term-purple: #c6a0f6;
+
+    --ui-accent: #f5a97f;
+    --ui-accent-hover: #f8bd96;
+    --ui-accent-ink: #2b1b14;
+    --ui-accent-glow: rgba(245, 169, 127, 0.35);
+    --ui-signal: #f5a97f;
+    --ui-success: #a6da95;
+    --ui-danger: #ed8796;
+    --ui-line: #2f2735;
+    --ui-chip: #2f2735;
+    --ui-btn-bg: #2a2230;
+    --ui-btn-ink: #f4e9e1;
+    --ui-btn-hover: #8a7a86;
+    --ui-link: #c6a0f6;
+    --ui-tab-active: #f5a97f;
+    --ui-radius-card: 18px;
+    --ui-radius-btn: 12px;
+    --ui-heading-font: 'Nunito', var(--font-sans);
+    --ui-grid-line: rgba(255, 220, 200, 0.028);
+    --ui-glow-1: rgba(245, 169, 127, 0.16);
+    --ui-glow-2: rgba(198, 160, 246, 0.11);
+    --ui-card-sheen: rgba(255, 230, 210, 0.035);
+}
+:root[data-theme='cozy'] body {
+    background-color: #17131a;
+    background-image:
+        radial-gradient(900px 600px at 0% 0%, rgba(245, 169, 127, 0.10), transparent 60%),
+        radial-gradient(800px 600px at 100% 100%, rgba(198, 160, 246, 0.07), transparent 60%);
+    background-attachment: fixed;
+}
+:root[data-theme='cozy'] .navbar-fixed { background: rgba(23, 19, 26, 0.85); border-bottom-color: #2f2735; backdrop-filter: blur(8px); }
+:root[data-theme='cozy'] .nav-item.active { background: rgba(245, 169, 127, 0.12); }
+:root[data-theme='cozy'] .nav-item.active::before { color: #f5a97f; }
+:root[data-theme='cozy'] .nav-avatar { background: rgba(198, 160, 246, 0.18); color: #c6a0f6; }
+:root[data-theme='cozy'] .ui-card { box-shadow: 0 1px 0 rgba(255, 230, 210, 0.03) inset, 0 10px 30px -18px rgba(0, 0, 0, 0.6); }
+:root[data-theme='cozy'] .ui-head h1 { font-weight: 800; letter-spacing: -0.01em; }
+:root[data-theme='cozy'] .ui-card-head h2 { font-weight: 800; }
+:root[data-theme='cozy'] .ui-tag.green { background: rgba(166, 218, 149, 0.15); color: #a6da95; }
+:root[data-theme='cozy'] .ui-tag.blue { background: rgba(198, 160, 246, 0.15); color: #c6a0f6; }
+:root[data-theme='cozy'] .ui-input:focus, :root[data-theme='cozy'] .ui-select:focus, :root[data-theme='cozy'] .ui-textarea:focus { border-color: #f5a97f; box-shadow: 0 0 0 3px rgba(245, 169, 127, 0.18); }
+:root[data-theme='cozy'] .pf-avatar { background: #3a2a33; color: #f5a97f; }
+:root[data-theme='cozy'] .pf-cover { background: radial-gradient(120% 160% at 0% 0%, rgba(245, 169, 127, 0.30), transparent 60%), radial-gradient(90% 140% at 100% 0%, rgba(198, 160, 246, 0.22), transparent 60%), #1d1720; }
+
+/* the cat only shows up in the cozy theme */
+.cozy-cat { display: none; }
+:root[data-theme='cozy'] .cozy-cat { display: block; }
+.cozy-cat-z text { animation: cozy-z 3.2s ease-in-out infinite; }
+.cozy-cat-z text + text { animation-delay: 1.1s; }
+@keyframes cozy-z { 0%, 100% { opacity: 0; transform: translateY(4px); } 40%, 60% { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .cozy-cat-z text { animation: none; } }
+:root[data-theme='cozy'] { --accent-primary: #f5a97f; --accent-glow: rgba(245, 169, 127, 0.3); }
+:root[data-theme='cozy'] .gradient-text { background: linear-gradient(90deg, #f5a97f, #c6a0f6); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+
+/* theme switch in the nav */
+.nav-theme { background: none; border: 1px solid transparent; border-radius: 8px; width: 34px; height: 34px; display: grid; place-items: center; font-size: 17px; cursor: pointer; filter: grayscale(0.2); }
+.nav-theme:hover { border-color: var(--border-subtle); filter: none; }
+.nav-theme:focus-visible { outline: 2px solid var(--ui-link); outline-offset: 2px; }

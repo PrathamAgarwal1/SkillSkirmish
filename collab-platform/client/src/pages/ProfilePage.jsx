@@ -357,8 +357,8 @@ const ProfilePage = () => {
                                         <XAxis dataKey="n" tick={{ fontSize: 12, fill: '#8b949e' }} allowDecimals={false} />
                                         <YAxis domain={[Math.max(0, Math.min(...elos) - 150), Math.max(...elos) + 150]} tick={{ fontSize: 12, fill: '#8b949e' }} width={48} />
                                         <Tooltip content={<ChartTooltip />} />
-                                        <Line type="monotone" dataKey="elo" stroke="var(--pf-line, #58a6ff)" strokeWidth={2.5}
-                                            dot={{ r: 3, fill: '#0d1117', stroke: '#58a6ff', strokeWidth: 2 }} activeDot={{ r: 6, fill: '#58a6ff', stroke: '#fff', strokeWidth: 2 }} />
+                                        <Line type="monotone" dataKey="elo" stroke="var(--ui-link)" strokeWidth={2.5}
+                                            dot={{ r: 3, fill: 'var(--bg-dark)', stroke: 'var(--ui-link)', strokeWidth: 2 }} activeDot={{ r: 6, fill: 'var(--ui-link)', stroke: '#fff', strokeWidth: 2 }} />
                                     </LineChart>
                                 </ResponsiveContainer>
                             </div>

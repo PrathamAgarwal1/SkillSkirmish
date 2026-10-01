@@ -12,6 +12,10 @@ import App from './App.jsx';
 import './index.css';
 import './modern-dark.css';
 import './ui.css';
+import './themes.css';
+
+// Site theme ('classic' or 'cozy'), chosen per browser
+try { document.documentElement.dataset.theme = localStorage.getItem('ss-theme') || 'classic'; } catch { /* storage blocked */ }
 import { AuthProvider } from './context/AuthContext.jsx';
 import axios from 'axios'; // <-- IMPORT AXIOS
 import { installNetworkResilience } from './utils/serverStatus';
