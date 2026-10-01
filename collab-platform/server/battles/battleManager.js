@@ -460,7 +460,7 @@ function finish(match, reason) {
             language: target.best.language,
             code: target.best.code,
             ...(match.engine === 'code'
-                ? { fnName: match.challenge.fn[target.best.language], inputs: match.tests.map(t => t.args), harness: match.challenge.harness, schema: match.challenge.schema }
+                ? { fnName: match.challenge.fn[target.best.language], inputs: match.tests.map(t => t.args), harness: match.challenge.harness, schema: match.challenge.schema, signature: { params: match.challenge.params, returns: match.challenge.returns, wide: !!match.challenge.wide } }
                 : { image: targetImage(match.target) })
         });
     }

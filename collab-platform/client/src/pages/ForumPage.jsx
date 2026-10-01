@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
+import PageTitle from '../components/layout/PageTitle';
 
 const ForumPage = () => {
     const [activeTab, setActiveTab] = useState('matchmake');
@@ -143,12 +144,7 @@ const ForumPage = () => {
 
     return (
         <div className="ui-page">
-            <header className="ui-head">
-                <div>
-                    <h1>Discover</h1>
-                    <p>Find people to build with, and rooms that are looking for your skills.</p>
-                </div>
-            </header>
+            <PageTitle path="~/discover" title="Discover" sub="Find people to build with, and rooms that are looking for your skills." />
 
             <div className="ui-tabs" role="tablist" aria-label="Discover">
                 {TABS.map(tab => (

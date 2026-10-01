@@ -139,7 +139,9 @@ html, body {
   white-space: nowrap;
 }
 .nav-item:hover { color: var(--text-bright); background: rgba(255, 255, 255, 0.05); }
-.nav-item.active { color: var(--text-bright); background: rgba(88, 166, 255, 0.12); }
+.nav-item { font-family: var(--font-mono); text-transform: lowercase; font-size: 0.9rem; }
+.nav-item.active { color: var(--text-bright); background: rgba(46, 160, 67, 0.10); }
+.nav-item.active::before { content: '❯ '; color: #3fb950; }
 
 .nav-user { display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0; }
 .nav-profile {
