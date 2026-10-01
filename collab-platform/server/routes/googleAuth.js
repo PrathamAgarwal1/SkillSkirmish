@@ -6,6 +6,29 @@ const router = express.Router();
 const axios = require('axios');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { isAllowedOrigin, originOf } = require('../utils/origins');
+
+// The site that started the sign-in travels through Auth0 in the OAuth "state" parameter, so the
+// user lands back on that same site — only if it's an allowed origin, never an open redirect.
+const encodeState = (origin) => Buffer.from(JSON.stringify({ r: origin, n: require('crypto').randomBytes(6).toString('hex') })).toString('base64url');
+const returnOrigin = (state) => {
+    try {
+        const { r } = JSON.parse(Buffer.from(String(state || ''), 'base64url').toString('utf8'));
+        return isAllowedOrigin(r) ? r.replace(/\/+$/, '') : null;
+    } catch {
+        return null;
+    }
+};
+
+// Where Auth0 sends the user back. A localhost AUTH0_CALLBACK_URL copied from a local .env would
+// strand deployed users on localhost, so a deployed server ignores it and uses its own public URL.
+const isLocalUrl = (url) => /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/i.test(url);
+const callbackUrl = (req) => {
+    const configured = String(process.env.AUTH0_CALLBACK_URL || '').trim();
+    const base = String(process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || `${req.protocol}://${req.get('host')}`).trim().replace(/\/+$/, '');
+    if (configured && !(isLocalUrl(configured) && !isLocalUrl(base))) return configured;
+    return `${base}/api/auth/google/callback`;
+};
 
 // ============================================================
 // @route   GET /api/auth/google/login
@@ -13,9 +36,9 @@ const User = require('../models/User');
 // @access  Public
 // ============================================================
 router.get('/login', (req, res) => {
-    const { AUTH0_DOMAIN, AUTH0_CLIENT_ID, AUTH0_CALLBACK_URL } = process.env;
+    const { AUTH0_DOMAIN, AUTH0_CLIENT_ID } = process.env;
 
-    if (!AUTH0_DOMAIN || !AUTH0_CLIENT_ID || !AUTH0_CALLBACK_URL) {
+    if (!AUTH0_DOMAIN || !AUTH0_CLIENT_ID) {
         return res.status(500).json({ msg: 'Auth0 environment variables are not configured.' });
     }
 
@@ -23,11 +46,12 @@ router.get('/login', (req, res) => {
     const authUrl = `https://${AUTH0_DOMAIN}/authorize?` +
         `response_type=code&` +
         `client_id=${AUTH0_CLIENT_ID}&` +
-        `redirect_uri=${encodeURIComponent(AUTH0_CALLBACK_URL)}&` +
+        `redirect_uri=${encodeURIComponent(callbackUrl(req))}&` +
         `scope=openid%20profile%20email&` +
         `connection=google-oauth2`;
+    const from = originOf(req.get('referer'));
 
-    res.redirect(authUrl);
+    res.redirect(isAllowedOrigin(from) ? `${authUrl}&state=${encodeState(from)}` : authUrl);
 });
 
 // ============================================================
@@ -37,24 +61,25 @@ router.get('/login', (req, res) => {
 // @access  Public (called by Auth0 redirect)
 // ============================================================
 router.get('/callback', async (req, res) => {
-    const { code, error, error_description } = req.query;
+    const { code, error, error_description, state } = req.query;
+    const front = returnOrigin(state) || getFrontendUrl();
 
     // Handle Auth0 errors (e.g. user denied consent)
     if (error) {
         console.error('Auth0 callback error:', error, error_description);
         return res.redirect(
-            `${getFrontendUrl()}/#/login?error=${encodeURIComponent(error_description || 'Google login failed')}`
+            `${front}/#/login?error=${encodeURIComponent(error_description || 'Google login failed')}`
         );
     }
 
     if (!code) {
         return res.redirect(
-            `${getFrontendUrl()}/#/login?error=${encodeURIComponent('No authorization code received')}`
+            `${front}/#/login?error=${encodeURIComponent('No authorization code received')}`
         );
     }
 
     try {
-        const { AUTH0_DOMAIN, AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET, AUTH0_CALLBACK_URL } = process.env;
+        const { AUTH0_DOMAIN, AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET } = process.env;
 
         // ----- Step 1: Exchange authorization code for tokens -----
         const tokenResponse = await axios.post(`https://${AUTH0_DOMAIN}/oauth/token`, {
@@ -62,7 +87,7 @@ router.get('/callback', async (req, res) => {
             client_id: AUTH0_CLIENT_ID,
             client_secret: AUTH0_CLIENT_SECRET,
             code,
-            redirect_uri: AUTH0_CALLBACK_URL
+            redirect_uri: callbackUrl(req)
         }, {
             headers: { 'Content-Type': 'application/json' }
         });
@@ -134,12 +159,12 @@ router.get('/callback', async (req, res) => {
         const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: 36000 });
 
         // ----- Step 5: Redirect to frontend with token -----
-        res.redirect(`${getFrontendUrl()}/#/auth/google/callback?token=${token}`);
+        res.redirect(`${front}/#/auth/google/callback?token=${token}`);
 
     } catch (err) {
         console.error('Google Auth callback error:', err.response?.data || err.message);
         res.redirect(
-            `${getFrontendUrl()}/#/login?error=${encodeURIComponent('Google authentication failed. Please try again.')}`
+            `${front}/#/login?error=${encodeURIComponent('Google authentication failed. Please try again.')}`
         );
     }
 });
@@ -148,7 +173,8 @@ router.get('/callback', async (req, res) => {
 // Helper: Get frontend URL from env or use default
 // ============================================================
 function getFrontendUrl() {
-    return process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
+    return (process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, '');
 }
 
 module.exports = router;
+module.exports.callbackUrl = callbackUrl;
