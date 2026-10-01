@@ -5,10 +5,12 @@ import { toast } from 'react-toastify';
 import AuthContext from '../context/AuthContext';
 import EditRoomModal from '../components/rooms/EditRoomModal';
 import { socket } from '../socket';
+import PageTitle from '../components/layout/PageTitle';
 
 const errMsg = (err, fallback = 'Something went wrong') => err.response?.data?.msg || err.response?.data?.reason || fallback;
 
 const timeAgo = (timestamp) => {
+    if (!timestamp || Number.isNaN(new Date(timestamp).getTime())) return '';
     const mins = Math.floor((Date.now() - new Date(timestamp)) / 60000);
     if (mins < 1) return 'just now';
     if (mins < 60) return `${mins}m ago`;
@@ -222,16 +224,12 @@ const DashboardPage = () => {
             {showCreate && <CreateRoomModal onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); fetchRooms(); fetchDashboardData(); }} />}
             {editingRoom && <EditRoomModal room={editingRoom} onClose={() => setEditingRoom(null)} onRoomUpdated={() => { setEditingRoom(null); fetchRooms(); }} />}
 
-            <header className="ui-head">
-                <div>
-                    <h1>Welcome back, {user.username}</h1>
-                    <p>{summary || 'Create a room to start building with others, or jump into a battle.'}</p>
-                </div>
+            <PageTitle path={`~/home/${user.username}`} title={`Welcome back, ${user.username}`} sub={summary || 'Create a room to start building with others, or jump into a battle.'}>
                 <div style={{ display: 'flex', gap: 8 }}>
                     <Link className="ui-btn" to="/forum">Find teammates</Link>
                     <button className="ui-btn primary" onClick={() => setShowCreate(true)}>New room</button>
                 </div>
-            </header>
+            </PageTitle>
 
             {pending.length > 0 && (
                 <section className="ui-card" style={{ marginBottom: 20, borderColor: 'rgba(56,139,253,0.45)' }} aria-label="Waiting for you">
@@ -319,19 +317,17 @@ const DashboardPage = () => {
                     <section className="ui-card">
                         <div className="ui-card-head"><h2>Recent activity</h2></div>
                         {activity.length > 0 ? (
-                            <ul className="ui-list">
+                            <ul className="ui-log">
                                 {activity.map((item, i) => (
-                                    <li key={i} className="ui-row">
-                                        <div className="ui-row-main">
-                                            <span className="ui-row-title" style={{ fontWeight: 400 }}>{item.title}</span>
-                                            {item.detail && <span className="ui-row-sub">{item.detail}</span>}
-                                        </div>
-                                        <div className="ui-row-end">
-                                            {item.ratingChange != null && (
-                                                <span className={item.ratingChange >= 0 ? 'ui-up' : 'ui-down'}>{item.ratingChange >= 0 ? '▲' : '▼'} {Math.abs(item.ratingChange)}</span>
-                                            )}
-                                            <span>{timeAgo(item.timestamp)}</span>
-                                        </div>
+                                    <li key={i}>
+                                        <time>{timeAgo(item.timestamp) || '·'}</time>
+                                        <span className="ui-log-text">
+                                            {item.title}
+                                            {item.detail && <small>{item.detail}</small>}
+                                        </span>
+                                        {item.ratingChange != null && (
+                                            <span className={`ui-log-end ${item.ratingChange >= 0 ? 'ui-up' : 'ui-down'}`}>{item.ratingChange >= 0 ? '+' : '−'}{Math.abs(item.ratingChange)}</span>
+                                        )}
                                     </li>
                                 ))}
                             </ul>

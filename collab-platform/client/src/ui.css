@@ -61,7 +61,7 @@ a.ui-row-title:hover { color: var(--term-blue); }
 .ui-field small { color: var(--text-muted); font-size: 12px; }
 .ui-inline { display: flex; gap: 8px; }
 .ui-check { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; color: var(--text-main); cursor: pointer; margin-bottom: 14px; }
-.ui-check input { margin-top: 3px; accent-color: #2ea043; }
+.ui-check input { width: auto; flex: 0 0 auto; margin: 3px 0 0; padding: 0; accent-color: #2ea043; }
 .ui-check small { display: block; color: var(--text-muted); font-size: 12px; }
 
 .ui-empty { padding: 18px 0 6px; color: var(--text-muted); font-size: 14px; line-height: 1.55; }
@@ -94,3 +94,36 @@ a.ui-row-title:hover { color: var(--term-blue); }
 .auth-submit { width: 100%; padding: 10px; font-size: 15px; margin-top: 4px; }
 .auth-error { margin-bottom: 14px; padding: 9px 12px; border-radius: 8px; border: 1px solid rgba(248, 81, 73, 0.4); background: rgba(248, 81, 73, 0.1); color: #ffa198; font-size: 14px; }
 .auth-switch { margin: 18px 0 0; text-align: center; font-size: 14px; color: var(--text-muted); }
+
+/* ── personality: terminal touches, used sparingly ── */
+.ui-page { position: relative; isolation: isolate; }
+.ui-page::before {
+    content: ''; position: absolute; z-index: -1; pointer-events: none;
+    left: 50%; top: 0; width: 100vw; height: 340px; transform: translateX(-50%);
+    background-image:
+        linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+        radial-gradient(60% 90% at 25% 0%, rgba(46, 160, 67, 0.10), transparent 70%),
+        radial-gradient(50% 80% at 85% 0%, rgba(88, 166, 255, 0.08), transparent 70%);
+    background-size: 32px 32px, 32px 32px, auto, auto;
+    mask-image: linear-gradient(to bottom, black 40%, transparent);
+}
+.ui-path { font-family: var(--font-mono); font-size: 13px; color: var(--text-muted); margin-bottom: 6px; letter-spacing: 0.2px; }
+.ui-prompt { color: #3fb950; }
+.ui-cursor { display: inline-block; width: 0.5em; height: 0.95em; margin-left: 6px; vertical-align: -0.08em; background: #3fb950; border-radius: 1px; animation: ui-blink 1.1s steps(1) infinite; }
+@keyframes ui-blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .ui-cursor { animation: none; } }
+
+.ui-card { background: linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 120px), var(--bg-dark); }
+.ui-card-head h2::before { content: '# '; font-family: var(--font-mono); font-weight: 500; color: #3fb950; }
+.ui-btn.primary:hover:not(:disabled) { box-shadow: 0 0 0 1px #2ea043, 0 0 18px rgba(46, 160, 67, 0.35); }
+.ui-num { font-variant-numeric: tabular-nums; }
+
+/* terminal-style log (recent activity) */
+.ui-log { list-style: none; margin: 0; padding: 4px 0 0; font-family: var(--font-mono); font-size: 13px; line-height: 1.5; }
+.ui-log li { display: flex; gap: 12px; padding: 6px 0; border-top: 1px dashed #21262d; min-width: 0; }
+.ui-log li:first-child { border-top: none; }
+.ui-log time { color: #6e7681; flex-shrink: 0; width: 64px; }
+.ui-log .ui-log-text { flex: 1; min-width: 0; color: var(--text-main); }
+.ui-log .ui-log-text small { display: block; color: var(--text-muted); font-size: 12px; }
+.ui-log .ui-log-end { flex-shrink: 0; }

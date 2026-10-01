@@ -1,0 +1,62 @@
+/* Profile page */
+.pf-page { max-width: 1080px; }
+
+.pf-hero { position: relative; background: var(--bg-dark); border: 1px solid var(--border-subtle); border-radius: 14px; overflow: hidden; margin-bottom: 16px; }
+.pf-cover {
+    height: 96px;
+    background:
+        radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--pf-accent) 35%, transparent), transparent 60%),
+        radial-gradient(90% 120% at 100% 0%, rgba(88, 166, 255, 0.18), transparent 60%),
+        #0b1018;
+    border-bottom: 1px solid var(--border-subtle);
+}
+.pf-hero-body { display: flex; gap: 20px; align-items: flex-start; padding: 0 24px 22px; flex-wrap: wrap; }
+.pf-avatar {
+    width: 104px; height: 104px; border-radius: 50%; margin-top: -52px; flex-shrink: 0;
+    display: grid; place-items: center; object-fit: cover;
+    background: #16263b; color: #9ecbff; font-size: 44px; font-weight: 700;
+    border: 4px solid var(--bg-dark); box-shadow: 0 0 0 2px var(--pf-accent);
+}
+.pf-id { flex: 1; min-width: 240px; padding-top: 14px; }
+.pf-id h1 { display: inline; margin: 0 10px 0 0; font-size: 28px; color: var(--text-bright); vertical-align: middle; }
+.pf-rank { display: inline-block; vertical-align: middle; padding: 2px 10px; border: 1px solid; border-radius: 999px; font-size: 13px; font-weight: 600; }
+.pf-bio { margin: 10px 0 0; font-size: 15px; line-height: 1.6; color: var(--text-main); max-width: 640px; white-space: pre-line; }
+.pf-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 12px; font-size: 14px; color: var(--text-muted); }
+.pf-meta span, .pf-meta a { display: inline-flex; align-items: center; gap: 6px; }
+.pf-meta a { color: var(--term-blue); text-decoration: none; }
+.pf-meta a:hover { text-decoration: underline; }
+.pf-links { display: flex; gap: 8px; margin-top: 14px; }
+.pf-links a { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 8px; border: 1px solid var(--border-subtle); color: var(--text-main); font-size: 16px; }
+.pf-links a:hover { color: #fff; border-color: #6e7681; }
+.pf-actions { display: flex; gap: 8px; flex-wrap: wrap; padding-top: 16px; }
+
+.pf-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
+.pf-stat { background: var(--bg-dark); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+.pf-stat-value { font-family: var(--font-mono); font-size: 26px; color: var(--text-bright); margin: 2px 0; }
+.pf-stat-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 760px) {
+    .pf-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .pf-hero-body { padding: 0 16px 18px; }
+    .pf-avatar { width: 84px; height: 84px; margin-top: -42px; font-size: 34px; }
+}
+
+.pf-skill-name { background: none; border: none; padding: 0; font: inherit; font-weight: 500; color: var(--text-bright); cursor: pointer; text-align: left; }
+.pf-skill-name:hover, .pf-skill-name[aria-pressed='true'] { color: var(--term-blue); }
+.pf-remove { padding: 2px 8px; font-size: 16px; line-height: 1; }
+
+.pf-result { flex-shrink: 0; width: 44px; text-align: center; padding: 2px 0; border-radius: 6px; font-size: 12px; font-weight: 600; background: #21262d; color: var(--text-muted); }
+.pf-result.won { background: rgba(46, 160, 67, 0.15); color: #56d364; }
+.pf-result.lost { background: rgba(248, 81, 73, 0.12); color: #ff7b72; }
+
+.pf-apps { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+.pf-app { display: flex; flex-direction: column; gap: 8px; text-decoration: none; color: inherit; transition: border-color 0.15s; }
+.pf-app:hover { border-color: #6e7681; }
+.pf-app-name { font-size: 16px; font-weight: 600; color: var(--text-bright); }
+.pf-app p { margin: 0; font-size: 14px; color: var(--text-muted); line-height: 1.5; }
+.pf-app-stats { margin-top: auto; }
+.pf-app .ui-tag { align-self: flex-start; }
+
+.pf-tip { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 8px 12px; font-size: 14px; color: var(--text-main); }
+
+.pf-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 16px; }
+.pf-form-section { margin: 6px 0 10px; font-size: 14px; color: var(--text-muted); font-weight: 600; }

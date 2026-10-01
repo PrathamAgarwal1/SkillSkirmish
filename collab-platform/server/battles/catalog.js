@@ -11,6 +11,7 @@ const { FUNCTION_TASKS, SQL_TASKS, HANDLER_TASKS, HANDLER_HARNESS } = require('.
 const { DEBUG } = require('./content/debug');
 const { TARGETS } = require('./content/css');
 const { SKILLS } = require('./content/quiz');
+const { nativeLanguages, isWide } = require('./native');
 
 const KINDS = {
     guessr: { name: 'CodeGuessr', icon: '🧭', blurb: 'Guess the language, find the bug, estimate the output. Closest guess hits harder.' },
@@ -40,8 +41,21 @@ const fnChallenge = (p, kind) => ({
     compare: p.compare || 'exact'
 });
 
+/** Algorithm puzzles can also be solved in C++ and C (compiled in the browser). */
+const algoChallenge = (p) => {
+    const ch = fnChallenge(p, 'algo');
+    const native = nativeLanguages(p);
+    if (!native.length) return ch;
+    return {
+        ...ch,
+        languages: [...ch.languages, ...native],
+        fn: { ...p.fn, cpp: p.fn.javascript, c: p.fn.javascript },
+        wide: isWide(p)
+    };
+};
+
 const CODE = new Map();
-for (const p of PROBLEMS) CODE.set(`algo:${p.id}`, fnChallenge(p, 'algo'));
+for (const p of PROBLEMS) CODE.set(`algo:${p.id}`, algoChallenge(p));
 for (const t of FUNCTION_TASKS) CODE.set(`task:${t.id}`, fnChallenge(t, 'task'));
 for (const t of SQL_TASKS) {
     CODE.set(`task:${t.id}`, {
@@ -81,6 +95,8 @@ for (const d of DEBUG) {
         title: `Fix: ${base.title}`,
         statement: `**This code has ${d.bugs} bug${d.bugs === 1 ? '' : 's'}.** Find and fix ${d.bugs === 1 ? 'it' : 'them'} so every test passes.\n\nWhat it should do: ${base.statement}`,
         starterCode: d.starter,
+        // Only the languages the buggy code is written in
+        languages: base.languages.filter(l => d.starter[l]),
         tags: ['debugging', ...(base.tags || [])]
     });
 }
