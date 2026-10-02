@@ -158,7 +158,6 @@ const HomePage = () => {
         <div className="ld">
             <section className="ld-hero">
                 <div className="ld-hero-text">
-                    <span className="ld-pill">⚔️ multiplayer coding</span>
                     <h1>Code together.<br />Battle friends.<br /><span className="ld-accent">Get better.</span><span className="ui-cursor" aria-hidden="true" /></h1>
                     <p className="ld-sub">
                         Build with your team in shared editors and voice rooms. Go head-to-head in live coding
