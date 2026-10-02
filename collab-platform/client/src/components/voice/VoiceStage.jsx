@@ -28,10 +28,10 @@ function Tile({ tile, speaking, pinned, onPin, onMenu }) {
             <div className="vc-tag">
                 {tile.screen && <span className="vc-live">LIVE</span>}
                 <span>{tile.screen ? `${member.username}'s screen` : member.username}{tile.self && !tile.screen ? ' (you)' : ''}</span>
-                {!tile.screen && (member.deafened ? <MdHeadsetOff color="#f23f43" /> : member.muted && <FaMicrophoneSlash color="#f23f43" />)}
+                {!tile.screen && (member.deafened ? <MdHeadsetOff color="var(--gh-f23f43)" /> : member.muted && <FaMicrophoneSlash color="var(--gh-f23f43)" />)}
             </div>
             <div className="vc-tile-actions" onClick={(e) => e.stopPropagation()}>
-                <button title={pinned ? 'Unpin' : 'Focus'} onClick={() => onPin(tile.id)}><FaThumbtack size={12} color={pinned ? '#5865f2' : '#fff'} /></button>
+                <button title={pinned ? 'Unpin' : 'Focus'} onClick={() => onPin(tile.id)}><FaThumbtack size={12} color={pinned ? 'var(--gh-5865f2)' : 'var(--gh-ffffff)'} /></button>
                 <button title="Full screen" onClick={() => ref.current?.requestFullscreen?.()}><FaExpand size={12} /></button>
             </div>
         </div>

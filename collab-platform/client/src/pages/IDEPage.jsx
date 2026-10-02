@@ -4,6 +4,7 @@ import axios from 'axios';
 import WindowManager from '../components/ide/WindowManager';
 import AuthContext from '../context/AuthContext';
 import FloatingCall from '../components/voice/FloatingCall';
+import { Loading } from '../components/layout/Friendly';
 
 const IDEPage = () => {
     const { projectId, roomId } = useParams();
@@ -30,7 +31,7 @@ const IDEPage = () => {
     }, [projectId]);
 
     if (loading) {
-        return <div style={{ padding: '20px' }}><h1>Loading...</h1></div>;
+        return <div className="ui-page"><Loading what="Opening the project" full /></div>;
     }
 
     if (!project) {

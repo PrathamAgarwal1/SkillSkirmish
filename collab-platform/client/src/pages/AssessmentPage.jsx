@@ -3,8 +3,10 @@ import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import AuthContext from '../context/AuthContext';
 import Editor from '@monaco-editor/react';
+import { useEditorTheme } from '../utils/theme';
 
 const AssessmentPage = () => {
+    const editorTheme = useEditorTheme();
     const { skill } = useParams();
     const { user } = useContext(AuthContext);
     const navigate = useNavigate();
@@ -301,7 +303,7 @@ const AssessmentPage = () => {
                     ['Type', sessionData ? badge.name : '—'],
                     ['Difficulty', sessionData?.difficulty || '—']
                 ].map(([label, value]) => (
-                    <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderTop: '1px solid #21262d', fontSize: 14 }}>
+                    <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderTop: '1px solid var(--gh-21262d)', fontSize: 14 }}>
                         <span className="ui-muted">{label}</span><span style={{ color: 'var(--text-bright)' }}>{value}</span>
                     </div>
                 ))}
@@ -401,7 +403,7 @@ const AssessmentPage = () => {
                             <Editor
                                 height="100%"
                                 language={getEditorLanguage()}
-                                theme="vs-dark"
+                                theme={editorTheme}
                                 value={code}
                                 onChange={(val) => setCode(val)}
                                 options={{

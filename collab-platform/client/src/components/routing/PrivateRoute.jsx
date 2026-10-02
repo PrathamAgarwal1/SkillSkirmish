@@ -3,6 +3,7 @@ import React, { useContext } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { rememberDestination } from '../../utils/afterLogin';
 import AuthContext from '../../context/AuthContext';
+import { Loading } from '../layout/Friendly';
 
 const PrivateRoute = ({ children }) => {
     const { isAuthenticated, loading } = useContext(AuthContext); // <-- Get loading state
@@ -10,7 +11,7 @@ const PrivateRoute = ({ children }) => {
 
     // While verifying the token, show a loading message
     if (loading) {
-        return <div className="container">Loading...</div>;
+        return <div className="ui-page"><Loading what="Signing you in" full /></div>;
     }
 
     // After loading, if not authenticated, redirect to login

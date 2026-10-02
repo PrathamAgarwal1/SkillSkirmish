@@ -17,17 +17,17 @@ const HtmlOutput = ({ html }) => {
         if (doc?.body) ref.current.style.height = `${Math.min(doc.body.scrollHeight + 16, 600)}px`;
     };
     const srcDoc = `<!doctype html><style>body{margin:0;font:12px system-ui;color:#ddd;background:#1e1e1e}table{border-collapse:collapse}td,th{border:1px solid #444;padding:3px 8px;text-align:right}th{background:#2d2d30}</style>${html}`;
-    return <iframe ref={ref} title="output" sandbox="allow-same-origin" srcDoc={srcDoc} onLoad={fit} style={{ width: '100%', border: 'none', height: 60, background: '#1e1e1e' }} />;
+    return <iframe ref={ref} title="output" sandbox="allow-same-origin" srcDoc={srcDoc} onLoad={fit} style={{ width: '100%', border: 'none', height: 60, background: 'var(--gh-1e1e1e)' }} />;
 };
 
 const Output = ({ o }) => {
     const pre = { margin: '4px 0', whiteSpace: 'pre-wrap', fontSize: 12, fontFamily: 'ui-monospace, monospace', overflowX: 'auto' };
-    if (o.output_type === 'stream') return <pre style={{ ...pre, color: o.name === 'stderr' ? '#d29922' : '#d4d4d4' }}>{join(o.text)}</pre>;
-    if (o.output_type === 'error') return <pre style={{ ...pre, color: '#f85149' }}>{join(o.traceback) || `${o.ename}: ${o.evalue}`}</pre>;
+    if (o.output_type === 'stream') return <pre style={{ ...pre, color: o.name === 'stderr' ? 'var(--gh-d29922)' : 'var(--gh-d4d4d4)' }}>{join(o.text)}</pre>;
+    if (o.output_type === 'error') return <pre style={{ ...pre, color: 'var(--gh-f85149)' }}>{join(o.traceback) || `${o.ename}: ${o.evalue}`}</pre>;
     const d = o.data || {};
-    if (d['image/png']) return <img alt="figure" src={`data:image/png;base64,${join(d['image/png']).trim()}`} style={{ maxWidth: '100%', background: '#fff', borderRadius: 4, margin: '4px 0' }} />;
+    if (d['image/png']) return <img alt="figure" src={`data:image/png;base64,${join(d['image/png']).trim()}`} style={{ maxWidth: '100%', background: 'var(--gh-ffffff)', borderRadius: 4, margin: '4px 0' }} />;
     if (d['text/html']) return <HtmlOutput html={join(d['text/html'])} />;
-    if (d['text/plain']) return <pre style={{ ...pre, color: '#9cdcfe' }}>{join(d['text/plain'])}</pre>;
+    if (d['text/plain']) return <pre style={{ ...pre, color: 'var(--gh-9cdcfe)' }}>{join(d['text/plain'])}</pre>;
     return null;
 };
 
@@ -53,7 +53,7 @@ const CodeArea = ({ value, onChange, onRun, autoFocus }) => {
                     requestAnimationFrame(() => { e.target.selectionStart = e.target.selectionEnd = s + 4; });
                 }
             }}
-            style={{ width: '100%', resize: 'none', overflow: 'hidden', background: '#1e1e1e', color: '#d4d4d4', border: '1px solid #3e3e42', borderRadius: 4, padding: 8, fontFamily: 'ui-monospace, Consolas, monospace', fontSize: 13, lineHeight: 1.45, boxSizing: 'border-box', outline: 'none' }}
+            style={{ width: '100%', resize: 'none', overflow: 'hidden', background: 'var(--gh-1e1e1e)', color: 'var(--gh-d4d4d4)', border: '1px solid var(--gh-3e3e42)', borderRadius: 4, padding: 8, fontFamily: 'ui-monospace, Consolas, monospace', fontSize: 13, lineHeight: 1.45, boxSizing: 'border-box', outline: 'none' }}
         />
     );
 };
@@ -161,7 +161,7 @@ const NotebookWindow = ({ projectId, file, content, onSave, requirements = [] })
         setAwaitingInput(false);
     };
 
-    const btn = { background: '#3c3c3c', color: '#ccc', border: '1px solid #555', borderRadius: 3, padding: '3px 10px', fontSize: 12, cursor: 'pointer' };
+    const btn = { background: 'var(--gh-3c3c3c)', color: 'var(--gh-cccccc)', border: '1px solid var(--gh-555555)', borderRadius: 3, padding: '3px 10px', fontSize: 12, cursor: 'pointer' };
     const small = { ...btn, padding: '1px 6px', fontSize: 11 };
 
     return (
@@ -171,24 +171,24 @@ const NotebookWindow = ({ projectId, file, content, onSave, requirements = [] })
                 <h3>
                     <span className="window-title-icon">📓</span>
                     {file?.name}
-                    {dirty && <span style={{ color: '#f48771' }}>●</span>}
-                    <span style={{ fontSize: 11, color: '#8b949e', fontWeight: 400 }}>Python in your browser</span>
+                    {dirty && <span style={{ color: 'var(--gh-f48771)' }}>●</span>}
+                    <span style={{ fontSize: 11, color: 'var(--gh-8b949e)', fontWeight: 400 }}>Python in your browser</span>
                 </h3>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    {status && <span style={{ fontSize: 11, color: '#d29922', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{status}</span>}
+                    {status && <span style={{ fontSize: 11, color: 'var(--gh-d29922)', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{status}</span>}
                     <button style={btn} onClick={runAll} disabled={!!running} title="Run every cell from the top">⏵⏵ Run all</button>
                     {running
-                        ? <button style={{ ...btn, background: '#c74c3c', color: '#fff' }} onClick={() => python.stop()}>◼ Stop</button>
+                        ? <button style={{ ...btn, background: 'var(--gh-c74c3c)', color: 'var(--gh-ffffff)' }} onClick={() => python.stop()}>◼ Stop</button>
                         : <button style={btn} onClick={restart} title="Clear all variables">↻ Restart</button>}
-                    <button style={{ ...btn, background: '#0e639c', color: '#fff' }} onClick={save} title="Save (Ctrl+S)">💾 Save</button>
+                    <button style={{ ...btn, background: 'var(--gh-0e639c)', color: 'var(--gh-ffffff)' }} onClick={save} title="Save (Ctrl+S)">💾 Save</button>
                 </div>
             </div>
             <div className="window-content" style={{ padding: '12px 16px' }}>
-                {invalid && <div style={{ color: '#f85149', fontSize: 12, marginBottom: 8 }}>This file isn't a valid notebook. Saving will replace it with the cells below.</div>}
+                {invalid && <div style={{ color: 'var(--gh-f85149)', fontSize: 12, marginBottom: 8 }}>This file isn't a valid notebook. Saving will replace it with the cells below.</div>}
                 {nb.cells.map((cell, i) => (
-                    <div key={cell.id || i} style={{ marginBottom: 14, borderLeft: `3px solid ${running === cell.id ? '#d29922' : 'transparent'}`, paddingLeft: 8 }}>
+                    <div key={cell.id || i} style={{ marginBottom: 14, borderLeft: `3px solid ${running === cell.id ? 'var(--gh-d29922)' : 'transparent'}`, paddingLeft: 8 }}>
                         <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 3 }}>
-                            <span style={{ fontSize: 11, color: '#8b949e', fontFamily: 'monospace', width: 52 }}>
+                            <span style={{ fontSize: 11, color: 'var(--gh-8b949e)', fontFamily: 'monospace', width: 52 }}>
                                 {cell.cell_type === 'code' ? `[${running === cell.id ? '*' : cell.execution_count ?? ' '}]` : 'md'}
                             </span>
                             {cell.cell_type === 'code' && <button style={small} onClick={() => runCell(cell.id)} disabled={!!running} title="Run (Shift+Enter)">▶</button>}
@@ -198,7 +198,7 @@ const NotebookWindow = ({ projectId, file, content, onSave, requirements = [] })
                             <button style={small} onClick={() => move(i, 1)} title="Move down">↓</button>
                             <button style={small} onClick={() => insertAfter(i, 'code')} title="Add code cell below">+ Code</button>
                             <button style={small} onClick={() => insertAfter(i, 'markdown')} title="Add text cell below">+ Text</button>
-                            <button style={{ ...small, color: '#f85149' }} onClick={() => remove(cell.id)} title="Delete cell">✕</button>
+                            <button style={{ ...small, color: 'var(--gh-f85149)' }} onClick={() => remove(cell.id)} title="Delete cell">✕</button>
                         </div>
                         {cell.cell_type === 'code' && (
                             <>
@@ -212,7 +212,7 @@ const NotebookWindow = ({ projectId, file, content, onSave, requirements = [] })
                                     {awaitingInput && running === cell.id && (
                                         <div style={{ display: 'flex', gap: 6, margin: '4px 0' }}>
                                             <input autoFocus value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && sendInput()}
-                                                placeholder="input()" style={{ flex: 1, background: '#1e1e1e', color: '#ddd', border: '1px solid #0e639c', borderRadius: 3, padding: '4px 8px', fontFamily: 'monospace' }} />
+                                                placeholder="input()" style={{ flex: 1, background: 'var(--gh-1e1e1e)', color: 'var(--gh-dddddd)', border: '1px solid var(--gh-0e639c)', borderRadius: 3, padding: '4px 8px', fontFamily: 'monospace' }} />
                                             <button style={btn} onClick={sendInput}>Send</button>
                                         </div>
                                     )}
@@ -221,14 +221,14 @@ const NotebookWindow = ({ projectId, file, content, onSave, requirements = [] })
                         )}
                         {cell.cell_type === 'markdown' && (editingMd === cell.id
                             ? <CodeArea value={sourceText(cell)} autoFocus onChange={(v) => updateCell(cell.id, c => withSource(c, v))} onRun={() => setEditingMd(null)} />
-                            : <div className="nb-markdown" onDoubleClick={() => setEditingMd(cell.id)} style={{ color: '#ddd', fontSize: 14, lineHeight: 1.55, cursor: 'text' }}>
+                            : <div className="nb-markdown" onDoubleClick={() => setEditingMd(cell.id)} style={{ color: 'var(--gh-dddddd)', fontSize: 14, lineHeight: 1.55, cursor: 'text' }}>
                                 <Markdown>{sourceText(cell) || '*Empty text cell. Double-click to edit.*'}</Markdown>
                             </div>)}
-                        {cell.cell_type === 'raw' && <pre style={{ color: '#8b949e' }}>{sourceText(cell)}</pre>}
+                        {cell.cell_type === 'raw' && <pre style={{ color: 'var(--gh-8b949e)' }}>{sourceText(cell)}</pre>}
                     </div>
                 ))}
                 {nb.cells.length === 0 && <button style={btn} onClick={() => insertAfter(-1, 'code')}>+ Add a code cell</button>}
-                <div style={{ fontSize: 11, color: '#6e7681', marginTop: 8 }}>
+                <div style={{ fontSize: 11, color: 'var(--gh-6e7681)', marginTop: 8 }}>
                     Shift+Enter runs a cell · Runs with Pyodide in your browser: pandas, NumPy, scikit-learn, SciPy, matplotlib and pure-Python packages work; PyTorch/TensorFlow don't.
                 </div>
             </div>

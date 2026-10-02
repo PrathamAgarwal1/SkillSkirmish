@@ -187,7 +187,7 @@ const AIAssessmentModal = ({ onClose, userSkills }) => {
             <div className="question-container">
               <div className="chat-message bot">
                 {currentQuestion.question}
-                <span style={{ fontSize: '0.7rem', marginLeft: 10, color: '#888', textTransform: 'uppercase' }}>
+                <span style={{ fontSize: '0.7rem', marginLeft: 10, color: 'var(--gh-888888)', textTransform: 'uppercase' }}>
                   [{currentQuestion.difficulty}]
                 </span>
               </div>

@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import PageTitle from '../components/layout/PageTitle';
+import { Loading, EmptyState } from '../components/layout/Friendly';
 
 const ForumPage = () => {
     const [activeTab, setActiveTab] = useState('matchmake');
@@ -217,9 +218,9 @@ const ForumPage = () => {
 
             {activeTab === 'discover' && (
                 <>
-                    {discoverLoading && <p className="ui-muted">Finding rooms that fit your skills…</p>}
+                    {discoverLoading && <Loading what="Finding rooms that fit your skills" />}
                     {!discoverLoading && discoverLoaded && recommendedRooms.length === 0 && (
-                        <div className="ui-card"><div className="ui-empty" style={{ paddingTop: 6 }}>No rooms are looking for people right now. When someone creates a room with "Let people find this room" turned on, it shows up here.</div></div>
+                        <div className="ui-card"><EmptyState title="No open rooms right now" action={{ label: 'Create a room', to: '/dashboard' }}>When someone creates a room with "Let people find this room" turned on, it shows up here. You could be the first.</EmptyState></div>
                     )}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
                         {recommendedRooms.map(room => (

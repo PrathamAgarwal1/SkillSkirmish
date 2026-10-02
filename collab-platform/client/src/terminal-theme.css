@@ -1,26 +1,26 @@
 :root {
     /* --- Kuber / Developer-Core Palette --- */
-    --bg-deep: #050505;
-    --bg-dark: #0d1117;
+    --bg-deep: var(--gh-050505);
+    --bg-dark: var(--gh-0d1117);
     /* GitHub Dark */
-    --bg-card: #161b22;
-    --bg-input: #010409;
+    --bg-card: var(--gh-161b22);
+    --bg-input: var(--gh-010409);
 
-    --border-subtle: #30363d;
-    --border-active: #8b949e;
+    --border-subtle: var(--gh-30363d);
+    --border-active: var(--gh-8b949e);
 
     /* Terminal Accents */
-    --term-green: #238636;
+    --term-green: var(--gh-238636);
     /* GitHub Green */
-    --term-blue: #58a6ff;
-    --term-purple: #bc8cff;
-    --term-red: #da3633;
-    --term-gold: #d29922;
+    --term-blue: var(--gh-58a6ff);
+    --term-purple: var(--gh-bc8cff);
+    --term-red: var(--gh-da3633);
+    --term-gold: var(--gh-d29922);
 
     /* Text */
-    --text-main: #c9d1d9;
-    --text-muted: #8b949e;
-    --text-bright: #f0f6fc;
+    --text-main: var(--gh-c9d1d9);
+    --text-muted: var(--gh-8b949e);
+    --text-bright: var(--gh-f0f6fc);
 
     /* Fonts */
     --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
@@ -28,7 +28,7 @@
 
     /* Effects */
     --shadow-term: 0 0 10px rgba(0, 0, 0, 0.5);
-    --glow-text: 0 0 4px rgba(88, 166, 255, 0.4);
+    --glow-text: 0 0 4px color-mix(in srgb, var(--gh-58a6ff) 40%, transparent);
 
     --radius-sm: 4px;
     --radius-md: 6px;

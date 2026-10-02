@@ -42,15 +42,15 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
 
     const getLogColor = (logType) => {
         const colorMap = {
-            'error': '#f48771',
-            'warning': '#dcdcaa',
-            'success': '#6a9955',
-            'info': '#cccccc',
-            'input': '#58a6ff',
-            'command': '#c586c0',
-            'system': '#569cd6'
+            'error': 'var(--gh-f48771)',
+            'warning': 'var(--gh-dcdcaa)',
+            'success': 'var(--gh-6a9955)',
+            'info': 'var(--gh-cccccc)',
+            'input': 'var(--gh-58a6ff)',
+            'command': 'var(--gh-c586c0)',
+            'system': 'var(--gh-569cd6)'
         };
-        return colorMap[logType] || '#cccccc';
+        return colorMap[logType] || 'var(--gh-cccccc)';
     };
 
     const handleKeyDown = async (e) => {
@@ -122,12 +122,12 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
 
     return (
         <div className="ide-window" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <div className="window-header" style={{ backgroundColor: '#2d2d2d', borderBottom: '1px solid #3e3e42' }}>
+            <div className="window-header" style={{ backgroundColor: 'var(--gh-2d2d2d)', borderBottom: '1px solid var(--gh-3e3e42)' }}>
                 <h3>
                     <span className="window-title-icon">💻</span>
                     Terminal
-                    {isRunning && <span style={{ marginLeft: '8px', color: '#6a9955', fontSize: '11px' }}>● Process Running</span>}
-                    {!isRunning && <span style={{ marginLeft: '8px', color: '#569cd6', fontSize: '11px' }}>● Shell Ready</span>}
+                    {isRunning && <span style={{ marginLeft: '8px', color: 'var(--gh-6a9955)', fontSize: '11px' }}>● Process Running</span>}
+                    {!isRunning && <span style={{ marginLeft: '8px', color: 'var(--gh-569cd6)', fontSize: '11px' }}>● Shell Ready</span>}
                 </h3>
                 <div className="window-controls" style={{ display: 'flex', gap: '4px' }}>
                     {!collapsed && onClear && (
@@ -145,7 +145,7 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
                             className="window-btn"
                             onClick={onToggleCollapse}
                             title={collapsed ? "Expand Terminal" : "Collapse Terminal"}
-                            style={{ color: '#999', fontSize: '12px', fontWeight: 'bold' }}
+                            style={{ color: 'var(--gh-999999)', fontSize: '12px', fontWeight: 'bold' }}
                         >
                             {collapsed ? '▼' : '▲'}
                         </button>
@@ -161,11 +161,11 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
                 alignItems: 'center',
                 gap: '8px',
                 padding: '6px 10px',
-                backgroundColor: '#323233',
-                borderBottom: '1px solid #3e3e42',
+                backgroundColor: 'var(--gh-323233)',
+                borderBottom: '1px solid var(--gh-3e3e42)',
                 fontSize: '12px'
             }}>
-                <span style={{ color: '#999', whiteSpace: 'nowrap' }}>🔗 GitHub:</span>
+                <span style={{ color: 'var(--gh-999999)', whiteSpace: 'nowrap' }}>🔗 GitHub:</span>
                 {showGitConfig ? (
                     <>
                         <input
@@ -176,9 +176,9 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
                             style={{
                                 flex: 1,
                                 padding: '4px 6px',
-                                backgroundColor: '#1e1e1e',
-                                border: '1px solid #444',
-                                color: '#e0e0e0',
+                                backgroundColor: 'var(--gh-1e1e1e)',
+                                border: '1px solid var(--gh-444444)',
+                                color: 'var(--gh-e0e0e0)',
                                 fontSize: 'inherit',
                                 outline: 'none',
                                 borderRadius: '3px'
@@ -188,8 +188,8 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
                             onClick={handleSaveGithubLink}
                             style={{
                                 padding: '2px 8px',
-                                backgroundColor: '#007acc',
-                                color: '#fff',
+                                backgroundColor: 'var(--gh-007acc)',
+                                color: 'var(--gh-ffffff)',
                                 border: 'none',
                                 borderRadius: '3px',
                                 cursor: 'pointer',
@@ -202,8 +202,8 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
                             onClick={() => setShowGitConfig(false)}
                             style={{
                                 padding: '2px 8px',
-                                backgroundColor: '#444',
-                                color: '#999',
+                                backgroundColor: 'var(--gh-444444)',
+                                color: 'var(--gh-999999)',
                                 border: 'none',
                                 borderRadius: '3px',
                                 cursor: 'pointer',
@@ -216,7 +216,7 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
                 ) : (
                     <>
                         <span style={{ 
-                            color: githubLink ? '#6a9955' : '#999',
+                            color: githubLink ? 'var(--gh-6a9955)' : 'var(--gh-999999)',
                             flex: 1,
                             whiteSpace: 'nowrap',
                             overflow: 'hidden',
@@ -229,9 +229,9 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
                             title="Configure GitHub repository"
                             style={{
                                 padding: '2px 6px',
-                                backgroundColor: '#333',
-                                color: '#58a6ff',
-                                border: '1px solid #444',
+                                backgroundColor: 'var(--gh-333333)',
+                                color: 'var(--gh-58a6ff)',
+                                border: '1px solid var(--gh-444444)',
                                 borderRadius: '3px',
                                 cursor: 'pointer',
                                 fontSize: '10px'
@@ -245,9 +245,9 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
                                 title={hasToken ? 'Access token saved in this browser. Click to change or remove it.' : 'Add an access token to push and to clone private repositories'}
                                 style={{
                                     padding: '2px 6px',
-                                    backgroundColor: '#333',
-                                    color: hasToken ? '#6a9955' : '#d7ba7d',
-                                    border: '1px solid #444',
+                                    backgroundColor: 'var(--gh-333333)',
+                                    color: hasToken ? 'var(--gh-6a9955)' : 'var(--gh-d7ba7d)',
+                                    border: '1px solid var(--gh-444444)',
                                     borderRadius: '3px',
                                     cursor: 'pointer',
                                     fontSize: '10px'
@@ -261,9 +261,9 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
             </div>
 
             {browserGit && editingToken && (
-                <div style={{ padding: '8px 10px', backgroundColor: '#2a2a2b', borderBottom: '1px solid #3e3e42', fontSize: '12px', color: '#bbb' }}>
+                <div style={{ padding: '8px 10px', backgroundColor: 'var(--gh-2a2a2b)', borderBottom: '1px solid var(--gh-3e3e42)', fontSize: '12px', color: 'var(--gh-bbbbbb)' }}>
                     <div style={{ marginBottom: '6px', lineHeight: 1.5 }}>
-                        Paste a GitHub <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer" style={{ color: '#58a6ff' }}>fine-grained token</a> with
+                        Paste a GitHub <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer" style={{ color: 'var(--gh-58a6ff)' }}>fine-grained token</a> with
                         {' '}<b>Contents: Read and write</b> for your repo (or a classic token with the <b>repo</b> scope).
                         It stays in this browser and is only sent to GitHub.
                     </div>
@@ -278,11 +278,11 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
                             onChange={(e) => setTokenInput(e.target.value)}
                             placeholder={hasToken ? '•••••••• (saved; paste a new one to replace)' : 'github_pat_… or ghp_…'}
                             aria-label="Git access token"
-                            style={{ flex: 1, padding: '4px 6px', backgroundColor: '#1e1e1e', border: '1px solid #444', color: '#e0e0e0', borderRadius: '3px', fontSize: 'inherit' }}
+                            style={{ flex: 1, padding: '4px 6px', backgroundColor: 'var(--gh-1e1e1e)', border: '1px solid var(--gh-444444)', color: 'var(--gh-e0e0e0)', borderRadius: '3px', fontSize: 'inherit' }}
                         />
-                        <button type="submit" disabled={!tokenInput.trim()} style={{ padding: '2px 10px', backgroundColor: '#007acc', color: '#fff', border: 'none', borderRadius: '3px', cursor: 'pointer', fontSize: 'inherit' }}>Save</button>
-                        {hasToken && <button type="button" onClick={() => saveToken('')} style={{ padding: '2px 10px', backgroundColor: '#5a1d1d', color: '#f48771', border: 'none', borderRadius: '3px', cursor: 'pointer', fontSize: 'inherit' }}>Remove</button>}
-                        <button type="button" onClick={() => setEditingToken(false)} style={{ padding: '2px 10px', backgroundColor: '#444', color: '#999', border: 'none', borderRadius: '3px', cursor: 'pointer', fontSize: 'inherit' }}>Close</button>
+                        <button type="submit" disabled={!tokenInput.trim()} style={{ padding: '2px 10px', backgroundColor: 'var(--gh-007acc)', color: 'var(--gh-ffffff)', border: 'none', borderRadius: '3px', cursor: 'pointer', fontSize: 'inherit' }}>Save</button>
+                        {hasToken && <button type="button" onClick={() => saveToken('')} style={{ padding: '2px 10px', backgroundColor: 'var(--gh-5a1d1d)', color: 'var(--gh-f48771)', border: 'none', borderRadius: '3px', cursor: 'pointer', fontSize: 'inherit' }}>Remove</button>}
+                        <button type="button" onClick={() => setEditingToken(false)} style={{ padding: '2px 10px', backgroundColor: 'var(--gh-444444)', color: 'var(--gh-999999)', border: 'none', borderRadius: '3px', cursor: 'pointer', fontSize: 'inherit' }}>Close</button>
                     </form>
                 </div>
             )}
@@ -293,8 +293,8 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
                     display: 'flex',
                     gap: '4px',
                     padding: '4px 10px',
-                    backgroundColor: '#252526',
-                    borderBottom: '1px solid #333',
+                    backgroundColor: 'var(--gh-252526)',
+                    borderBottom: '1px solid var(--gh-333333)',
                     flexWrap: 'wrap'
                 }}>
                     {quickCommands.map((qc) => (
@@ -304,16 +304,16 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
                             style={{
                                 padding: '2px 8px',
                                 fontSize: '11px',
-                                backgroundColor: '#333',
-                                color: '#9cdcfe',
-                                border: '1px solid #444',
+                                backgroundColor: 'var(--gh-333333)',
+                                color: 'var(--gh-9cdcfe)',
+                                border: '1px solid var(--gh-444444)',
                                 borderRadius: '3px',
                                 cursor: 'pointer',
                                 fontFamily: 'Consolas, monospace',
                                 transition: 'background 0.15s'
                             }}
-                            onMouseEnter={(e) => e.target.style.backgroundColor = '#444'}
-                            onMouseLeave={(e) => e.target.style.backgroundColor = '#333'}
+                            onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--gh-444444)'}
+                            onMouseLeave={(e) => e.target.style.backgroundColor = 'var(--gh-333333)'}
                             title={`Run: ${qc.cmd}`}
                         >
                             {qc.label}
@@ -324,8 +324,8 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
 
             <div className="window-content" onClick={handleTerminalClick} style={{
                 flex: 1,
-                backgroundColor: '#1e1e1e',
-                color: '#cccccc',
+                backgroundColor: 'var(--gh-1e1e1e)',
+                color: 'var(--gh-cccccc)',
                 fontFamily: 'Consolas, "Courier New", monospace',
                 fontSize: '13px',
                 overflowY: 'auto',
@@ -335,20 +335,20 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
             }}>
                 <div className="terminal-output">
                     {logs.length === 0 ? (
-                        <div style={{ color: '#666', fontSize: '12px' }}>
-                            <div style={{ color: '#569cd6', marginBottom: '4px' }}>
+                        <div style={{ color: 'var(--gh-666666)', fontSize: '12px' }}>
+                            <div style={{ color: 'var(--gh-569cd6)', marginBottom: '4px' }}>
                                 {shortDir} $
                             </div>
                             <div style={{ opacity: 0.7, marginBottom: '8px' }}>
                                 Terminal ready. Type commands below or use the quick buttons.
                             </div>
-                            <div style={{ marginTop: '8px', padding: '8px', backgroundColor: '#1a1a1a', borderRadius: '3px', borderLeft: '3px solid #569cd6', fontSize: '11px', opacity: 0.8 }}>
-                                <div style={{ marginBottom: '4px', color: '#4ec9b0', fontWeight: 'bold' }}>📚 Available Commands:</div>
+                            <div style={{ marginTop: '8px', padding: '8px', backgroundColor: 'var(--gh-1a1a1a)', borderRadius: '3px', borderLeft: '3px solid var(--gh-569cd6)', fontSize: '11px', opacity: 0.8 }}>
+                                <div style={{ marginBottom: '4px', color: 'var(--gh-4ec9b0)', fontWeight: 'bold' }}>📚 Available Commands:</div>
                                 <div>✓ Git: clone, init, add, commit, push, pull, status, log</div>
                                 <div>✓ NPM: install, start, run, test, build</div>
                                 <div>✓ Node: node file.js, node -e "code"</div>
                                 <div>✓ File: ls/dir, cd, mkdir, cp, rm, cat</div>
-                                <div style={{ marginTop: '4px', color: '#dcdcaa' }}>
+                                <div style={{ marginTop: '4px', color: 'var(--gh-dcdcaa)' }}>
                                     💡 Set GitHub link above to quick-clone repos!
                                 </div>
                             </div>
@@ -373,11 +373,11 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
                 </div>
 
                 {/* Input line with directory prompt */}
-                <div className="terminal-input-line" style={{ display: 'flex', alignItems: 'flex-start', marginTop: '5px', paddingTop: '5px', borderTop: '1px solid #333' }}>
-                    <span style={{ color: '#569cd6', marginRight: '4px', marginTop: '2px', flexShrink: 0, fontSize: '12px' }}>
+                <div className="terminal-input-line" style={{ display: 'flex', alignItems: 'flex-start', marginTop: '5px', paddingTop: '5px', borderTop: '1px solid var(--gh-333333)' }}>
+                    <span style={{ color: 'var(--gh-569cd6)', marginRight: '4px', marginTop: '2px', flexShrink: 0, fontSize: '12px' }}>
                         {shortDir}
                     </span>
-                    <span style={{ color: isRunning ? '#6a9955' : '#58a6ff', marginRight: '6px', marginTop: '2px', flexShrink: 0 }}>
+                    <span style={{ color: isRunning ? 'var(--gh-6a9955)' : 'var(--gh-58a6ff)', marginRight: '6px', marginTop: '2px', flexShrink: 0 }}>
                         {isRunning ? '>' : '$'}
                     </span>
                     <input
@@ -391,7 +391,7 @@ const TerminalWindow = ({ logs = [], onInput, onClear, isRunning, onCommand, pro
                             flex: 1,
                             backgroundColor: 'transparent',
                             border: 'none',
-                            color: '#e0e0e0',
+                            color: 'var(--gh-e0e0e0)',
                             outline: 'none',
                             fontFamily: 'inherit',
                             fontSize: 'inherit',
