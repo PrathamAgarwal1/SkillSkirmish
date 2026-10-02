@@ -9,8 +9,7 @@
 
 /* hero */
 .ld-hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 32px; align-items: center; min-height: calc(100vh - 70px); padding: 40px 0 56px; }
-.ld-pill { display: inline-block; padding: 5px 14px; border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--ui-signal); background: color-mix(in srgb, var(--ui-signal) 12%, transparent); border: 1px solid color-mix(in srgb, var(--ui-signal) 35%, transparent); }
-.ld-hero h1 { margin: 18px 0 18px; font-family: var(--ui-heading-font); font-size: clamp(40px, 5.4vw, 66px); line-height: 1.04; font-weight: 800; letter-spacing: -0.03em; color: var(--text-bright); }
+.ld-hero h1 { margin: 0 0 18px; font-family: var(--ui-heading-font); font-size: clamp(40px, 5.4vw, 66px); line-height: 1.04; font-weight: 800; letter-spacing: -0.03em; color: var(--text-bright); }
 .ld-accent { background: linear-gradient(90deg, var(--ui-signal), var(--ui-link)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
 .ld-sub { margin: 0 0 26px; font-size: 18px; line-height: 1.65; color: var(--text-muted); max-width: 520px; }
 .ld-ctas { display: flex; gap: 10px; flex-wrap: wrap; }
