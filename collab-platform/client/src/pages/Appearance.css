@@ -1,0 +1,49 @@
+/* Appearance page */
+.ap-page { max-width: 1120px; }
+.ap-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ap-section { margin-bottom: 20px; }
+.ap-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
+.ap-grid .ap-section { margin-bottom: 0; }
+@media (max-width: 900px) { .ap-grid { grid-template-columns: minmax(0, 1fr); } }
+.ap-grid + .ap-section { margin-top: 20px; }
+
+.ap-presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.ap-preset { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 12px; border: 2px solid; border-radius: 12px; cursor: pointer; text-align: left; font: inherit; }
+.ap-preset b { font-size: 15px; }
+.ap-preset small { font-size: 12px; line-height: 1.4; }
+.ap-preset.on { box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-signal) 30%, transparent); }
+.ap-swatches { display: flex; gap: 4px; margin-bottom: 6px; }
+.ap-swatches i { width: 16px; height: 16px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(127, 127, 127, 0.35); }
+
+.ap-colors { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; margin-top: 6px; }
+.ap-color { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border: 1px solid var(--ui-line); border-radius: 10px; min-width: 0; }
+.ap-color input[type='color'], .ap-pal input[type='color'] { width: 34px; height: 34px; padding: 0; border: 1px solid var(--border-subtle); border-radius: 8px; background: none; cursor: pointer; flex-shrink: 0; }
+.ap-color-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.ap-color-main span { font-size: 13px; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ap-hex { width: 90px; padding: 0; background: none; border: none; font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
+.ap-hex:focus { outline: none; color: var(--text-bright); }
+
+.ap-art-stage { display: flex; align-items: center; justify-content: center; min-height: 110px; margin: 4px 0 10px; border-radius: 12px; background: var(--bg-input); }
+.ap-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.ap-chips button, .ap-seg button { background: var(--ui-btn-bg); color: var(--ui-btn-ink); border: 1px solid var(--border-subtle); border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+.ap-chips button.on, .ap-seg button.on { background: var(--ui-accent); border-color: var(--ui-accent-hover); color: var(--ui-accent-ink); }
+
+.ap-option { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--ui-line); flex-wrap: wrap; }
+.ap-option:first-of-type { border-top: none; }
+.ap-option > span { font-size: 14px; color: var(--text-main); }
+.ap-seg { display: flex; gap: 4px; flex-wrap: wrap; }
+
+.ap-sample { margin-top: 6px; padding: 14px; border: 1px solid var(--border-subtle); background: var(--bg-input); display: grid; gap: 6px; font-size: 14px; }
+.ap-sample code { font-family: var(--font-mono); color: var(--ui-link); }
+
+details > summary { cursor: pointer; list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+.ap-summary { display: inline; margin: 0; font-size: 17px; color: var(--text-bright); font-family: var(--ui-heading-font); }
+.ap-summary::before { content: '▸ '; color: var(--ui-signal); }
+details[open] .ap-summary::before { content: '▾ '; }
+.ap-palette { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.ap-pal { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border: 1px solid var(--ui-line); border-radius: 8px; }
+.ap-pal.changed { border-color: var(--ui-signal); }
+.ap-pal code { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); flex: 1; }
+.ap-css { font-family: var(--font-mono); font-size: 13px; line-height: 1.5; }
+.ap-section p code, .ap-section > p code { font-family: var(--font-mono); font-size: 12px; padding: 1px 5px; border-radius: 4px; background: var(--bg-input); }

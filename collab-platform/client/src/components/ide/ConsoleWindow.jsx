@@ -8,11 +8,11 @@ const ConsoleWindow = ({ logs = [], onClearLogs, isRunning, collapsed, onToggleC
     }, [logs]);
 
     const getLogColor = (log) => {
-        if (log.type === 'error') return '#f48771';
-        if (log.type === 'warning') return '#dcdcaa';
-        if (log.type === 'success') return '#6a9955';
-        if (log.type === 'info') return '#cccccc';
-        return '#cccccc';
+        if (log.type === 'error') return 'var(--gh-f48771)';
+        if (log.type === 'warning') return 'var(--gh-dcdcaa)';
+        if (log.type === 'success') return 'var(--gh-6a9955)';
+        if (log.type === 'info') return 'var(--gh-cccccc)';
+        return 'var(--gh-cccccc)';
     };
 
     const getLogClass = (log) => {
@@ -29,7 +29,7 @@ const ConsoleWindow = ({ logs = [], onClearLogs, isRunning, collapsed, onToggleC
                 <h3>
                     <span className="window-title-icon">⚙️</span>
                     Project Console
-                    {isRunning && <span style={{ marginLeft: '8px', color: '#6a9955', fontSize: '11px' }}>● Running</span>}
+                    {isRunning && <span style={{ marginLeft: '8px', color: 'var(--gh-6a9955)', fontSize: '11px' }}>● Running</span>}
                 </h3>
                 <div className="window-controls">
                     {!collapsed && (
@@ -42,7 +42,7 @@ const ConsoleWindow = ({ logs = [], onClearLogs, isRunning, collapsed, onToggleC
                             className="window-btn"
                             onClick={onToggleCollapse}
                             title={collapsed ? "Expand Console" : "Collapse Console"}
-                            style={{ color: '#999', fontSize: '12px', fontWeight: 'bold' }}
+                            style={{ color: 'var(--gh-999999)', fontSize: '12px', fontWeight: 'bold' }}
                         >
                             {collapsed ? '▼' : '▲'}
                         </button>

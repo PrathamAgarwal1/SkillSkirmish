@@ -1,6 +1,7 @@
 // battle/CssArena.jsx — recreate the target picture in HTML/CSS; live match %, compare slider.
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Editor from '@monaco-editor/react';
+import { useEditorTheme } from '../utils/theme';
 import { socket } from '../socket';
 import { scoreCss, paint, W, H } from './cssRender';
 import { emit } from './useMatch';
@@ -22,6 +23,7 @@ const STARTER = `<div></div>
 const storeKey = (matchId) => `ss-battle-${matchId}-css`;
 
 export default function CssArena({ m, myId }) {
+    const editorTheme = useEditorTheme();
     const { state } = m;
     const target = state.target;
     const matchId = state.matchId;
@@ -124,7 +126,7 @@ export default function CssArena({ m, myId }) {
                             language="html"
                             value={code}
                             onChange={onEdit}
-                            theme="vs-dark"
+                            theme={editorTheme}
                             options={{ minimap: { enabled: false }, fontSize: 14, tabSize: 2, scrollBeyondLastLine: false, automaticLayout: true, padding: { top: 10 } }}
                         />
                     </div>

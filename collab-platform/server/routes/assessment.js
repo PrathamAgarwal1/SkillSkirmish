@@ -4,7 +4,8 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const AssessmentSession = require('../models/AssessmentSession');
 const User = require('../models/User');
-const { generateJSON, evaluateSubjectiveWithAI } = require('../utils/aiHelper');
+const { evaluateSubjectiveWithAI } = require('../utils/aiHelper');
+const bank = require('../questions/bank');
 
 // Drop stale unique index on 'user' if it exists (legacy schema had unique:true)
 (async () => {
@@ -27,7 +28,6 @@ const POOL_SIZE = 20;
 const K_PROVISIONAL = 40;
 const K_DEFAULT = 20;
 const K_TOP = 10;
-const GENERATE_RETRY_LIMIT = 4;
 
 // --- Helpers ---
 function getKFactor(matchesPlayed, elo) {
@@ -136,112 +136,64 @@ function buildDynamicDifficultyPlan(userElo) {
 }
 
 /**
- * Generate a question of a requiredType while avoiding duplicates.
+ * Practice-only question for when the bank has nothing and the AI is unavailable. isFallback keeps
+ * it out of the ELO calculation so an outage can't be farmed for rating.
  */
-async function generateQuestion(skill, currentElo, requiredType, avoidList = [], targetElo = null) {
-  const effectiveElo = currentElo || 1200;
-  let lastErr = null;
-  const qElo = targetElo || effectiveElo;
-  const diffLabel = getDynamicLabel(qElo, effectiveElo);
-
-  for (let attempt = 0; attempt < GENERATE_RETRY_LIMIT; attempt++) {
-    try {
-      const typeLabel = requiredType === 'mcq' ? 'Multiple Choice' : requiredType === 'coding' ? 'Coding Challenge' : 'Open Ended Subjective';
-
-      const prompt = `
-        Task: Generate 1 unique technical interview question.
-        Topic: ${skill}
-        Difficulty: ${diffLabel} (ELO ~${qElo})
-        Type: ${requiredType} — ${typeLabel}
-        
-        CRITICAL RULES:
-        - You MUST return type "${requiredType}" exactly.
-        ${requiredType === 'mcq' ? '- You MUST include exactly 4 options in the "options" array.\n        - The question must be answerable by selecting one option.' : ''}
-        ${requiredType === 'coding' ? '- You MUST include "codeTemplate" with ONLY an empty function skeleton / boilerplate. Do NOT write any solution logic in codeTemplate. Just the function signature and empty body with a comment like "// your code here".\n        - You MUST include "testCases" array with at least 2 test cases.\n        - You MUST include a "title" for the coding problem.\n        - The "answer" field should contain the correct solution code.\n        - Do NOT include "options".' : ''}
-        ${requiredType === 'subjective' ? '- This is an open-ended question requiring a written answer.\n        - Do NOT include "options", "codeTemplate", or "testCases".' : ''}
-        
-        Constraints:
-        - Valid JSON output only. No markdown, no backticks.
-        - Unique from: ${JSON.stringify(avoidList.map(q => q.substring(0, 50)))}
-        
-        JSON Structure:
-        {
-          "question": "The question text",
-          "title": "Short Title",
-          "options": ["A", "B", "C", "D"],
-          "answer": "The correct answer",
-          "difficulty": "Easy|Medium|Hard",
-          "type": "${requiredType}",
-          "codeTemplate": "starter code here",
-          "testCases": [{ "input": "...", "output": "..." }]
-        }
-      `;
-
-      const aiData = await generateJSON(prompt);
-      if (!aiData || !aiData.question) throw new Error('Invalid AI response');
-
-      const qText = String(aiData.question).trim();
-      if (avoidList.some(prev => String(prev).trim() === qText)) {
-        throw new Error('Duplicate question');
-      }
-
-      // MCQ answers must be one of the options verbatim, or correct picks get graded as wrong
-      let options = [];
-      let answer = stringifyAnswer(aiData.answer) || 'Refer to documentation';
-      if (requiredType === 'mcq') {
-        const mcq = normalizeMcq(aiData.options, aiData.answer);
-        if (!mcq) throw new Error('MCQ answer does not match any option');
-        ({ options, answer } = mcq);
-      }
-
-      // Force the type to match what we asked for
-      return {
-        type: requiredType,
-        question: qText,
-        title: String(aiData.title || 'Challenge').slice(0, 120),
-        options,
-        answer,
-        // Our own label, not the model's free-form string (which can break the schema enum)
-        difficulty: diffLabel,
-        codeTemplate: requiredType === 'coding' ? String(aiData.codeTemplate || `// Write your ${skill} solution here\n`) : '',
-        testCases: requiredType === 'coding' && Array.isArray(aiData.testCases)
-          ? aiData.testCases.slice(0, 10).map(tc => ({ input: stringifyAnswer(tc?.input), output: stringifyAnswer(tc?.output) }))
-          : [],
-        difficultyElo: qElo
-      };
-    } catch (err) {
-      lastErr = err;
-      console.log(`[Assessment] Gen attempt ${attempt} failed: ${err.message}`);
-    }
+function fallbackQuestion(skill, requiredType, qElo, diffLabel) {
+  const base = { difficulty: diffLabel, difficultyElo: qElo, isFallback: true, options: [], codeTemplate: '', testCases: [], code: '', explanation: '' };
+  if (requiredType === 'coding') {
+    return { ...base, type: 'coding', question: `Write a function that demonstrates a core concept of ${skill}.`, title: 'Practice coding (unrated)', answer: '// Solution code', codeTemplate: `// Write your ${skill} solution here\n` };
   }
-
-  // FALLBACK — used when every AI provider fails. These are practice-only: isFallback keeps
-  // them out of the ELO calculation so an AI outage can't be farmed for rating.
-  console.warn('[Assessment] Using Fallback Question:', lastErr?.message);
-  if (requiredType === 'mcq') {
-    return {
-      type: 'mcq', question: `Which of the following best describes ${skill}?`, title: 'Fallback MCQ (unrated)',
-      options: ["Core framework", "Utility library", "Design pattern", "All of the above"],
-      answer: "All of the above", difficulty: diffLabel, codeTemplate: '', testCases: [], difficultyElo: qElo, isFallback: true
-    };
-  } else if (requiredType === 'coding') {
-    return {
-      type: 'coding', question: `Write a function that demonstrates a core concept of ${skill}.`,
-      title: 'Fallback Coding (unrated)', options: [], answer: '// Solution code',
-      difficulty: diffLabel, codeTemplate: `// Write your ${skill} solution here\n`, testCases: [{ input: 'test', output: 'test' }], difficultyElo: qElo, isFallback: true
-    };
-  } else {
-    return {
-      type: 'subjective', question: `Explain the core concepts of ${skill} and when you would use it.`,
-      title: 'Fallback Subjective (unrated)', options: [], answer: 'Refer to documentation',
-      difficulty: diffLabel, codeTemplate: '', testCases: [], difficultyElo: qElo, isFallback: true
-    };
-  }
+  return { ...base, type: 'subjective', question: `Explain the core concepts of ${skill} and when you would use it.`, title: 'Practice question (unrated)', answer: 'Refer to documentation' };
 }
 
-/** Copies a generated question onto the session as the "current" question. */
+/** A question-bank document in the shape the assessment uses (MCQ options shuffled per serve). */
+function fromBank(doc, userElo) {
+  return {
+    questionId: doc._id,
+    type: doc.type,
+    question: doc.text,
+    code: doc.code || '',
+    title: doc.title || '',
+    options: doc.type === 'mcq' ? shuffleArray(doc.options) : [],
+    answer: doc.answer,
+    explanation: doc.explanation || '',
+    difficulty: getDynamicLabel(doc.rating, userElo),
+    difficultyElo: doc.rating,
+    codeTemplate: doc.codeTemplate || '',
+    testCases: (doc.testCases || []).map(t => ({ input: t.input, output: t.output }))
+  };
+}
+
+/**
+ * The next question from the bank: unseen by this user, rated near `targetElo`. If the planned type
+ * has nothing for this skill (e.g. no coding questions yet and the AI is down) another type is used;
+ * only when the bank is empty for every type is a practice-only question served.
+ */
+async function pickQuestion(session, requiredType, targetElo) {
+  const userElo = session.startRating || 1200;
+  const exclude = (session.questionsLog || []).map(e => e.question).filter(Boolean);
+  if (session.currentQuestionId) exclude.push(session.currentQuestionId);
+  const order = [requiredType, ...['mcq', 'subjective', 'coding'].filter(t => t !== requiredType)];
+  for (const type of order) {
+    try {
+      const doc = await bank.serveQuestion({ userIds: [session.user], skill: session.skill, type, target: targetElo, exclude });
+      if (doc) return fromBank(doc, userElo);
+    } catch (err) {
+      console.warn(`[Assessment] Question bank failed (${type}):`, err.message);
+    }
+  }
+  console.warn(`[Assessment] No questions for ${session.skill}; serving a practice question`);
+  return fallbackQuestion(session.skill, requiredType === 'mcq' ? 'subjective' : requiredType, targetElo, getDynamicLabel(targetElo, userElo));
+}
+
+/** Copies a question onto the session as the "current" question. */
 function setCurrentQuestion(session, q, type, fallbackElo) {
   session.currentQuestionText = q.question;
+  session.currentQuestionId = q.questionId || null;
+  session.currentCode = q.code || '';
+  session.currentExplanation = q.explanation || '';
+  session.currentServedAt = new Date();
   session.currentOptions = q.options || [];
   session.currentAnswer = q.answer;
   session.currentTitle = q.title || '';
@@ -256,19 +208,20 @@ function setCurrentQuestion(session, q, type, fallbackElo) {
   }
 }
 
-/** Generates the question at plan index `index` for a session. */
+/** Picks the question at plan index `index` for a session. */
 async function generateNextQuestion(session, index) {
-  const nextType = (Array.isArray(session.questionPlan) && session.questionPlan[index]) || 'subjective';
+  const plannedType = (Array.isArray(session.questionPlan) && session.questionPlan[index]) || 'subjective';
   const nextDifficultyElo = (Array.isArray(session.difficultyPlanElos) && session.difficultyPlanElos[index]) || session.startRating || 1200;
-  const effectiveRating = session.startRating || 1200;
-  const q = await generateQuestion(session.skill, effectiveRating, nextType, session.askedQuestions || [], nextDifficultyElo);
-  return { q, nextType, nextDifficultyElo };
+  const q = await pickQuestion(session, plannedType, nextDifficultyElo);
+  return { q, nextType: q.type || plannedType, nextDifficultyElo };
 }
 
 /** The payload the client renders for a question (never includes the answer). */
 function questionPayload(q, type, questionNumber, poolSize) {
   return {
+    questionId: q.questionId ? String(q.questionId) : null,
     question: q.question,
+    code: q.code || '',
     options: q.options || [],
     type,
     difficulty: q.difficulty || 'Medium',
@@ -328,7 +281,7 @@ router.post('/start', auth, withUserLock(async (req, res) => {
       completed: false
     });
 
-    // generateQuestion never throws — it falls back to an unrated question
+    // Never throws — falls back to an unrated practice question
     const { q, nextType, nextDifficultyElo } = await generateNextQuestion(session, 0);
     setCurrentQuestion(session, q, nextType, nextDifficultyElo);
     await session.save();
@@ -366,12 +319,15 @@ router.post('/submit', auth, withUserLock(async (req, res) => {
       const isCorrect = userAnswer.trim() === String(session.currentAnswer || '').trim();
       scorePercentage = isCorrect ? 100 : 0;
       feedback = isCorrect ? 'Correct!' : 'Incorrect.';
+      if (session.currentExplanation) feedback += ` ${session.currentExplanation}`;
       correctAnswer = isCorrect ? null : session.currentAnswer;
     } else if (!userAnswer.trim()) {
       feedback = 'No answer submitted.';
     } else {
       const aiResult = await evaluateSubjectiveWithAI(
-        session.currentQuestionText,
+        session.currentCode ? `${session.currentQuestionText}
+
+${session.currentCode}` : session.currentQuestionText,
         session.currentAnswer,
         userAnswer
       );
@@ -381,7 +337,15 @@ router.post('/submit', auth, withUserLock(async (req, res) => {
     }
 
     // --- Log this question (NO ELO update) ---
+    // The question learns from the answer too (its rating moves; bad questions get flagged)
+    if (session.currentQuestionId && !gradingFailed) {
+      const timeMs = session.currentServedAt ? Date.now() - session.currentServedAt.getTime() : 0;
+      await bank.recordAnswer({ questionId: session.currentQuestionId, userRating: session.startRating || 1200, score: scorePercentage / 100, timeMs })
+        .catch(err => console.warn('[Assessment] Could not record the answer on the question:', err.message));
+    }
+
     session.questionsLog.push({
+      question: session.currentQuestionId || undefined,
       questionText: session.currentQuestionText,
       questionType: qType,
       difficulty: session.currentDifficulty || 'Medium',
@@ -419,6 +383,7 @@ router.post('/submit', auth, withUserLock(async (req, res) => {
       scorePercentage,
       feedback,
       correctAnswer,
+      questionId: session.questionsLog[session.questionsLog.length - 1].question || null,
       attempted,
       correct,
       poolSize: session.poolSize,
@@ -451,6 +416,7 @@ router.post('/skip', auth, withUserLock(async (req, res) => {
       return res.json({ reachedPoolLimit: true, attempted, correct, poolSize: session.poolSize, nextQuestion: null });
     }
 
+    const skippedQuestionId = session.currentQuestionId;
     const { q, nextType, nextDifficultyElo } = await generateNextQuestion(session, nextIndex);
     setCurrentQuestion(session, q, nextType, nextDifficultyElo);
     session.questionCount = nextIndex + 1;
@@ -458,6 +424,7 @@ router.post('/skip', auth, withUserLock(async (req, res) => {
 
     return res.json({
       skipped: true,
+      skippedQuestionId,
       attempted,
       correct,
       poolSize: session.poolSize,

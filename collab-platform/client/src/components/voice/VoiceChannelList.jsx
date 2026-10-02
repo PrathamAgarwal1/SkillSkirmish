@@ -86,11 +86,11 @@ const VoiceChannelList = ({ roomId, roomName, isOwner, userId }) => {
                                     }}
                                 >
                                     <Avatar userId={m.userId} name={m.username} size={22} speaking={!!isSpeaking(m) && !m.muted} />
-                                    <span className="vc-name" style={isSpeaking(m) && !m.muted ? { color: '#fff' } : undefined}>{m.username}{self ? ' (you)' : ''}</span>
+                                    <span className="vc-name" style={isSpeaking(m) && !m.muted ? { color: 'var(--gh-ffffff)' } : undefined}>{m.username}{self ? ' (you)' : ''}</span>
                                     <span className="vc-state">
                                         {m.screen && <span className="vc-live">LIVE</span>}
                                         {m.video && <FaVideo title="Camera on" />}
-                                        {m.deafened ? <MdHeadsetOff title="Deafened" color="#f23f43" /> : m.muted && <FaMicrophoneSlash title="Muted" color="#f23f43" />}
+                                        {m.deafened ? <MdHeadsetOff title="Deafened" color="var(--gh-f23f43)" /> : m.muted && <FaMicrophoneSlash title="Muted" color="var(--gh-f23f43)" />}
                                     </span>
                                 </div>
                             );
@@ -110,7 +110,7 @@ const VoiceChannelList = ({ roomId, roomName, isOwner, userId }) => {
                     <FaPlus size={11} /> <span className="vc-name">Create channel</span>
                 </div>
             )}
-            {error && <div style={{ color: '#f23f43', fontSize: 12, padding: '4px 10px' }}>{error}</div>}
+            {error && <div style={{ color: 'var(--gh-f23f43)', fontSize: 12, padding: '4px 10px' }}>{error}</div>}
 
             {menu && (
                 <VolumeMenu

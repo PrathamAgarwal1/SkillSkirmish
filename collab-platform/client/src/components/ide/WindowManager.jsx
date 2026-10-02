@@ -290,7 +290,7 @@ const WindowManager = ({ projectId, projectType = 'React App', projectName, room
     const rt = useBrowserRuntime({
         enabled: browserMode, projectId, projectName, runConfig,
         addLog, addTerminalLog, setPreviewUrl, setShowBrowserWindow, setRunPhase, setIsProjectRunning,
-        setActiveFileProcessId, refreshFiles, openFile: openFileByPath, user
+        setActiveFileProcessId, refreshFiles, openFile: openFileByPath, user, onRunConfig: setRunConfig
     });
 
     // Keyboard Shortcuts
@@ -738,11 +738,11 @@ const WindowManager = ({ projectId, projectType = 'React App', projectName, room
                     Project IDE
                 </h2>
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                    <span style={{ color: '#999', fontSize: '13px' }} title={runConfig ? `Sandbox environment: ${runConfig.envLabel}` : ''}>
+                    <span style={{ color: 'var(--gh-999999)', fontSize: '13px' }} title={runConfig ? `Sandbox environment: ${runConfig.envLabel}` : ''}>
                         {projectType}{runConfig ? ` • ${browserMode ? '🌐' : '🐳'} ${runConfig.envLabel.split(' (')[0]}` : ''}
                     </span>
                     {phaseLabel && (
-                        <span style={{ fontSize: '12px', color: runPhase === 'running' ? '#3fb950' : runPhase === 'error' ? '#f85149' : '#d29922' }}>
+                        <span style={{ fontSize: '12px', color: runPhase === 'running' ? 'var(--gh-3fb950)' : runPhase === 'error' ? 'var(--gh-f85149)' : 'var(--gh-d29922)' }}>
                             {phaseLabel}
                         </span>
                     )}
@@ -772,14 +772,14 @@ const WindowManager = ({ projectId, projectType = 'React App', projectName, room
                     )}
 
                     {/* Run Project Controls */}
-                    <div style={{ display: 'flex', gap: '4px', borderRight: '1px solid #444', paddingRight: '10px' }}>
+                    <div style={{ display: 'flex', gap: '4px', borderRight: '1px solid var(--gh-444444)', paddingRight: '10px' }}>
                         {targets.length > 1 && (
                             <select
                                 value={selectedTarget}
                                 onChange={(e) => setSelectedTarget(e.target.value)}
                                 disabled={isProjectRunning}
                                 title="What to run"
-                                style={{ background: '#1e1e1e', color: '#ccc', border: '1px solid #3e3e42', borderRadius: 3, fontSize: 12 }}
+                                style={{ background: 'var(--gh-1e1e1e)', color: 'var(--gh-cccccc)', border: '1px solid var(--gh-3e3e42)', borderRadius: 3, fontSize: 12 }}
                             >
                                 {targets.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
                             </select>
@@ -787,7 +787,7 @@ const WindowManager = ({ projectId, projectType = 'React App', projectName, room
                         <button onClick={handleRunProject} disabled={isProjectRunning || (runConfig && targets.length === 0)} title={browserMode ? 'Run the project in your browser' : 'Run the project in its sandbox'}>
                             ▶ Run
                         </button>
-                        <button onClick={handleStopProject} disabled={!isProjectRunning} style={{ background: '#c74c3c' }} title="Stop project">
+                        <button onClick={handleStopProject} disabled={!isProjectRunning} style={{ background: 'var(--gh-c74c3c)' }} title="Stop project">
                             ◼ Stop
                         </button>
                     </div>
@@ -796,7 +796,7 @@ const WindowManager = ({ projectId, projectType = 'React App', projectName, room
                     <button
                         onClick={() => handleSaveFile(fileContent)}
                         disabled={!currentFile}
-                        style={{ background: '#0e639c', color: 'white' }}
+                        style={{ background: 'var(--gh-0e639c)', color: 'white' }}
                         title="Save current file (Ctrl+S)"
                     >
                         💾 Save
@@ -807,8 +807,8 @@ const WindowManager = ({ projectId, projectType = 'React App', projectName, room
                         onClick={handleRunFile}
                         disabled={!currentFile || (currentFile.path && !RUNNABLE_EXTS.includes(currentFile.path.split('.').pop())) || !!activeFileProcessId}
                         style={{
-                            background: !!activeFileProcessId ? '#3c3c3c' : '#d7ba7d',
-                            color: !!activeFileProcessId ? '#cccccc' : '#1e1e1e',
+                            background: !!activeFileProcessId ? 'var(--gh-3c3c3c)' : 'var(--gh-d7ba7d)',
+                            color: !!activeFileProcessId ? 'var(--gh-cccccc)' : 'var(--gh-1e1e1e)',
                             cursor: !!activeFileProcessId ? 'wait' : 'pointer'
                         }}
                         title={!!activeFileProcessId ? "File is currently running..." : "Run currently selected file (Ctrl+B)"}
@@ -820,7 +820,7 @@ const WindowManager = ({ projectId, projectType = 'React App', projectName, room
                     {activeFileProcessId && (
                         <button
                             onClick={handleStopFile}
-                            style={{ background: '#c74c3c' }}
+                            style={{ background: 'var(--gh-c74c3c)' }}
                             title="Stop currently running file"
                         >
                             ◼ Stop File
@@ -829,7 +829,7 @@ const WindowManager = ({ projectId, projectType = 'React App', projectName, room
 
                     <button
                         onClick={() => setShowBrowserWindow(!showBrowserWindow)}
-                        style={{ background: showBrowserWindow ? '#6a9955' : '#007acc' }}
+                        style={{ background: showBrowserWindow ? 'var(--gh-6a9955)' : 'var(--gh-007acc)' }}
                     >
                         🌐 Browser {showBrowserWindow ? 'Hide' : 'Show'}
                     </button>
@@ -844,7 +844,7 @@ const WindowManager = ({ projectId, projectType = 'React App', projectName, room
 
                     <button
                         onClick={() => { loadRunConfig(); setShowDeploy(true); }}
-                        style={{ background: '#238636', color: 'white' }}
+                        style={{ background: 'var(--gh-238636)', color: 'white' }}
                         title="Build and publish this project to a live URL"
                     >
                         🚀 Deploy
@@ -865,7 +865,7 @@ const WindowManager = ({ projectId, projectType = 'React App', projectName, room
                     {panelCollapsed.explorer ? (
                         <div className="ide-window" style={{ flex: 1, cursor: 'pointer' }} onClick={() => togglePanel('explorer')}>
                             <div className="window-header" style={{ padding: '8px 4px', justifyContent: 'center' }}>
-                                <span style={{ fontSize: '11px', writingMode: 'vertical-rl', textOrientation: 'mixed', color: '#ccc', letterSpacing: '2px' }}>EXPLORER</span>
+                                <span style={{ fontSize: '11px', writingMode: 'vertical-rl', textOrientation: 'mixed', color: 'var(--gh-cccccc)', letterSpacing: '2px' }}>EXPLORER</span>
                             </div>
                         </div>
                     ) : (
@@ -888,7 +888,7 @@ const WindowManager = ({ projectId, projectType = 'React App', projectName, room
                                     bottom: '10px',
                                     left: '10px',
                                     padding: '8px 14px',
-                                    background: '#007acc',
+                                    background: 'var(--gh-007acc)',
                                     color: 'white',
                                     border: 'none',
                                     borderRadius: '4px',
@@ -898,8 +898,8 @@ const WindowManager = ({ projectId, projectType = 'React App', projectName, room
                                     zIndex: 50,
                                     transition: 'background 0.2s'
                                 }}
-                                onMouseEnter={(e) => e.target.style.background = '#005a9e'}
-                                onMouseLeave={(e) => e.target.style.background = '#007acc'}
+                                onMouseEnter={(e) => e.target.style.background = 'var(--gh-005a9e)'}
+                                onMouseLeave={(e) => e.target.style.background = 'var(--gh-007acc)'}
                             >
                                 📦 Packages
                             </button>
@@ -951,7 +951,7 @@ const WindowManager = ({ projectId, projectType = 'React App', projectName, room
                     <div style={{
                         flex: panelCollapsed.terminal ? '0 0 36px' : 1,
                         display: 'flex', flexDirection: 'column', overflow: 'hidden',
-                        borderTop: '2px solid #333',
+                        borderTop: '2px solid var(--gh-333333)',
                         transition: 'flex 0.25s ease'
                     }}>
                         <TerminalWindow
@@ -997,17 +997,17 @@ const WindowManager = ({ projectId, projectType = 'React App', projectName, room
             )}
 
             {rt.figures.length > 0 && (
-                <div style={{ position: 'fixed', right: 20, bottom: 20, width: 460, maxHeight: '70vh', overflow: 'auto', background: '#252526', border: '1px solid #3e3e42', borderRadius: 8, zIndex: 2500, boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', borderBottom: '1px solid #3e3e42', color: '#ccc', fontSize: 13 }}>
+                <div style={{ position: 'fixed', right: 20, bottom: 20, width: 460, maxHeight: '70vh', overflow: 'auto', background: 'var(--gh-252526)', border: '1px solid var(--gh-3e3e42)', borderRadius: 8, zIndex: 2500, boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', borderBottom: '1px solid var(--gh-3e3e42)', color: 'var(--gh-cccccc)', fontSize: 13 }}>
                         <b style={{ flex: 1 }}>📊 Figures</b>
-                        <button onClick={rt.clearFigures} style={{ background: 'transparent', border: 'none', color: '#ccc', cursor: 'pointer', fontSize: 16 }}>✕</button>
+                        <button onClick={rt.clearFigures} style={{ background: 'transparent', border: 'none', color: 'var(--gh-cccccc)', cursor: 'pointer', fontSize: 16 }}>✕</button>
                     </div>
-                    {rt.figures.map((png, i) => <img key={i} alt={`figure ${i + 1}`} src={`data:image/png;base64,${png}`} style={{ width: '100%', background: '#fff', display: 'block', marginBottom: 4 }} />)}
+                    {rt.figures.map((png, i) => <img key={i} alt={`figure ${i + 1}`} src={`data:image/png;base64,${png}`} style={{ width: '100%', background: 'var(--gh-ffffff)', display: 'block', marginBottom: 4 }} />)}
                 </div>
             )}
 
             {browserMode && !rt.supported && (
-                <div style={{ position: 'fixed', left: '50%', bottom: 16, transform: 'translateX(-50%)', background: '#3d321a', color: '#d29922', border: '1px solid #d29922', borderRadius: 6, padding: '8px 14px', fontSize: 13, zIndex: 2500 }}>
+                <div style={{ position: 'fixed', left: '50%', bottom: 16, transform: 'translateX(-50%)', background: 'var(--gh-3d321a)', color: 'var(--gh-d29922)', border: '1px solid var(--gh-d29922)', borderRadius: 6, padding: '8px 14px', fontSize: 13, zIndex: 2500 }}>
                     ⚠ This server runs code in your browser, which needs a recent Chrome, Edge or Firefox. Python and notebooks still work.
                 </div>
             )}
@@ -1027,8 +1027,8 @@ const WindowManager = ({ projectId, projectType = 'React App', projectName, room
                     zIndex: 2000
                 }}>
                     <div style={{
-                        background: '#252526',
-                        border: '1px solid #3e3e42',
+                        background: 'var(--gh-252526)',
+                        border: '1px solid var(--gh-3e3e42)',
                         borderRadius: '6px',
                         width: '90%',
                         maxWidth: '600px',
@@ -1042,16 +1042,16 @@ const WindowManager = ({ projectId, projectType = 'React App', projectName, room
                             justifyContent: 'space-between',
                             alignItems: 'center',
                             padding: '12px 16px',
-                            borderBottom: '1px solid #3e3e42',
-                            background: '#2d2d30'
+                            borderBottom: '1px solid var(--gh-3e3e42)',
+                            background: 'var(--gh-2d2d30)'
                         }}>
-                            <h3 style={{ margin: 0, color: '#cccccc', fontSize: '14px' }}>📦 Packages & Libraries</h3>
+                            <h3 style={{ margin: 0, color: 'var(--gh-cccccc)', fontSize: '14px' }}>📦 Packages & Libraries</h3>
                             <button
                                 onClick={() => setShowPackageModal(false)}
                                 style={{
                                     background: 'transparent',
                                     border: 'none',
-                                    color: '#cccccc',
+                                    color: 'var(--gh-cccccc)',
                                     fontSize: '18px',
                                     cursor: 'pointer'
                                 }}

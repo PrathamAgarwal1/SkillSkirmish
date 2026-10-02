@@ -80,6 +80,7 @@ const starterJs = (p) =>
     `/**\n${p.params.map(x => ` * @param {${JS_TYPES[x.type] || '*'}} ${x.name}`).join('\n')}\n * @return {${JS_TYPES[p.returns] || '*'}}\n */\nfunction ${p.fn.javascript}(${p.params.map(x => x.name).join(', ')}) {\n    // Write your solution here\n}\n`;
 
 const exampleCache = new Map();
+const native = () => require('./native'); // lazy: native.js needs rngFrom from this file
 
 /** The problem as players see it: statement, examples, starter code. Never hidden expected outputs. */
 async function publicChallenge(ch) {
@@ -120,7 +121,13 @@ async function publicChallenge(ch) {
         ...base,
         examples: ch.examples,
         harness: ch.harness,
-        starter: ch.starterCode || { python: starterPython(ch), javascript: starterJs(ch) }
+        wide: !!ch.wide,
+        starter: ch.starterCode || {
+            python: starterPython(ch),
+            javascript: starterJs(ch),
+            ...(ch.languages.includes('cpp') ? { cpp: native().starterCpp(ch, ch.wide) } : {}),
+            ...(ch.languages.includes('c') ? { c: native().starterC(ch, ch.wide) } : {})
+        }
     };
 }
 

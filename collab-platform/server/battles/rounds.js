@@ -99,6 +99,36 @@ function quizRounds(rng, skill, count = 7) {
     return rounds;
 }
 
+/**
+ * Quiz rounds from the question bank: questions neither player has seen, rated near their level
+ * (easy → hard). Topped up from the built-in quiz content if the bank comes up short.
+ */
+async function bankQuizRounds(rng, { userIds, skill, target, count = 7 }) {
+    const bank = require('../questions/bank');
+    let docs = [];
+    try {
+        docs = await bank.quizSet({ userIds, skill, target, count });
+    } catch (err) {
+        console.warn('[battle] question bank unavailable:', err.message);
+    }
+    const label = (r) => (r < 1150 ? 'easy' : r < 1450 ? 'medium' : 'hard');
+    const out = docs.map((doc) => {
+        const options = shuffle(rng, doc.options.map(text => ({ text, right: text === doc.answer })));
+        return {
+            type: 'quiz',
+            limitMs: ROUND_MS.quiz,
+            prompt: { type: 'quiz', q: doc.text, code: doc.code || undefined, options: options.map(o => o.text), difficulty: label(doc.rating), questionId: String(doc._id) },
+            answer: { index: options.findIndex(o => o.right), explain: doc.explanation }
+        };
+    });
+    if (out.length < count) {
+        const have = new Set(out.map(r => r.prompt.q + (r.prompt.code || '')));
+        const extra = quizRounds(rng, skill, count).filter(r => !have.has(r.prompt.q + (r.prompt.code || '')));
+        out.push(...extra.slice(0, count - out.length));
+    }
+    return out;
+}
+
 /* ── scoring ── */
 const nearestLanguage = (x, y) => LANGUAGES.reduce((best, l) => {
     const d = Math.hypot(l.x - x, l.y - y);
@@ -156,7 +186,7 @@ const MAX_DUEL_ROUNDS = 15;
 const QUIZ_ROUNDS = 7;
 
 module.exports = {
-    guessrRounds, quizRounds, scoreGuess, multiplierFor, nearestLanguage,
+    guessrRounds, quizRounds, bankQuizRounds, scoreGuess, multiplierFor, nearestLanguage,
     START_HP, MAX_SCORE, SOLO_ROUNDS, MAX_DUEL_ROUNDS, QUIZ_ROUNDS, ROUND_MS,
     MAP, REGIONS, LANGUAGES, languageById
 };

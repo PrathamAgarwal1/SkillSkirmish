@@ -25,6 +25,8 @@ import BattlePage, { BattleJoin } from './pages/BattlePage';
 import BattleArena from './pages/BattleArena';
 import FriendsPage from './pages/FriendsPage';
 import OpenAppPage from './pages/OpenAppPage';
+import AppearancePage from './pages/AppearancePage';
+import { AppearanceProvider } from './appearance/AppearanceContext';
 
 // Context and Socket
 import AuthContext from './context/AuthContext';
@@ -83,7 +85,6 @@ const AppContent = () => {
 
   return (
     <VoiceProvider>
-      <div className="crt-overlay"></div>
       <ServerStatusBanner />
       <Navbar />
       <main className="app-content">
@@ -110,6 +111,7 @@ const AppContent = () => {
           <Route path="/forum" element={<PrivateRoute><ForumPage /></PrivateRoute>} />
 
           <Route path="/friends" element={<PrivateRoute><FriendsPage /></PrivateRoute>} />
+          <Route path="/appearance" element={<AppearancePage />} />
           <Route path="/open/:slug" element={<PrivateRoute><OpenAppPage /></PrivateRoute>} />
 
           {/* Code battles */}
@@ -132,8 +134,10 @@ const App = () => {
   return (
     // Note: Ensure your <AuthProvider> wraps <App /> in your index.js file
     <Router>
-      <ToastContainer />
-      <AppContent />
+      <AppearanceProvider>
+        <ToastContainer />
+        <AppContent />
+      </AppearanceProvider>
     </Router>
   );
 };

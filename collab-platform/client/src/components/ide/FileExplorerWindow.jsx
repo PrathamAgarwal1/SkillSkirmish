@@ -106,9 +106,9 @@ const FileExplorerWindow = ({ files = [], onSelectFile, selectedFile, onCreateFi
                 style={{
                     flex: 1,
                     padding: '2px 6px',
-                    backgroundColor: '#3c3c3c',
-                    color: '#e0e0e0',
-                    border: '1px solid #007acc',
+                    backgroundColor: 'var(--gh-3c3c3c)',
+                    color: 'var(--gh-e0e0e0)',
+                    border: '1px solid var(--gh-007acc)',
                     borderRadius: '2px',
                     fontSize: '12px',
                     outline: 'none',
@@ -157,7 +157,7 @@ const FileExplorerWindow = ({ files = [], onSelectFile, selectedFile, onCreateFi
                             <span style={{
                                 minWidth: '12px',
                                 fontSize: '10px',
-                                color: '#999',
+                                color: 'var(--gh-999999)',
                                 transition: 'transform 0.15s',
                                 transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
                                 display: 'inline-block',
@@ -196,9 +196,9 @@ const FileExplorerWindow = ({ files = [], onSelectFile, selectedFile, onCreateFi
                                 style={{
                                     flex: 1,
                                     padding: '1px 4px',
-                                    backgroundColor: '#3c3c3c',
-                                    color: '#e0e0e0',
-                                    border: '1px solid #007acc',
+                                    backgroundColor: 'var(--gh-3c3c3c)',
+                                    color: 'var(--gh-e0e0e0)',
+                                    border: '1px solid var(--gh-007acc)',
                                     borderRadius: '2px',
                                     fontSize: '12px',
                                     outline: 'none',
@@ -261,7 +261,7 @@ const FileExplorerWindow = ({ files = [], onSelectFile, selectedFile, onCreateFi
                                         onDeleteFile(item.path);
                                     }}
                                     title="Delete"
-                                    style={{ ...actionBtnStyle, color: '#f48771' }}
+                                    style={{ ...actionBtnStyle, color: 'var(--gh-f48771)' }}
                                 >
                                     ✕
                                 </button>
@@ -289,7 +289,7 @@ const FileExplorerWindow = ({ files = [], onSelectFile, selectedFile, onCreateFi
     const actionBtnStyle = {
         background: 'transparent',
         border: 'none',
-        color: '#999',
+        color: 'var(--gh-999999)',
         cursor: 'pointer',
         fontSize: '12px',
         padding: '0 2px',
@@ -401,7 +401,7 @@ const FileExplorerWindow = ({ files = [], onSelectFile, selectedFile, onCreateFi
                         className="window-btn"
                         onClick={() => fileInputRef.current?.click()}
                         title="Upload Files"
-                        style={{ color: '#4ec9b0' }}
+                        style={{ color: 'var(--gh-4ec9b0)' }}
                     >
                         📤
                     </button>
@@ -409,7 +409,7 @@ const FileExplorerWindow = ({ files = [], onSelectFile, selectedFile, onCreateFi
                         className="window-btn"
                         onClick={() => folderInputRef.current?.click()}
                         title="Upload Folder"
-                        style={{ color: '#569cd6' }}
+                        style={{ color: 'var(--gh-569cd6)' }}
                     >
                         📂⬆
                     </button>
@@ -418,7 +418,7 @@ const FileExplorerWindow = ({ files = [], onSelectFile, selectedFile, onCreateFi
                             className="window-btn"
                             onClick={onCollapse}
                             title="Collapse Explorer"
-                            style={{ color: '#999', fontSize: '12px', fontWeight: 'bold' }}
+                            style={{ color: 'var(--gh-999999)', fontSize: '12px', fontWeight: 'bold' }}
                         >
                             ◀
                         </button>

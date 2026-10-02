@@ -20,15 +20,15 @@ const OpenAppPage = () => {
     return (
         <div className="fr-page" style={{ alignItems: 'center', textAlign: 'center', paddingTop: 60 }}>
             <div style={{ fontSize: 48 }}>{denied.visibility === 'friends' ? '👥' : '🔒'}</div>
-            <h1 style={{ color: '#fff', margin: 0 }}>You can't open this app</h1>
+            <h1 style={{ color: 'var(--gh-ffffff)', margin: 0 }}>You can't open this app</h1>
             <p className="fr-muted">{denied.msg}</p>
             {denied.visibility === 'friends' && denied.owner && (
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                    <span>Ask <Link to={`/profile/${denied.owner._id}`} style={{ color: '#58a6ff' }}>{denied.owner.username}</Link> to be friends:</span>
+                    <span>Ask <Link to={`/profile/${denied.owner._id}`} style={{ color: 'var(--gh-58a6ff)' }}>{denied.owner.username}</Link> to be friends:</span>
                     <FriendButton userId={denied.owner._id} />
                 </div>
             )}
-            <Link to="/gallery" style={{ color: '#58a6ff' }}>Browse public apps instead</Link>
+            <Link to="/gallery" style={{ color: 'var(--gh-58a6ff)' }}>Browse public apps instead</Link>
         </div>
     );
 };

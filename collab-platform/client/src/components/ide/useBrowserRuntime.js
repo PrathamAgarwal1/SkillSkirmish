@@ -35,7 +35,7 @@ const NPM_PACKAGE = /^(@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*(@[\w.^~<>=*-]+)?$/i;
 export default function useBrowserRuntime({
     enabled, projectId, projectName, runConfig,
     addLog, addTerminalLog, setPreviewUrl, setShowBrowserWindow, setRunPhase, setIsProjectRunning,
-    setActiveFileProcessId, refreshFiles, openFile, user
+    setActiveFileProcessId, refreshFiles, openFile, user, onRunConfig
 }) {
     const devProc = useRef(null);        // running dev server / project process (WebContainer)
     const fileProc = useRef(null);       // running file or terminal command: { kind: 'wc'|'py', handle }
@@ -145,9 +145,32 @@ export default function useBrowserRuntime({
     }, [runPythonFile, runInWebContainer, addTerminalLog, requireSupport]);
 
     /* ── Run the whole project (▶ Run) ──────────────────────── */
-    const runProject = useCallback(async (targetId) => {
-        const target = (runConfig?.targets || []).find(t => t.id === targetId) || runConfig?.targets?.[0];
+    const runProjectRef = useRef(null);
+    const runProject = useCallback(async (targetId, configOverride) => {
+        const cfg = configOverride || runConfig;
+        const cfgPlan = cfg?.plan;
+        const target = (cfg?.targets || []).find(t => t.id === targetId) || cfg?.targets?.[0];
         if (!target) return addLog('Nothing to run in this project yet', 'warning');
+
+        // No package.json yet: create it (and the Vite files for React), then run the real thing
+        if (target.engine === 'setup') {
+            setRunPhase('preparing');
+            addLog(`🧰 This project has no package.json yet. Setting it up: ${cfgPlan?.setup?.summary || 'package.json'}`, 'info');
+            try {
+                const res = (await axios.post('/api/execute/setup', { projectId })).data;
+                if (res.success) addLog(`✓ Created ${res.created.join(', ')}`, 'success');
+                else addLog(res.message, 'warning');
+                refreshFiles();
+                if (res.config) onRunConfig?.(res.config);
+                const next = res.config?.targets?.[0];
+                if (next && next.engine !== 'setup') return runProjectRef.current(undefined, res.config);
+                setRunPhase('stopped');
+            } catch (err) {
+                addLog(`❌ Couldn't set up the project: ${err.response?.data?.message || err.message}`, 'error');
+                setRunPhase('error');
+            }
+            return;
+        }
 
         if (target.engine === 'snack') {
             try {
@@ -185,7 +208,7 @@ export default function useBrowserRuntime({
             addLog('⚡ Loading the project into your browser (WebContainer)…', 'info');
             await wc.syncFromServer(projectId);
             setRunPhase('installing');
-            await wc.installDependencies(plan?.install, { env: vars, onLine: addLog });
+            await wc.installDependencies(cfgPlan?.install, { env: vars, onLine: addLog });
             setRunPhase('starting');
             serverReadyOff.current?.();
             serverReadyOff.current = await wc.onServerReady((port, url) => {
@@ -195,7 +218,7 @@ export default function useBrowserRuntime({
                 addLog(`✅ Live at ${url}`, 'success');
             });
             addLog(`🚀 ${target.label}: ${target.cmd}`, 'info');
-            const handle = await wc.spawn(target.cmd, { cwd: plan?.root || '', env: vars, onLine: (l) => addLog(l, 'info') });
+            const handle = await wc.spawn(target.cmd, { cwd: cfgPlan?.root || '', env: vars, onLine: (l) => addLog(l, 'info') });
             devProc.current = handle;
             if (!target.preview) setRunPhase('running');
             const code = await handle.exit;
@@ -204,8 +227,9 @@ export default function useBrowserRuntime({
             endProject(`❌ ${err.message}`, 'error');
             setRunPhase('error');
         }
-    }, [runConfig, plan, projectId, projectName, requirements, env, addLog, openFile, runPythonFile, endProject, requireSupport,
-        setIsProjectRunning, setRunPhase, setPreviewUrl, setShowBrowserWindow]);
+    }, [runConfig, projectId, projectName, requirements, env, addLog, openFile, runPythonFile, endProject, requireSupport,
+        setIsProjectRunning, setRunPhase, setPreviewUrl, setShowBrowserWindow, refreshFiles, onRunConfig]);
+    runProjectRef.current = runProject;
 
     const stopProject = useCallback(() => {
         if (devProc.current) { devProc.current.kill(); devProc.current = null; }

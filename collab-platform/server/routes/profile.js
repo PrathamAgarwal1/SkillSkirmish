@@ -9,7 +9,7 @@ const { isValidId } = require('../utils/access');
 // Never expose credentials or internal identity-provider data
 const PRIVATE_FIELDS = '-password -auth0Sub -assessmentHistory';
 // What other users may see (no email)
-const PUBLIC_FIELDS = `${PRIVATE_FIELDS} -email -assessmentCooldownExpires`;
+const PUBLIC_FIELDS = `${PRIVATE_FIELDS} -email -assessmentCooldownExpires -appearance`;
 
 const toPublicProfile = (userDoc) => {
     const user = userDoc.toObject ? userDoc.toObject() : { ...userDoc };
@@ -64,6 +64,70 @@ router.get('/user/:user_id', auth, async (req, res) => {
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
+    }
+});
+
+// @route   GET api/profile/user/:user_id/summary
+// @desc    What a profile shows besides the basics: battle record, published apps, friend count
+// @access  Private
+const BATTLE_KINDS = ['guessr', 'quiz', 'task', 'debug', 'css', 'algo'];
+const modeStats = (battle = {}, kind) => {
+    const m = battle.modes?.[kind] || {};
+    const src = kind === 'algo' && !m.played && battle.played ? battle : m; // algo used to be the only mode
+    return { rating: src.rating ?? 1200, played: src.played || 0, wins: src.wins || 0, losses: src.losses || 0, draws: src.draws || 0, bestStreak: src.bestStreak || 0 };
+};
+router.get('/user/:user_id/summary', auth, async (req, res) => {
+    try {
+        if (!isValidId(req.params.user_id)) return res.status(404).json({ msg: 'Profile not found' });
+        const id = req.params.user_id;
+        const Battle = require('../models/Battle');
+        const Friendship = require('../models/Friendship');
+        const Deployment = require('../models/Deployment');
+        const Project = require('../models/Project');
+        const { appUrl } = require('../services/deployService');
+
+        const [user, recent, friends, apps] = await Promise.all([
+            User.findById(id).select('battle createdAt').lean(),
+            Battle.find({ 'players.user': id, mode: { $in: ['ranked', 'friend'] } }).sort({ endedAt: -1 }).limit(8).select('-players.code').lean(),
+            Friendship.countDocuments({ users: id, status: 'accepted' }),
+            Deployment.find({ 'gallery.listed': true, 'gallery.listedBy': id, status: 'live', visibility: { $in: [null, 'public'] } })
+                .sort({ 'gallery.listedAt': -1 }).limit(6).select('slug project gallery views likes forks').lean()
+        ]);
+        if (!user) return res.status(404).json({ msg: 'Profile not found' });
+        const projects = await Project.find({ _id: { $in: apps.map(a => a.project) } }).select('name projectType').lean();
+        const projectById = new Map(projects.map(p => [String(p._id), p]));
+        const battle = user.battle || {};
+
+        res.json({
+            memberSince: user.createdAt,
+            friends,
+            battles: {
+                modes: Object.fromEntries(BATTLE_KINDS.map(k => [k, modeStats(battle, k)])),
+                solved: (battle.solved || []).length,
+                dailyStreak: battle.dailyStreak || 0,
+                recent: recent.map(b => {
+                    const me = b.players.find(p => String(p.user) === id);
+                    const opponent = b.players.find(p => String(p.user) !== id);
+                    return {
+                        id: b._id,
+                        kind: b.kind || 'algo',
+                        problem: b.problem,
+                        skill: b.skill,
+                        result: b.result === 'win' ? (String(b.winner) === id ? 'won' : 'lost') : b.result,
+                        opponent: opponent ? { userId: opponent.user, username: opponent.username } : null,
+                        ratingChange: me && me.ratingAfter != null && me.ratingBefore != null ? me.ratingAfter - me.ratingBefore : null,
+                        endedAt: b.endedAt
+                    };
+                })
+            },
+            apps: apps.map(a => {
+                const project = projectById.get(String(a.project));
+                return { slug: a.slug, url: appUrl(a.slug), name: project?.name || a.slug, projectType: project?.projectType || '', description: a.gallery?.description || '', views: a.views || 0, likes: (a.likes || []).length, forks: a.forks || 0 };
+            })
+        });
+    } catch (err) {
+        console.error('[profile] summary failed:', err.message);
+        res.status(500).json({ msg: 'Could not load the profile' });
     }
 });
 
@@ -191,6 +255,21 @@ router.put('/', auth, async (req, res) => {
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
+    }
+});
+
+// @route   PUT api/profile/appearance
+// @desc    Save your look and feel (send null to go back to the default)
+// @access  Private
+router.put('/appearance', auth, async (req, res) => {
+    try {
+        const { cleanAppearance } = require('../utils/appearance');
+        const appearance = cleanAppearance(req.body?.appearance);
+        await User.updateOne({ _id: req.user.id }, { $set: { appearance } });
+        res.json({ appearance });
+    } catch (err) {
+        console.error('[profile] appearance save failed:', err.message);
+        res.status(500).json({ msg: 'Could not save your appearance settings' });
     }
 });
 

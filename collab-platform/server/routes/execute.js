@@ -14,6 +14,7 @@ const File = require('../models/File');
 const Project = require('../models/Project');
 const sandbox = require('../sandbox');
 const { decryptEnv } = require('../utils/secrets');
+const { ensureParentFolders, upsertFile } = require('../utils/projectFiles');
 
 // Multer config for file/folder uploads (store in temp, then process)
 const upload = multer({
@@ -70,6 +71,12 @@ router.get('/runtime-env/:projectId', auth, requireProjectAccess(fromParams), ha
 // ─── Run / stop the whole project ───────────────────────────
 router.post('/run-project', auth, requireProjectAccess(fromBody), handle(async (req, res) => {
     res.json(await runner.runProject(req.body.projectId, { targetId: req.body.target, userId: req.user.id, io: io(req) }));
+}));
+
+// Creates the package.json (and Vite files for React) for a JavaScript project that has none. Works in
+// browser mode too: the IDE then runs the project with the returned config.
+router.post('/setup', auth, requireProjectAccess(fromBody), handle(async (req, res) => {
+    res.json(await runner.setupProject(req.body.projectId, io(req)));
 }));
 
 router.post('/stop-project', auth, requireProjectAccess(fromBody), handle(async (req, res) => {
@@ -212,33 +219,6 @@ router.post('/download-git-clone', auth, requireProjectAccess(fromBody), async (
 });
 
 // ─── Uploads ───────────────────────────────────────────────
-// Creates missing parent folders (DB + disk) for a project-relative file path.
-const ensureParentFolders = async (projectId, relPath) => {
-    const parts = relPath.split('/');
-    let currentPath = '';
-    for (let i = 0; i < parts.length - 1; i++) {
-        currentPath = currentPath ? `${currentPath}/${parts[i]}` : parts[i];
-        await File.findOneAndUpdate(
-            { project: projectId, path: currentPath },
-            { $setOnInsert: { name: parts[i], isFolder: true, content: '' } },
-            { upsert: true }
-        );
-        fs.mkdirSync(resolveProjectPath(projectId, currentPath), { recursive: true });
-    }
-};
-
-// Creates or overwrites a file (DB + disk).
-const upsertFile = async (projectId, relPath, content) => {
-    await File.findOneAndUpdate(
-        { project: projectId, path: relPath },
-        { $set: { name: path.posix.basename(relPath), isFolder: false, content } },
-        { upsert: true }
-    );
-    const diskPath = resolveProjectPath(projectId, relPath);
-    fs.mkdirSync(path.dirname(diskPath), { recursive: true });
-    fs.writeFileSync(diskPath, content);
-};
-
 // Dependencies of uploaded projects install inside the sandbox on the next Run.
 router.post('/upload-files', auth, upload.array('files', 100), requireProjectAccess(fromBody), async (req, res) => {
     const uploadedFiles = req.files || [];

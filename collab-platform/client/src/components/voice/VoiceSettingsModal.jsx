@@ -64,7 +64,7 @@ function CameraPreview({ settings, cameraTrack }) {
         return () => { cancelled = true; own?.getTracks().forEach(t => t.stop()); };
     }, [settings.cameraId, cameraTrack]); // eslint-disable-line react-hooks/exhaustive-deps
     return (
-        <div style={{ aspectRatio: '16 / 9', background: '#000', borderRadius: 8, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#949ba4' }}>
+        <div style={{ aspectRatio: '16 / 9', background: 'var(--gh-000000)', borderRadius: 8, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gh-949ba4)' }}>
             {stream ? <VideoView stream={stream} mirror style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (error || 'Starting camera…')}
         </div>
     );
@@ -152,8 +152,8 @@ const VoiceSettingsModal = () => {
                         <div className="vc-field">
                             <label>Input mode</label>
                             <div style={{ display: 'flex', gap: 8 }}>
-                                <button className={`vc-join ${s.pushToTalk ? '' : 'selected'}`} style={{ flex: 1, background: s.pushToTalk ? '#4e5058' : undefined }} onClick={() => set({ pushToTalk: false })}>Voice activity</button>
-                                <button className="vc-join" style={{ flex: 1, background: s.pushToTalk ? undefined : '#4e5058' }} onClick={() => set({ pushToTalk: true })}>Push to talk</button>
+                                <button className={`vc-join ${s.pushToTalk ? '' : 'selected'}`} style={{ flex: 1, background: s.pushToTalk ? 'var(--gh-4e5058)' : undefined }} onClick={() => set({ pushToTalk: false })}>Voice activity</button>
+                                <button className="vc-join" style={{ flex: 1, background: s.pushToTalk ? undefined : 'var(--gh-4e5058)' }} onClick={() => set({ pushToTalk: true })}>Push to talk</button>
                             </div>
                             {s.pushToTalk && (
                                 <div style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'center', fontSize: 13 }}>

@@ -64,7 +64,7 @@ const PackageLibraryWindow = ({ projectType = 'React App', projectId, onPackageI
                     />
                 </div>
                 {message && (
-                    <div style={{ padding: '6px 12px', fontSize: 12, color: message.startsWith('✕') ? '#f48771' : message.startsWith('✓') ? '#6a9955' : '#ccc' }}>
+                    <div style={{ padding: '6px 12px', fontSize: 12, color: message.startsWith('✕') ? 'var(--gh-f48771)' : message.startsWith('✓') ? 'var(--gh-6a9955)' : 'var(--gh-cccccc)' }}>
                         {message}
                     </div>
                 )}
@@ -82,7 +82,7 @@ const PackageLibraryWindow = ({ projectType = 'React App', projectId, onPackageI
                     )}
 
                     {filteredPackages.length === 0 && !showCustom ? (
-                        <div style={{ padding: '20px', textAlign: 'center', color: '#999' }}>No packages found</div>
+                        <div style={{ padding: '20px', textAlign: 'center', color: 'var(--gh-999999)' }}>No packages found</div>
                     ) : (
                         filteredPackages.map((pkg) => (
                             <div key={pkg.name} className="package-item">
