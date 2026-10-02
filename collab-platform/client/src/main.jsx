@@ -14,16 +14,16 @@ import './index.css';
 import './modern-dark.css';
 import './ui.css';
 import './themes.css';
+import { applyStoredAppearance } from './appearance/context';
 
-// Site theme ('classic' or 'cozy'), chosen per browser
-try { document.documentElement.dataset.theme = localStorage.getItem('ss-theme') || 'classic'; } catch { /* storage blocked */ }
+// Apply the saved look (Appearance page) before the first paint
+applyStoredAppearance();
 import { AuthProvider } from './context/AuthContext.jsx';
 import axios from 'axios'; // <-- IMPORT AXIOS
 import { installNetworkResilience } from './utils/serverStatus';
 
 // --- Configure Monaco Editor to load from local bundle instead of CDN ---
 import { loader } from '@monaco-editor/react';
-import { defineEditorThemes } from './utils/theme';
 import * as monaco from 'monaco-editor';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
@@ -41,7 +41,6 @@ self.MonacoEnvironment = {
   }
 };
 loader.config({ monaco });
-defineEditorThemes(monaco);
 // ---
 
 console.log("1. main.jsx is running");

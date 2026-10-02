@@ -6,7 +6,8 @@ import AuthContext from '../context/AuthContext';
 import EditRoomModal from '../components/rooms/EditRoomModal';
 import { socket } from '../socket';
 import PageTitle from '../components/layout/PageTitle';
-import CozyCat from '../components/layout/CozyCat';
+import { Mascot } from '../appearance/art';
+import { useAppearance } from '../appearance/context';
 import { Loading, EmptyState } from '../components/layout/Friendly';
 
 const errMsg = (err, fallback = 'Something went wrong') => err.response?.data?.msg || err.response?.data?.reason || fallback;
@@ -120,6 +121,7 @@ function CreateRoomModal({ onClose, onCreated }) {
 
 const DashboardPage = () => {
     const { user } = useContext(AuthContext);
+    const { settings: appearanceSettings } = useAppearance();
     const navigate = useNavigate();
 
     const [myRooms, setMyRooms] = useState([]);
@@ -263,7 +265,7 @@ const DashboardPage = () => {
             <div className="ui-grid">
                 <div className="ui-stack">
                     <section className="ui-card" style={{ position: 'relative' }}>
-                        {myRooms.length > 0 && <CozyCat style={{ position: 'absolute', top: -48, left: 210, width: 96, height: 64 }} />}
+                        {myRooms.length > 0 && <Mascot mascot={appearanceSettings.mascot} z={appearanceSettings.colors.link} style={{ position: 'absolute', top: -48, left: 210 }} />}
                         <div className="ui-card-head" style={{ flexWrap: 'wrap' }}>
                             <h2>Your rooms</h2>
                             <form onSubmit={handleSearch} className="ui-inline" role="search" style={{ maxWidth: 320, width: '100%' }}>
