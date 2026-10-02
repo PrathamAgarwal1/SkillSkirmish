@@ -28,7 +28,7 @@ export const PRESETS = {
         prop: { kind: 'mug', colors: { body: '#58a6ff', shade: '#388bfd', accent: '#1f6feb' } }
     },
     cozy: {
-        name: 'Cozy', blurb: 'Late-night café: warm, peach and lavender',
+        name: 'Cozy', blurb: 'Warm dark theme with peach and lavender',
         colors: { bg: '#17131a', surface: '#211b25', border: '#3a3040', text: '#e2d6cd', muted: '#a8999f', accent: '#f5a97f', accentInk: '#2b1b14', link: '#c6a0f6', signal: '#f5a97f', highlight: '#f5a97f', success: '#a6da95', warning: '#eed49f', danger: '#ed8796' },
         fonts: { heading: 'Nunito', body: 'Inter', mono: 'JetBrains Mono' }, radius: 18,
         options: { art: 'cozy', nav: 'terminal', cursor: 'blink', grid: 'on', density: 'comfortable' },

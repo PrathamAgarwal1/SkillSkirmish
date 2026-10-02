@@ -158,11 +158,11 @@ const HomePage = () => {
         <div className="ld">
             <section className="ld-hero">
                 <div className="ld-hero-text">
-                    <span className="ld-pill">☕ cozy coding, together</span>
+                    <span className="ld-pill">⚔️ multiplayer coding</span>
                     <h1>Code together.<br />Battle friends.<br /><span className="ld-accent">Get better.</span><span className="ui-cursor" aria-hidden="true" /></h1>
                     <p className="ld-sub">
-                        A warm little corner of the internet for developers: shared editors and voice rooms,
-                        live code battles with friends, and skill ratings that grow with you. All in your browser.
+                        Build with your team in shared editors and voice rooms. Go head-to-head in live coding
+                        battles. Earn ratings that prove what you can actually do. Nothing to install.
                     </p>
                     <div className="ld-ctas">
                         {isAuthenticated ? (
@@ -210,8 +210,8 @@ const HomePage = () => {
             </section>
 
             <section className="ld-vibes">
-                <h2>Make it yours</h2>
-                <p>Pick a vibe and the whole site changes, right now. After you sign up you can tweak every colour, the mascot and the fonts.</p>
+                <h2>Your setup, your rules</h2>
+                <p>Seven themes, every colour, fonts, mascot and your own CSS. Click one to restyle the whole site right now.</p>
                 <div className="ld-vibe-row">
                     {Object.entries(PRESETS).map(([id, p]) => (
                         <button key={id} className={`ld-vibe${settings.preset === id ? ' on' : ''}`} onClick={() => tryPreset(id)} aria-pressed={settings.preset === id}
@@ -226,8 +226,8 @@ const HomePage = () => {
             {statLine && <section className="ld-stats">{statLine.map(s => <span key={s}>{s}</span>)}</section>}
 
             <section className="ld-final">
-                <h2>Pull up a chair.</h2>
-                <p>Grab a coffee, invite a friend, and write something fun tonight.</p>
+                <h2>Your first battle is waiting.</h2>
+                <p>Sign up, invite a friend, and find out who really knows JavaScript.</p>
                 {isAuthenticated
                     ? <Link to="/dashboard" className="ui-btn primary ld-big">Open your home</Link>
                     : <Link to="/register" className="ui-btn primary ld-big">Create your account</Link>}
@@ -241,7 +241,6 @@ const HomePage = () => {
                     {!isAuthenticated && <Link to="/login">Log in</Link>}
                     {!isAuthenticated && <Link to="/register">Sign up</Link>}
                 </nav>
-                <span className="ld-made">made with ☕ and a lot of late nights</span>
             </footer>
 
             {showInviteModal && (
