@@ -1,6 +1,7 @@
 // battle/CodeArena.jsx — dev tasks, debug races and algorithm battles: statement, editor, tests.
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Editor from '@monaco-editor/react';
+import { useEditorTheme } from '../utils/theme';
 import ReactMarkdown from 'react-markdown';
 import { socket } from '../socket';
 import { createRunner } from './runner';
@@ -62,6 +63,7 @@ function SampleTables({ tables }) {
 }
 
 export default function CodeArena({ m, myId }) {
+    const editorTheme = useEditorTheme();
     const { state } = m;
     const problem = state.problem;
     const inputs = state.inputs;
@@ -232,7 +234,7 @@ export default function CodeArena({ m, myId }) {
                             language={language}
                             value={code}
                             onChange={onEdit}
-                            theme="vs-dark"
+                            theme={editorTheme}
                             options={{ minimap: { enabled: false }, fontSize: 14, tabSize: 4, scrollBeyondLastLine: false, automaticLayout: true, padding: { top: 10 } }}
                         />
                     </div>

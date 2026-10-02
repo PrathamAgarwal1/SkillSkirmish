@@ -9,6 +9,7 @@ import InviteModal from '../components/rooms/InviteModal';
 import AuthContext from '../context/AuthContext';
 import { socket } from '../socket';
 import './Profile.css';
+import { Loading, EmptyState } from '../components/layout/Friendly';
 
 const availableSkills = [
     'JavaScript', 'TypeScript', 'React', 'Angular', 'Vue', 'Node.js', 'Express.js',
@@ -210,7 +211,7 @@ const ProfilePage = () => {
         }
     };
 
-    if (loading && !profile) return <div className="ui-page"><p className="ui-muted">Loading profile…</p></div>;
+    if (loading && !profile) return <div className="ui-page"><Loading what="Loading the profile" full /></div>;
     if (!profile) return <div className="ui-page"><p className="ui-muted">Couldn't load this profile.</p></div>;
 
     const skills = profile.skills || [];
@@ -329,7 +330,7 @@ const ProfilePage = () => {
                                 })}
                             </ul>
                         ) : (
-                            <div className="ui-empty">{isOwnProfile ? 'Add the skills you work with, then take a short assessment to get a rating.' : 'No skills added yet.'}</div>
+                            <EmptyState compact title={isOwnProfile ? 'What do you code in?' : 'No skills yet'}>{isOwnProfile ? 'Add the skills you work with below, then take a short assessment to get a rating.' : `${profile.username} hasn't added any skills yet.`}</EmptyState>
                         )}
                         {isOwnProfile && onCooldown && (
                             <p className="ui-small" style={{ color: 'var(--term-gold)', margin: '10px 0 0' }}>Next assessment available at {cooldownUntil.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.</p>
@@ -393,7 +394,7 @@ const ProfilePage = () => {
                                     </li>
                                 ))}
                             </ul>
-                        ) : <div className="ui-empty">{isOwnProfile ? 'No ranked or friend battles yet.' : `${profile.username} hasn't battled anyone yet.`}</div>}
+                        ) : <EmptyState compact title="No battles yet" action={isOwnProfile ? { label: 'Find a battle', to: '/battle', primary: true } : null}>{isOwnProfile ? 'Ranked and friend battles you play show up here.' : `${profile.username} hasn't battled anyone yet.`}</EmptyState>}
                     </section>
                     <section className="ui-card">
                         <div className="ui-card-head"><h2>Ratings by mode</h2></div>
@@ -432,9 +433,11 @@ const ProfilePage = () => {
                         ))}
                     </div>
                 ) : (
-                    <div className="ui-card"><div className="ui-empty" style={{ paddingTop: 4 }}>
-                        {isOwnProfile ? <>Apps you publish to the <Link to="/gallery" className="ui-link">gallery</Link> show up here.</> : `${profile.username} hasn't published any apps yet.`}
-                    </div></div>
+                    <div className="ui-card">
+                        <EmptyState title="No apps published yet" action={isOwnProfile ? { label: 'Browse the gallery', to: '/gallery' } : null}>
+                            {isOwnProfile ? 'Deploy a project from the IDE and list it in the gallery, and it shows up here.' : `${profile.username} hasn't published any apps yet.`}
+                        </EmptyState>
+                    </div>
                 )
             )}
         </div>

@@ -15,7 +15,7 @@ const VolumeMenu = ({ x, y, name, volume, onChange, onClose }) => {
     return (
         <div ref={ref} className="vc-menu" style={{ left, top }} onContextMenu={(e) => e.preventDefault()}>
             <div style={{ fontWeight: 700, marginBottom: 8 }}>{name}</div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#949ba4' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--gh-949ba4)' }}>
                 <span>USER VOLUME</span><span>{Math.round(volume * 100)}%</span>
             </div>
             <input type="range" min="0" max="200" step="5" value={Math.round(volume * 100)} onChange={(e) => onChange(Number(e.target.value) / 100)} />

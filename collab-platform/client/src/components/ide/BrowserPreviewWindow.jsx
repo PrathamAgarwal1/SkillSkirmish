@@ -132,7 +132,7 @@ const BrowserPreviewWindow = ({ previewUrl, phase, onConsole, onClose, stlite })
         }
     })();
 
-    const btn = { background: 'transparent', border: 'none', color: '#ccc', cursor: 'pointer', fontSize: 14, padding: '2px 6px' };
+    const btn = { background: 'transparent', border: 'none', color: 'var(--gh-cccccc)', cursor: 'pointer', fontSize: 14, padding: '2px 6px' };
 
     return (
         <div
@@ -166,7 +166,7 @@ const BrowserPreviewWindow = ({ previewUrl, phase, onConsole, onClose, stlite })
                     value={device}
                     onChange={(e) => setDevice(e.target.value)}
                     onMouseDown={(e) => e.stopPropagation()}
-                    style={{ background: '#1e1e1e', color: '#ccc', border: '1px solid #3e3e42', borderRadius: 3, fontSize: 11 }}
+                    style={{ background: 'var(--gh-1e1e1e)', color: 'var(--gh-cccccc)', border: '1px solid var(--gh-3e3e42)', borderRadius: 3, fontSize: 11 }}
                     title="Viewport size"
                 >
                     {Object.entries(DEVICES).map(([id, d]) => <option key={id} value={id}>{d.label}</option>)}
@@ -174,15 +174,15 @@ const BrowserPreviewWindow = ({ previewUrl, phase, onConsole, onClose, stlite })
                 <button className="window-btn" onClick={() => setIsMaximized(m => !m)} title={isMaximized ? 'Restore' : 'Maximize'}>
                     {isMaximized ? '🗗' : '🗖'}
                 </button>
-                <button className="window-btn" onClick={onClose} title="Close" style={{ color: '#f85149' }}>✕</button>
+                <button className="window-btn" onClick={onClose} title="Close" style={{ color: 'var(--gh-f85149)' }}>✕</button>
             </div>
 
             {/* Toolbar */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 6px', background: '#252526', borderBottom: '1px solid #3e3e42', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 6px', background: 'var(--gh-252526)', borderBottom: '1px solid var(--gh-3e3e42)', flexShrink: 0 }}>
                 <button style={btn} onClick={() => sendCommand('back')} disabled={!previewUrl} title="Back">←</button>
                 <button style={btn} onClick={() => sendCommand('forward')} disabled={!previewUrl} title="Forward">→</button>
                 <button style={btn} onClick={reload} disabled={!previewUrl} title="Reload">⟳</button>
-                <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: '#1e1e1e', border: '1px solid #3e3e42', borderRadius: 14, padding: '0 10px' }}>
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: 'var(--gh-1e1e1e)', border: '1px solid var(--gh-3e3e42)', borderRadius: 14, padding: '0 10px' }}>
                     <span title={previewUrl ? 'Preview is running in an isolated sandbox' : ''} style={{ fontSize: 11, marginRight: 6 }}>
                         {previewUrl ? (isStarting ? '⏳' : '🔒') : '⚪'}
                     </span>
@@ -192,7 +192,7 @@ const BrowserPreviewWindow = ({ previewUrl, phase, onConsole, onClose, stlite })
                         onKeyDown={(e) => e.key === 'Enter' && go()}
                         placeholder={previewUrl ? '/' : 'Press ▶ Run to start a preview'}
                         disabled={!previewUrl}
-                        style={{ flex: 1, background: 'transparent', border: 'none', color: '#ddd', fontSize: 12, padding: '5px 0', outline: 'none', fontFamily: 'monospace' }}
+                        style={{ flex: 1, background: 'transparent', border: 'none', color: 'var(--gh-dddddd)', fontSize: 12, padding: '5px 0', outline: 'none', fontFamily: 'monospace' }}
                     />
                 </div>
                 <button style={btn} onClick={copyUrl} disabled={!previewUrl} title="Copy preview URL">{copied ? '✓' : '⧉'}</button>
@@ -200,7 +200,7 @@ const BrowserPreviewWindow = ({ previewUrl, phase, onConsole, onClose, stlite })
             </div>
 
             {/* Viewport */}
-            <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: dev.width ? 'flex-start' : 'stretch', background: dev.width ? '#111' : '#fff', overflow: 'auto', padding: dev.width ? 12 : 0 }}>
+            <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: dev.width ? 'flex-start' : 'stretch', background: dev.width ? 'var(--gh-111111)' : 'var(--gh-ffffff)', overflow: 'auto', padding: dev.width ? 12 : 0 }}>
                 {previewUrl ? (
                     <iframe
                         ref={iframeRef}
@@ -216,14 +216,14 @@ const BrowserPreviewWindow = ({ previewUrl, phase, onConsole, onClose, stlite })
                             width: dev.width ? dev.width : '100%',
                             height: dev.width ? dev.height : '100%',
                             flexShrink: 0,
-                            background: '#fff',
+                            background: 'var(--gh-ffffff)',
                             pointerEvents: dragging ? 'none' : 'auto'
                         }}
                     />
                 ) : (
-                    <div style={{ margin: 'auto', color: '#888', fontFamily: 'monospace', textAlign: 'center', padding: 24 }}>
+                    <div style={{ margin: 'auto', color: 'var(--gh-888888)', fontFamily: 'monospace', textAlign: 'center', padding: 24 }}>
                         <div style={{ fontSize: 32, marginBottom: 8 }}>🌐</div>
-                        No preview running.<br />Press <b style={{ color: '#4fc1ff' }}>▶ Run</b> to start your app.
+                        No preview running.<br />Press <b style={{ color: 'var(--gh-4fc1ff)' }}>▶ Run</b> to start your app.
                     </div>
                 )}
             </div>
@@ -232,7 +232,7 @@ const BrowserPreviewWindow = ({ previewUrl, phase, onConsole, onClose, stlite })
                 <div
                     onMouseDown={startDrag('resize')}
                     title="Drag to resize"
-                    style={{ position: 'absolute', bottom: 0, right: 0, width: 16, height: 16, cursor: 'se-resize', background: 'linear-gradient(135deg, transparent 50%, #007acc 50%)', opacity: 0.6 }}
+                    style={{ position: 'absolute', bottom: 0, right: 0, width: 16, height: 16, cursor: 'se-resize', background: 'linear-gradient(135deg, transparent 50%, var(--gh-007acc) 50%)', opacity: 0.6 }}
                 />
             )}
         </div>

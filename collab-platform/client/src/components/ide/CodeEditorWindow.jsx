@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Editor from '@monaco-editor/react';
+import { useEditorTheme } from '../../utils/theme';
 import * as Y from 'yjs';
 import { MonacoBinding } from 'y-monaco';
 import { socket } from '../../socket';
@@ -19,6 +20,7 @@ const CodeEditorWindow = ({
     projectId = null,
     user = null
 }) => {
+    const editorTheme = useEditorTheme();
     const [content, setContent] = useState(fileContent);
     const [isDirty, setIsDirty] = useState(false);
     const [isConnected, setIsConnected] = useState(socket.connected);
@@ -509,7 +511,7 @@ const CodeEditorWindow = ({
                 <h3>
                     <span className="window-title-icon">📝</span>
                     {currentFile?.name || 'No file selected'}
-                    {isDirty && <span style={{ color: '#f48771', marginLeft: '8px' }}>●</span>}
+                    {isDirty && <span style={{ color: 'var(--gh-f48771)', marginLeft: '8px' }}>●</span>}
                     {isCollabActiveRef.current && (
                         <span className="collab-badge" title="Live collaboration active">
                             🔴 LIVE
@@ -571,7 +573,7 @@ const CodeEditorWindow = ({
                         // Only set value when collab is NOT active (Yjs handles content otherwise)
                         {...(!isCollabActiveRef.current ? { value: content } : {})}
                         onChange={(value) => handleChange(value || '')}
-                        theme="vs-dark"
+                        theme={editorTheme}
                         options={{
                             minimap: { enabled: false },
                             fontSize: 13,
@@ -597,7 +599,7 @@ const CodeEditorWindow = ({
                             alignItems: 'center',
                             justifyContent: 'center',
                             height: '100%',
-                            color: '#999',
+                            color: 'var(--gh-999999)',
                             fontSize: '14px',
                             flexDirection: 'column',
                             gap: '10px'

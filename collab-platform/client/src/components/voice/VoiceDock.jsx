@@ -49,7 +49,7 @@ const VoiceDock = () => {
     if (minimized) {
         return (
             <div className="vc-dock vc-dock-min">
-                <MdSignalCellularAlt size={18} color={reconnecting ? '#f0b232' : pingColor(voice.ping)} />
+                <MdSignalCellularAlt size={18} color={reconnecting ? 'var(--gh-f0b232)' : pingColor(voice.ping)} />
                 <span className="sub" onClick={goToRoom} title="Back to the call">{channel.name}</span>
                 <button className={`vc-btn small ${voice.muted ? 'off' : ''}`} onClick={voice.toggleMute} disabled={!voice.hasMic} title={voice.muted ? 'Unmute' : 'Mute'}>
                     {voice.muted ? <FaMicrophoneSlash /> : <FaMicrophone />}
@@ -57,7 +57,7 @@ const VoiceDock = () => {
                 <button className={`vc-btn small ${voice.deafened ? 'off' : ''}`} onClick={voice.toggleDeafen} title={voice.deafened ? 'Undeafen' : 'Deafen'}>
                     {voice.deafened ? <MdHeadsetOff size={18} /> : <FaHeadphones />}
                 </button>
-                <button className="vc-btn small" onClick={() => voice.leave()} title="Disconnect"><MdCallEnd size={18} color="#f23f43" /></button>
+                <button className="vc-btn small" onClick={() => voice.leave()} title="Disconnect"><MdCallEnd size={18} color="var(--gh-f23f43)" /></button>
                 <button className="vc-btn small" onClick={toggleMinimized} title="Expand"><MdExpandLess size={18} /></button>
             </div>
         );
@@ -72,18 +72,18 @@ const VoiceDock = () => {
                 </div>
             )}
             <div className="vc-dock-status">
-                <MdSignalCellularAlt size={20} color={reconnecting ? '#f0b232' : pingColor(voice.ping)} />
+                <MdSignalCellularAlt size={20} color={reconnecting ? 'var(--gh-f0b232)' : pingColor(voice.ping)} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="title" style={{ color: reconnecting ? '#f0b232' : '#23a55a' }}>
+                    <div className="title" style={{ color: reconnecting ? 'var(--gh-f0b232)' : 'var(--gh-23a55a)' }}>
                         {voice.status === 'reconnecting' ? 'Reconnecting…' : voice.status === 'connecting' ? 'Connecting…' : 'Voice Connected'}
-                        {voice.ping != null && !reconnecting && <span style={{ color: '#949ba4', fontWeight: 400 }}> · {voice.ping} ms</span>}
+                        {voice.ping != null && !reconnecting && <span style={{ color: 'var(--gh-949ba4)', fontWeight: 400 }}> · {voice.ping} ms</span>}
                     </div>
                     <div className="sub" onClick={goToRoom} title="Back to the call">
                         {channel.name}{channel.roomName ? ` / ${channel.roomName}` : ''} · {voice.members.length} in call
                     </div>
                 </div>
                 <button className="vc-btn small" onClick={toggleMinimized} title="Minimize"><MdExpandMore size={20} /></button>
-                <button className="vc-btn small" onClick={() => voice.leave()} title="Disconnect"><MdCallEnd size={20} color="#f23f43" /></button>
+                <button className="vc-btn small" onClick={() => voice.leave()} title="Disconnect"><MdCallEnd size={20} color="var(--gh-f23f43)" /></button>
             </div>
             <div className="vc-dock-row">
                 <button className={`vc-wide ${voice.cameraTrack ? 'active' : ''}`} onClick={voice.toggleCamera} title={voice.cameraTrack ? 'Turn off camera' : 'Turn on camera'}>

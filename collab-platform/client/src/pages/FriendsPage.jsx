@@ -5,6 +5,7 @@ import axios from 'axios';
 import { socket } from '../socket';
 import FriendButton from '../components/friends/FriendButton';
 import '../components/friends/friends.css';
+import { Loading, EmptyState } from '../components/layout/Friendly';
 
 const Avatar = ({ user }) => (
     <span className="fr-avatar" aria-hidden="true">
@@ -107,8 +108,8 @@ const FriendsPage = () => {
 
             <section className="fr-card">
                 <h2>Your friends {data && <span className="fr-muted">({data.friends.length})</span>}</h2>
-                {!data && <p className="fr-muted">Loading…</p>}
-                {data && !data.friends.length && <p className="fr-muted">No friends yet. Search for people above, or add them from their profile.</p>}
+                {!data && <Loading what="Loading your friends" />}
+                {data && !data.friends.length && <EmptyState compact title="No friends yet">Search for people above, or add them from their profile.</EmptyState>}
                 {data?.friends.map(u => (
                     <div key={u._id} className="fr-row">
                         <Avatar user={u} />

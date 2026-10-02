@@ -7,6 +7,7 @@ import EditRoomModal from '../components/rooms/EditRoomModal';
 import { socket } from '../socket';
 import PageTitle from '../components/layout/PageTitle';
 import CozyCat from '../components/layout/CozyCat';
+import { Loading, EmptyState } from '../components/layout/Friendly';
 
 const errMsg = (err, fallback = 'Something went wrong') => err.response?.data?.msg || err.response?.data?.reason || fallback;
 
@@ -218,7 +219,7 @@ const DashboardPage = () => {
         } catch (err) { toast.error(`Couldn't approve: ${errMsg(err)}`); }
     };
 
-    if (loading || !user) return <div className="ui-page"><p className="ui-muted">Loading…</p></div>;
+    if (loading || !user) return <div className="ui-page"><Loading what="Loading your home" full /></div>;
 
     const pending = notifications.filter(n => (n.type === 'invite' && n.relatedId) || (n.type === 'join_request' && n.sender));
     const skills = analytics?.skills || [];
@@ -262,7 +263,7 @@ const DashboardPage = () => {
             <div className="ui-grid">
                 <div className="ui-stack">
                     <section className="ui-card" style={{ position: 'relative' }}>
-                        <CozyCat style={{ position: 'absolute', top: -60, left: 210, width: 112, height: 75 }} />
+                        {myRooms.length > 0 && <CozyCat style={{ position: 'absolute', top: -48, left: 210, width: 96, height: 64 }} />}
                         <div className="ui-card-head" style={{ flexWrap: 'wrap' }}>
                             <h2>Your rooms</h2>
                             <form onSubmit={handleSearch} className="ui-inline" role="search" style={{ maxWidth: 320, width: '100%' }}>
@@ -317,11 +318,9 @@ const DashboardPage = () => {
                                 })}
                             </ul>
                         ) : (
-                            <div className="ui-empty">
+                            <EmptyState title="No rooms yet" action={{ label: 'Create your first room', onClick: () => setShowCreate(true), primary: true }}>
                                 Rooms are where your team chats, talks in voice and builds projects together.
-                                <br />
-                                <button className="ui-btn primary" onClick={() => setShowCreate(true)}>Create your first room</button>
-                            </div>
+                            </EmptyState>
                         )}
                     </section>
 
@@ -342,7 +341,7 @@ const DashboardPage = () => {
                                     </li>
                                 ))}
                             </ul>
-                        ) : <div className="ui-empty">Nothing yet. Your assessments, rooms and invites show up here.</div>}
+                        ) : <EmptyState compact art="mug" title="All quiet for now" action={{ label: 'Play a battle', to: '/battle' }}>Your assessments, rooms and invites will show up here.</EmptyState>}
                     </section>
                 </div>
 
@@ -368,7 +367,7 @@ const DashboardPage = () => {
                                 })}
                             </ul>
                         ) : (
-                            <div className="ui-empty">Add a skill on your profile and take a short assessment to get a rating.</div>
+                            <EmptyState compact art="mug" title="No skills yet" action={{ label: 'Add a skill', to: '/profile' }}>Add the skills you use and take a short assessment to get a rating.</EmptyState>
                         )}
                     </section>
 
