@@ -3,6 +3,7 @@
 // Commands run with `sh` inside the sandbox and use $PORT for the app port (substituted by the runner).
 const fs = require('fs');
 const path = require('path');
+const { planScaffold } = require('./scaffold');
 
 // Folders that are never part of the project's source (installs, caches, build output)
 const IGNORED_DIRS = new Set(['node_modules', '.git', '.pydeps', '.ss', '.next', '.expo', '__pycache__',
@@ -209,15 +210,32 @@ const isPythonApp = (dir, files, projectType) => {
         .some(f => /import\s+streamlit|from\s+streamlit|FastAPI\s*\(|Flask\s*\(/.test(readText(path.join(dir, f)) || ''));
 };
 
+/** A JavaScript project without a package.json: one "Set up and run" target that creates it (scaffold.js). */
+const scaffoldConfig = (plan) => ({
+    env: 'node',
+    root: '',
+    install: [],
+    label: plan.label,
+    targets: [{ id: 'setup', label: 'Set up and run', preview: plan.kind === 'react' || !!plan.server, cmd: '', setup: true }],
+    deploy: { kind: null, reason: 'Press Run once to set the project up (it creates a package.json), then deploy.' },
+    scaffold: plan
+});
+
 /**
  * Returns { env, root, label, install: [{dir, cmd, sources, stampFile}], targets: [...], deploy: {...} }
+ * (plus `scaffold` when the project needs a package.json created before it can run)
  */
-function detectRunConfig(projectDir, projectType = '') {
+function detectRunConfig(projectDir, projectType = '', projectName = 'my-app') {
     const files = listFiles(projectDir);
 
     const pkgFiles = files.filter(f => f.endsWith('package.json') && !f.includes('node_modules/'))
         .sort((a, b) => a.split('/').length - b.split('/').length);
     const hasPython = files.some(f => f.endsWith('.py') || f.endsWith('.ipynb')) || files.includes('requirements.txt');
+
+    // No package.json anywhere but JavaScript code: React apps and code that imports npm packages get
+    // set up first; a plain script without imports only if nothing else (site, Python) fits
+    const scaffold = pkgFiles.length === 0 && !isPythonApp(projectDir, files, projectType) ? planScaffold(projectDir, files, projectName) : null;
+    if (scaffold && (scaffold.kind === 'react' || scaffold.server || scaffold.deps.length)) return scaffoldConfig(scaffold);
 
     // A site with index.html at the top (and no package.json there) is a static website, even if it
     // carries helper scripts (serve.py) or tooling in a subfolder — unless it's clearly a Python app.
@@ -237,6 +255,7 @@ function detectRunConfig(projectDir, projectType = '') {
     if (hasPython) return detectPython(projectDir, files, projectType);
 
     if (files.some(f => f.endsWith('.html'))) return staticSite();
+    if (scaffold) return scaffoldConfig(scaffold);
 
     return {
         env: 'node',

@@ -290,7 +290,7 @@ const WindowManager = ({ projectId, projectType = 'React App', projectName, room
     const rt = useBrowserRuntime({
         enabled: browserMode, projectId, projectName, runConfig,
         addLog, addTerminalLog, setPreviewUrl, setShowBrowserWindow, setRunPhase, setIsProjectRunning,
-        setActiveFileProcessId, refreshFiles, openFile: openFileByPath, user
+        setActiveFileProcessId, refreshFiles, openFile: openFileByPath, user, onRunConfig: setRunConfig
     });
 
     // Keyboard Shortcuts

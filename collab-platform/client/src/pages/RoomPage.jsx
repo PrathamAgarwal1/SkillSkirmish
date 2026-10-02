@@ -12,6 +12,7 @@ import ManageMembersModal from '../components/projects/ManageMembersModal';
 import { VscFolder, VscFileCode, VscChevronDown, VscChevronRight, VscNewFile, VscNewFolder, VscRefresh, VscEllipsis, VscAccount, VscSignOut, VscTrash, VscOrganization, VscAdd, VscCallOutgoing } from "react-icons/vsc";
 import { FaTerminal, FaCrown, FaMicrophone, FaMicrophoneSlash, FaPhoneSlash } from "react-icons/fa";
 import { Loading } from '../components/layout/Friendly';
+import { usePageRoom } from '../voice/pageRoom';
 
 const RoomPage = () => {
     const { roomId: id } = useParams();
@@ -227,6 +228,9 @@ const RoomPage = () => {
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
+
+    // The site-wide voice pill shows this room's channels
+    usePageRoom(id, room?.name);
 
     if (!room) return <div className="ui-page"><Loading what="Opening the room" full /></div>;
 

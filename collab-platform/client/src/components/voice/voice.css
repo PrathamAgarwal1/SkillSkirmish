@@ -163,3 +163,18 @@
 @media (max-width: 600px) {
     .vc-float, .vc-float.big { right: 8px; left: 8px; width: auto; bottom: 64px; height: 50vh; resize: none; }
 }
+
+/* site-wide voice pill (VoiceLauncher): anchored bottom-centre, dragged anywhere from there */
+.vc-pill-anchor { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 2300; }
+.vc-ide-toggle.vc-pill { position: relative; left: auto; bottom: auto; transform: none; padding: 4px; gap: 2px; cursor: grab; touch-action: none; user-select: none; }
+.vc-pill:active { cursor: grabbing; }
+.vc-pill-main { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; background: none; border: none; color: inherit; font: inherit; cursor: inherit; }
+.vc-pill-btn { width: 28px; height: 28px; border-radius: 50%; border: none; display: inline-grid; place-items: center; background: var(--vc-panel-2); color: var(--vc-text); cursor: pointer; }
+.vc-pill-btn:hover { background: var(--vc-hover); }
+.vc-pill-btn.off, .vc-pill-btn.hangup { color: var(--gh-f23f43); }
+.vc-pill-btn:disabled { opacity: 0.5; cursor: default; }
+.vc-pick { display: flex; flex-direction: column; gap: 6px; padding: 14px; overflow-y: auto; height: 100%; box-sizing: border-box; color: var(--vc-text); font: 14px system-ui, sans-serif; }
+.vc-pick-title { font-weight: 700; margin-bottom: 4px; }
+.vc-pick button { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--gh-3f4147); background: var(--vc-panel-2); color: var(--vc-text); font: inherit; text-align: left; cursor: pointer; }
+.vc-pick button:hover { background: var(--vc-hover); }
+.vc-pick-empty { padding: 18px; color: var(--vc-muted); font: 14px system-ui, sans-serif; }

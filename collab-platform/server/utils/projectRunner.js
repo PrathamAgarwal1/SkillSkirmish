@@ -62,7 +62,28 @@ const loadRunConfig = async (projectId, io) => {
     if (sync.imported || sync.toDb) emitter(io, projectId).event('files-changed', sync);
 
     const dir = getProjectDir(projectId);
-    return { project, dir, config: detectRunConfig(dir, project.projectType) };
+    return { project, dir, config: detectRunConfig(dir, project.projectType, project.name) };
+};
+
+/** Writes the files a project without a package.json needs (sandbox/scaffold.js). Returns their paths. */
+const applyScaffold = async (projectId, plan, io) => {
+    const { ensureParentFolders, upsertFile } = require('./projectFiles');
+    const created = Object.keys(plan.files);
+    for (const rel of created) {
+        await ensureParentFolders(projectId, rel);
+        await upsertFile(projectId, rel, plan.files[rel]);
+    }
+    emitter(io, projectId).event('files-changed', { created });
+    return created;
+};
+
+/** "Set up and run": creates the package.json etc., then returns the project's new run config. */
+const setupProject = async (projectId, io) => {
+    const id = String(projectId);
+    const { config } = await loadRunConfig(id, io);
+    if (!config.scaffold) return { success: false, message: 'This project is already set up.', config: await getRunConfig(id, io) };
+    const created = await applyScaffold(id, config.scaffold, io);
+    return { success: true, created, summary: config.scaffold.summary, config: await getRunConfig(id, io) };
 };
 
 /** Runs a command to completion inside the workspace, streaming output. Resolves with the exit code. */
@@ -139,7 +160,12 @@ const runProject = async (projectId, { targetId, userId, io } = {}) => {
 
     try {
         setState(io, id, { phase: 'preparing', target: null, previewUrl: null, error: null, startedAt: Date.now() });
-        const { project, dir, config } = await loadRunConfig(id, io);
+        let { project, dir, config } = await loadRunConfig(id, io);
+        if (config.scaffold) {
+            const created = await applyScaffold(id, config.scaffold, io);
+            out.console(`🧰 Set up the project: created ${created.join(', ')}`, 'success');
+            ({ project, dir, config } = await loadRunConfig(id, io));
+        }
 
         if (config.targets.length === 0) {
             setState(io, id, { phase: 'stopped' });
@@ -485,6 +511,7 @@ sandbox.setIdleHandler(async (projectId) => {
 
 module.exports = {
     runProject,
+    setupProject,
     stopProject,
     runFile,
     writeToProcess,

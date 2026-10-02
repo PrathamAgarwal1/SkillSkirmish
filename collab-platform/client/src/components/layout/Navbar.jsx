@@ -18,8 +18,8 @@ const itemClass = ({ isActive }) => `nav-item${isActive ? ' active' : ''}`;
 
 /** Quick switch between classic and cozy (keeps the user's other appearance settings). */
 function ThemeSwitch() {
-    const { appearance, save } = useAppearance();
-    const cozy = (appearance?.preset || 'classic') !== 'classic';
+    const { appearance, settings, save } = useAppearance();
+    const cozy = settings.preset !== 'classic';
     const toggle = () => save({ ...(appearance || {}), preset: cozy ? 'classic' : 'cozy', colors: {}, palette: {} }).catch(() => {});
     return (
         <button className="nav-theme" onClick={toggle} aria-label={cozy ? 'Switch to the classic theme' : 'Switch to the cozy theme'} title={cozy ? 'Classic theme' : 'Cozy theme'}>

@@ -8,7 +8,8 @@ export const AppearanceContext = createContext(null);
 export function initialAppearance() {
     const saved = loadLocal();
     if (saved) return saved;
-    try { if (localStorage.getItem('ss-theme') === 'cozy') return { preset: 'cozy' }; } catch { /* storage blocked */ }
+    // The old ☕/🌙 switch stored just the theme name; someone who picked classic keeps it
+    try { const old = localStorage.getItem('ss-theme'); if (old === 'cozy' || old === 'classic') return { preset: old }; } catch { /* storage blocked */ }
     return null;
 }
 
