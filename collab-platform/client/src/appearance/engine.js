@@ -37,9 +37,12 @@ export const isLight = (hex) => lightness(hex) > 0.6;
 const alpha = (hex, a) => { const [r, g, b] = hexToRgb(hex).map(x => Math.round(x * 255)); return `rgba(${r}, ${g}, ${b}, ${a})`; };
 
 /* ── settings ── */
+/** The look for anyone who hasn't chosen one. */
+export const DEFAULT_APPEARANCE = { preset: 'cozy' };
+
 /** Full settings: the preset's values with the user's overrides on top. */
 export function resolve(appearance) {
-    const a = appearance || {};
+    const a = appearance || DEFAULT_APPEARANCE;
     const preset = PRESETS[a.preset] || PRESETS.classic;
     return {
         preset: PRESETS[a.preset] ? a.preset : 'classic',
@@ -55,7 +58,7 @@ export function resolve(appearance) {
 }
 
 /** Untouched classic: the stylesheets' own colours apply and nothing is overridden. */
-export const isPlainClassic = (a) => !a || ((a.preset || 'classic') === 'classic' &&
+export const isPlainClassic = (a) => !!a && ((a.preset || 'classic') === 'classic' &&
     !Object.keys(a.colors || {}).length && !Object.keys(a.palette || {}).length && !Object.keys(a.fonts || {}).length &&
     a.radius == null && !a.customCss);
 

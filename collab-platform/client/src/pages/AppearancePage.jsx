@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 import { Link } from 'react-router-dom';
 import { useAppearance } from '../appearance/context';
 import { PRESETS, ROLES, FONT_CHOICES, OPTION_CHOICES, MASCOT_KINDS, PROP_KINDS, ART_COLOR_LABELS } from '../appearance/presets';
-import { derivePalette } from '../appearance/engine';
+import { derivePalette, DEFAULT_APPEARANCE } from '../appearance/engine';
 import { PALETTE_KEYS } from '../appearance/paletteKeys';
 import { Mascot, Prop } from '../appearance/art';
 import PageTitle from '../components/layout/PageTitle';
@@ -48,7 +48,7 @@ export default function AppearancePage() {
     const [paletteFilter, setPaletteFilter] = useState('');
     const [importText, setImportText] = useState('');
     const saveTimer = useRef(null);
-    const draft = appearance || { preset: 'classic' };
+    const draft = appearance || DEFAULT_APPEARANCE;
 
     // Every change previews at once and is saved shortly after
     const change = (next) => {
@@ -96,8 +96,8 @@ export default function AppearancePage() {
             <PageTitle path="~/appearance" title="Make it yours" sub="Every change shows up instantly everywhere on the site, and is saved automatically.">
                 <div className="ap-actions">
                     <span className="ui-muted ui-small" role="status">{status}</span>
-                    <button className="ui-btn ghost" onClick={() => change(opened.current || { preset: 'classic' })}>Undo my changes</button>
-                    <button className="ui-btn ghost" onClick={() => { if (window.confirm('Go back to the default look? Your custom CSS will be removed too.')) change(null); }}>Reset to default</button>
+                    <button className="ui-btn ghost" onClick={() => change(opened.current || null)}>Undo my changes</button>
+                    <button className="ui-btn ghost" onClick={() => { if (window.confirm('Go back to the default look (Cozy)? Your custom CSS will be removed too.')) change(null); }}>Reset to default</button>
                 </div>
             </PageTitle>
 
