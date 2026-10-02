@@ -71,6 +71,41 @@ const remember = (userId, key) => {
     recent.set(String(userId), list.slice(0, 20));
 };
 
+/**
+ * Quiz duels draw from the question bank: unseen by every player, aimed at their average skill rating
+ * (their assessed rating in that skill, or 1200). Re-run when a friend joins an invite.
+ */
+async function prepareQuiz(match, rng) {
+    const ids = match.players.map(p => p.userId);
+    const users = await User.find({ _id: { $in: ids } }).select('skills').lean().catch(() => []);
+    match.skillRatings = {};
+    for (const id of ids) {
+        const s = users.find(u => String(u._id) === id)?.skills?.find(k => k.name.toLowerCase() === match.skill.toLowerCase() && k.elo != null);
+        match.skillRatings[id] = s?.elo ?? 1200;
+    }
+    const target = Math.round(Object.values(match.skillRatings).reduce((a, b) => a + b, 0) / Math.max(1, ids.length));
+    match.rounds = await rounds.bankQuizRounds(rng, { userIds: ids, skill: match.skill, target, count: rounds.QUIZ_ROUNDS });
+}
+
+/** Records each player's answer on a bank question (its rating learns) and marks it as seen. */
+function recordQuizRound(match, r, results) {
+    const id = r.prompt?.questionId;
+    if (!id) return;
+    const bank = require('../questions/bank');
+    const played = results.filter(res => playerOf(match, res.userId)?.connected || res.guess);
+    bank.markSeen(played.map(res => res.userId), { _id: id, skill: match.skill }).catch(() => {});
+    const answers = played.map(res => ({
+        questionId: id,
+        userRating: match.skillRatings?.[res.userId] ?? 1200,
+        score: res.detail?.right ? 1 : 0,
+        timeMs: res.guess ? Math.max(0, (match.round.guesses.get(res.userId)?.at || 0) - match.round.startedAt) : r.limitMs
+    }));
+    // One after another: both players' answers update the same question document
+    (async () => {
+        for (const a of answers) await bank.recordAnswer(a);
+    })().catch(err => console.warn('[battle] could not record a quiz answer:', err.message));
+}
+
 /** Fills in what the match is about, based on its kind. */
 async function prepare(match, { contentId }) {
     const engine = ENGINE[match.kind];
@@ -96,9 +131,8 @@ async function prepare(match, { contentId }) {
         const solo = ['practice', 'daily'].includes(match.mode);
         const seed = match.mode === 'daily' ? seedOf(`daily:${match.day}`) : crypto.randomBytes(4).readUInt32LE(0);
         const rng = rngFrom(seed);
-        match.rounds = match.kind === 'quiz'
-            ? rounds.quizRounds(rng, match.skill, rounds.QUIZ_ROUNDS)
-            : rounds.guessrRounds(rng, solo ? rounds.SOLO_ROUNDS : rounds.MAX_DUEL_ROUNDS);
+        if (match.kind === 'quiz') await prepareQuiz(match, rng);
+        else match.rounds = rounds.guessrRounds(rng, solo ? rounds.SOLO_ROUNDS : rounds.MAX_DUEL_ROUNDS);
         match.contentKey = match.kind === 'quiz' ? `quiz:${match.skill}` : `guessr:${match.mode}`;
         match.durationMs = null;
         match.round = null;
@@ -348,6 +382,7 @@ function endRound(match) {
     }
     const entry = { index: round.index, type: r.type, prompt: r.prompt, answer: r.answer, multiplier: round.multiplier, results };
     match.history.push(entry);
+    if (match.kind === 'quiz') recordQuizRound(match, r, results);
     io.to(room(match.id)).emit('battle:reveal', { matchId: match.id, ...entry });
 
     const last = round.index + 1 >= match.rounds.length;
@@ -425,7 +460,7 @@ function finish(match, reason) {
             language: target.best.language,
             code: target.best.code,
             ...(match.engine === 'code'
-                ? { fnName: match.challenge.fn[target.best.language], inputs: match.tests.map(t => t.args), harness: match.challenge.harness, schema: match.challenge.schema }
+                ? { fnName: match.challenge.fn[target.best.language], inputs: match.tests.map(t => t.args), harness: match.challenge.harness, schema: match.challenge.schema, signature: { params: match.challenge.params, returns: match.challenge.returns, wide: !!match.challenge.wide } }
                 : { image: targetImage(match.target) })
         });
     }
@@ -715,6 +750,11 @@ function register(socket, { safe, ack }) {
         p.language = defaultLanguage(match);
         match.players.push(p);
         socket.join(room(match.id));
+        // Quiz questions were picked for the host alone; pick again so neither player has seen them
+        if (match.kind === 'quiz') {
+            await prepareQuiz(match, rngFrom(crypto.randomBytes(4).readUInt32LE(0))).catch(err => console.warn('[battle] quiz re-pick failed:', err.message));
+            if (match.status !== 'waiting' || !playerOf(match, userId)) return reply({ error: 'This battle is no longer available' });
+        }
         reply({ ok: true, matchId: match.id });
         start(match);
     }));

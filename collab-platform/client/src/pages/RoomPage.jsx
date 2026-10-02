@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useContext, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
+import { toast } from 'react-toastify';
 import AuthContext from '../context/AuthContext';
 import { socket } from '../socket';
 import VoiceChannelList from '../components/voice/VoiceChannelList';
@@ -10,6 +11,8 @@ import CreateProjectModal from '../components/projects/CreateProjectModal';
 import ManageMembersModal from '../components/projects/ManageMembersModal';
 import { VscFolder, VscFileCode, VscChevronDown, VscChevronRight, VscNewFile, VscNewFolder, VscRefresh, VscEllipsis, VscAccount, VscSignOut, VscTrash, VscOrganization, VscAdd, VscCallOutgoing } from "react-icons/vsc";
 import { FaTerminal, FaCrown, FaMicrophone, FaMicrophoneSlash, FaPhoneSlash } from "react-icons/fa";
+import { Loading } from '../components/layout/Friendly';
+import { usePageRoom } from '../voice/pageRoom';
 
 const RoomPage = () => {
     const { roomId: id } = useParams();
@@ -226,7 +229,10 @@ const RoomPage = () => {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
 
-    if (!room) return <div className="container" style={{ paddingTop: '3rem' }}>Loading Room...</div>;
+    // The site-wide voice pill shows this room's channels
+    usePageRoom(id, room?.name);
+
+    if (!room) return <div className="ui-page"><Loading what="Opening the room" full /></div>;
 
     return (
         <div className="war-room-grid">
@@ -236,9 +242,9 @@ const RoomPage = () => {
                 className="tiled-sidebar"
                 style={{
                     width: isSidebarOpen ? '280px' : '0px',
-                    backgroundColor: '#252526',
-                    color: '#cccccc',
-                    borderRight: '1px solid #000',
+                    backgroundColor: 'var(--gh-252526)',
+                    color: 'var(--gh-cccccc)',
+                    borderRight: '1px solid var(--gh-000000)',
                     display: 'flex',
                     flexDirection: 'column',
                     fontSize: '15px'
@@ -251,7 +257,7 @@ const RoomPage = () => {
                         padding: '12px 20px',
                         fontSize: '14px',
                         fontWeight: 'bold',
-                        color: '#bbbbbb',
+                        color: 'var(--gh-bbbbbb)',
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
@@ -285,11 +291,11 @@ const RoomPage = () => {
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'space-between',
-                                        color: '#cccccc',
+                                        color: 'var(--gh-cccccc)',
                                         fontSize: '14px'
                                     }}
                                     onMouseEnter={(e) => {
-                                        e.currentTarget.style.backgroundColor = '#37373d';
+                                        e.currentTarget.style.backgroundColor = 'var(--gh-37373d)';
                                         e.currentTarget.querySelector('.proj-actions').style.opacity = '1';
                                     }}
                                     onMouseLeave={(e) => {
@@ -299,18 +305,18 @@ const RoomPage = () => {
                                 >
                                     <div style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }} onClick={() => navigate(`/projects/${proj._id}`)}>
                                         <VscChevronRight style={{ marginRight: '5px', fontSize: '13px', flexShrink: 0 }} />
-                                        <VscFolder style={{ marginRight: '6px', color: '#dcb67a', fontSize: '15px', flexShrink: 0 }} />
+                                        <VscFolder style={{ marginRight: '6px', color: 'var(--gh-dcb67a)', fontSize: '15px', flexShrink: 0 }} />
                                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{proj.name}</span>
                                     </div>
                                     {/* Project Action Icons (show on hover) */}
                                     <div className="proj-actions" style={{ display: 'flex', gap: '6px', opacity: 0, transition: 'opacity 0.15s', flexShrink: 0, marginLeft: '8px' }}>
                                         <VscOrganization
-                                            style={{ cursor: 'pointer', fontSize: '15px', color: '#58a6ff' }}
+                                            style={{ cursor: 'pointer', fontSize: '15px', color: 'var(--gh-58a6ff)' }}
                                             title="Manage Members"
                                             onClick={(e) => { e.stopPropagation(); setManageMembersProject(proj); }}
                                         />
                                         <VscTrash
-                                            style={{ cursor: 'pointer', fontSize: '15px', color: '#f85149' }}
+                                            style={{ cursor: 'pointer', fontSize: '15px', color: 'var(--gh-f85149)' }}
                                             title="Delete Project"
                                             onClick={(e) => handleDeleteProject(e, proj._id, proj.name)}
                                         />
@@ -358,63 +364,35 @@ const RoomPage = () => {
                                             width: '8px',
                                             height: '8px',
                                             borderRadius: '50%',
-                                            background: isOnline ? '#3fb950' : '#484f58',
+                                            background: isOnline ? 'var(--gh-3fb950)' : 'var(--gh-484f58)',
                                             marginRight: '10px',
                                             flexShrink: 0,
                                             boxShadow: isOnline ? '0 0 6px rgba(63, 185, 80, 0.5)' : 'none'
                                         }} title={isOnline ? 'Online' : 'Offline'} />
-                                        <VscAccount style={{ marginRight: '8px', color: isOwner ? '#f0883e' : '#58a6ff', fontSize: '16px', flexShrink: 0 }} />
+                                        <VscAccount style={{ marginRight: '8px', color: isOwner ? 'var(--gh-f0883e)' : 'var(--gh-58a6ff)', fontSize: '16px', flexShrink: 0 }} />
                                         <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{memberUsername}</span>
                                         {isOwner && (
-                                            <FaCrown style={{ color: '#f0883e', fontSize: '12px', marginLeft: '6px', flexShrink: 0 }} title="Room Owner" />
+                                            <FaCrown style={{ color: 'var(--gh-f0883e)', fontSize: '12px', marginLeft: '6px', flexShrink: 0 }} title="Room Owner" />
                                         )}
                                     </li>
                                 );
                             })}
                         </ul>
-                        {/* Invite Link */}
-                        <div style={{ padding: '12px 20px' }}>
+                        {/* Invite link + leave */}
+                        <div style={{ padding: '12px 20px', display: 'grid', gap: 8 }}>
                             <button
+                                className="ui-btn"
+                                style={{ width: '100%' }}
                                 onClick={() => {
-                                    navigator.clipboard.writeText(window.location.href);
-                                    alert('Invite Link Copied!');
-                                }}
-                                style={{
-                                    background: '#0e639c',
-                                    color: 'white',
-                                    border: 'none',
-                                    width: '100%',
-                                    padding: '10px',
-                                    cursor: 'pointer',
-                                    fontSize: '14px',
-                                    borderRadius: '4px',
-                                    fontWeight: '600'
+                                    navigator.clipboard.writeText(window.location.href)
+                                        .then(() => toast.success('Invite link copied'))
+                                        .catch(() => toast.error("Couldn't copy. Copy the address bar instead."));
                                 }}
                             >
-                                Copy Invite Link
+                                Copy invite link
                             </button>
-                        </div>
-                        {/* Leave Button */}
-                        <div style={{ padding: '0 20px 12px 20px' }}>
-                            <button
-                                onClick={handleLeaveRoom}
-                                style={{
-                                    background: '#d32f2f',
-                                    color: 'white',
-                                    border: 'none',
-                                    width: '100%',
-                                    padding: '10px',
-                                    cursor: 'pointer',
-                                    fontSize: '14px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: '8px',
-                                    borderRadius: '4px',
-                                    fontWeight: '600'
-                                }}
-                            >
-                                <VscSignOut style={{ fontSize: '16px' }} /> Leave Room
+                            <button className="ui-btn quiet danger" style={{ width: '100%' }} onClick={handleLeaveRoom}>
+                                <VscSignOut style={{ fontSize: '16px' }} /> Leave room
                             </button>
                         </div>
                     </div>
@@ -428,7 +406,7 @@ const RoomPage = () => {
                 {!isSidebarOpen && (
                     <button
                         onClick={() => setIsSidebarOpen(true)}
-                        style={{ position: 'absolute', top: '20px', left: '20px', zIndex: 60, background: '#252526', border: '1px solid #333', color: '#fff', borderRadius: '4px', padding: '6px 10px', cursor: 'pointer' }}
+                        style={{ position: 'absolute', top: '20px', left: '20px', zIndex: 60, background: 'var(--gh-252526)', border: '1px solid var(--gh-333333)', color: 'var(--gh-ffffff)', borderRadius: '4px', padding: '6px 10px', cursor: 'pointer' }}
                     >
                         <VscFolder />
                     </button>
@@ -438,7 +416,7 @@ const RoomPage = () => {
                 {!isChatOpen && (
                     <button
                         onClick={() => setIsChatOpen(true)}
-                        style={{ position: 'absolute', top: '20px', right: '20px', zIndex: 60, background: 'rgba(0,0,0,0.6)', border: '1px solid #333', color: '#fff', borderRadius: '4px', padding: '6px 10px', cursor: 'pointer' }}
+                        style={{ position: 'absolute', top: '20px', right: '20px', zIndex: 60, background: 'rgba(0,0,0,0.6)', border: '1px solid var(--gh-333333)', color: 'var(--gh-ffffff)', borderRadius: '4px', padding: '6px 10px', cursor: 'pointer' }}
                     >
                         <FaTerminal />
                     </button>
@@ -456,23 +434,23 @@ const RoomPage = () => {
                 </div>
 
                 {/* Shared goals for the session */}
-                <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border-subtle)', background: '#0d1117' }}>
-                    <div style={{ fontSize: '0.75rem', color: '#8b949e', marginBottom: '4px' }}>
+                <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--gh-0d1117)' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--gh-8b949e)', marginBottom: '4px' }}>
                         GOALS ({tasks.filter(t => t.completed).length}/{tasks.length})
                     </div>
                     <div style={{ maxHeight: '70px', overflowY: 'auto', marginBottom: '4px' }}>
                         {tasks.map(t => (
-                            <div key={t.id} style={{ display: 'flex', alignItems: 'center', fontSize: '0.8rem', marginBottom: '2px', color: '#c9d1d9' }}>
-                                <span style={{ color: t.completed ? '#3fb950' : '#8b949e', marginRight: '6px' }}>{t.completed ? '[x]' : '[ ]'}</span>
+                            <div key={t.id} style={{ display: 'flex', alignItems: 'center', fontSize: '0.8rem', marginBottom: '2px', color: 'var(--gh-c9d1d9)' }}>
+                                <span style={{ color: t.completed ? 'var(--gh-3fb950)' : 'var(--gh-8b949e)', marginRight: '6px' }}>{t.completed ? '[x]' : '[ ]'}</span>
                                 <span style={{ textDecoration: t.completed ? 'line-through' : 'none', opacity: t.completed ? 0.6 : 1, cursor: 'pointer', flex: 1 }} onClick={() => toggleTask(t.id)}>{t.text}</span>
-                                <span style={{ color: '#6e7681', cursor: 'pointer', marginLeft: '6px' }} onClick={() => removeTask(t.id)} title="Remove">×</span>
+                                <span style={{ color: 'var(--gh-6e7681)', cursor: 'pointer', marginLeft: '6px' }} onClick={() => removeTask(t.id)} title="Remove">×</span>
                             </div>
                         ))}
                     </div>
                     <form onSubmit={handleAddTask}>
                         <input
                             className="cmd-input"
-                            style={{ padding: '4px', fontSize: '0.75rem', border: 'none', borderBottom: '1px solid #30363d', borderRadius: 0 }}
+                            style={{ padding: '4px', fontSize: '0.75rem', border: 'none', borderBottom: '1px solid var(--gh-30363d)', borderRadius: 0 }}
                             placeholder="+ Add goal…"
                             value={taskInput}
                             onChange={(e) => setTaskInput(e.target.value)}

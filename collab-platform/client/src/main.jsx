@@ -9,8 +9,15 @@ window.Buffer = Buffer;
 
 import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
+import './palette.css';
 import './index.css';
 import './modern-dark.css';
+import './ui.css';
+import './themes.css';
+import { applyStoredAppearance } from './appearance/context';
+
+// Apply the saved look (Appearance page) before the first paint
+applyStoredAppearance();
 import { AuthProvider } from './context/AuthContext.jsx';
 import axios from 'axios'; // <-- IMPORT AXIOS
 import { installNetworkResilience } from './utils/serverStatus';

@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Link, useNavigate } from 'react-router-dom';
+import { toast } from 'react-toastify';
+import PageTitle from '../components/layout/PageTitle';
+import { Loading, EmptyState } from '../components/layout/Friendly';
 
 const ForumPage = () => {
     const [activeTab, setActiveTab] = useState('matchmake');
@@ -67,7 +70,7 @@ const ForumPage = () => {
             setMatchResult(res.data);
         } catch (err) {
             console.error(err);
-            alert("Failed to find match. Ensure backend is running.");
+            toast.error(`Couldn't search right now: ${err.response?.data?.reason || err.response?.data?.msg || 'try again in a moment'}`);
         } finally {
             setLoading(false);
         }
@@ -102,436 +105,166 @@ const ForumPage = () => {
                 roomName: roomName
             });
 
-            alert(`Invitation sent to join ${roomName}!`);
+            toast.success(`Invite sent for ${roomName}`);
             setShowInviteModal(false);
 
-            if (selectedRoomId === 'new' && window.confirm("Go to new room now?")) {
+            if (selectedRoomId === 'new' && window.confirm("Open the new room now?")) {
                 navigate(`/rooms/${roomId}`);
             }
         } catch (err) {
             console.error("Invite failed:", err);
-            alert(err.response?.data?.msg || "Failed to send invitation.");
+            toast.error(err.response?.data?.msg || "Couldn't send the invite.");
         }
     };
 
     const handleRequestJoinRoom = async (roomId) => {
         try {
             await axios.post(`/api/rooms/${roomId}/request-join`);
-            alert('Join request sent to owner!');
+            toast.success('Join request sent to the owner');
             setRecommendedRooms(prev => prev.filter(r => r.roomId !== roomId));
         } catch (err) {
-            alert(err.response?.data?.msg || 'Failed to send join request.');
+            toast.error(err.response?.data?.msg || "Couldn't send the join request.");
         }
     };
 
-    const getScoreColor = (score) => {
-        if (score >= 60) return 'var(--term-green)';
-        if (score >= 35) return 'var(--term-gold)';
-        return 'var(--term-red, #e94560)';
-    };
+    const filteredDevelopers = developers.filter(dev => {
+        const username = dev.user?.username || '';
+        const skills = dev.skills || [];
+        const best = skills.length > 0 ? Math.max(...skills.map(s => s.elo || 0)) : 0;
+        return (!filterName || username.toLowerCase().includes(filterName.toLowerCase())) &&
+            (!filterSkill || skills.some(s => s.name.toLowerCase().includes(filterSkill.toLowerCase()))) &&
+            best >= (filterMinElo ? parseInt(filterMinElo, 10) : 0) &&
+            best <= (filterMaxElo ? parseInt(filterMaxElo, 10) : 10000);
+    });
+
+    const TABS = [
+        { key: 'matchmake', label: 'Find teammates' },
+        { key: 'browse', label: 'Browse developers' },
+        { key: 'discover', label: 'Rooms for you' }
+    ];
 
     return (
-        <div className="dashboard-container">
-            <header className="dashboard-header">
-                <h2 style={{ fontFamily: 'var(--font-mono)' }}>~/forum</h2>
-                <div className="sys-status">
-                    <span className="status-dot online"></span> MATCHMAKING ENGINE
-                </div>
-            </header>
+        <div className="ui-page">
+            <PageTitle path="~/discover" title="Discover" sub="Find people to build with, and rooms that are looking for your skills." />
 
-            {/* Tab Bar */}
-            <style>{`
-                .forum-tab-icon { transition: transform 0.3s ease, filter 0.3s ease; display: inline-block; vertical-align: middle; margin-right: 6px; }
-                .forum-tab:hover .forum-tab-icon { transform: scale(1.2) rotate(8deg); filter: drop-shadow(0 0 4px currentColor); }
-                .forum-tab.active .forum-tab-icon { animation: tabIconPulse 2s ease-in-out infinite; }
-                @keyframes tabIconPulse {
-                    0%, 100% { transform: scale(1); filter: drop-shadow(0 0 2px currentColor); }
-                    50% { transform: scale(1.15); filter: drop-shadow(0 0 8px currentColor); }
-                }
-                .forum-tab { transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important; position: relative; overflow: hidden; }
-                .forum-tab:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
-                .forum-tab::after { content: ''; position: absolute; bottom: 0; left: 50%; width: 0; height: 2px; background: currentColor; transition: all 0.3s ease; transform: translateX(-50%); }
-                .forum-tab:hover::after { width: 80%; }
-                .forum-tab.active::after { width: 100%; background: rgba(255,255,255,0.5); }
-            `}</style>
-            <div style={{
-                display: 'flex', gap: '0.5rem', marginBottom: '2rem',
-                borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.5rem'
-            }}>
-                {[
-                    { key: 'matchmake', label: 'AI Matchmaking', icon: (
-                        <svg className="forum-tab-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="12" cy="12" r="10" opacity="0.3"/>
-                            <circle cx="12" cy="12" r="6" opacity="0.5"/>
-                            <circle cx="12" cy="12" r="2" fill="currentColor"/>
-                            <line x1="12" y1="2" x2="12" y2="6"/>
-                            <line x1="12" y1="18" x2="12" y2="22"/>
-                            <line x1="2" y1="12" x2="6" y2="12"/>
-                            <line x1="18" y1="12" x2="22" y2="12"/>
-                        </svg>
-                    )},
-                    { key: 'browse', label: 'Browse Developers', icon: (
-                        <svg className="forum-tab-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                            <circle cx="9" cy="7" r="4"/>
-                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                        </svg>
-                    )},
-                    { key: 'discover', label: 'Discover Rooms', icon: (
-                        <svg className="forum-tab-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="12" cy="12" r="10"/>
-                            <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" fill="currentColor" opacity="0.3"/>
-                        </svg>
-                    )}
-                ].map(tab => (
-                    <button key={tab.key} className={`forum-tab ${activeTab === tab.key ? 'active' : ''}`} onClick={() => setActiveTab(tab.key)} style={{
-                        background: activeTab === tab.key ? 'var(--term-green)' : 'transparent',
-                        color: activeTab === tab.key ? '#fff' : 'var(--text-muted)',
-                        border: activeTab === tab.key ? 'none' : '1px solid var(--border-subtle)',
-                        padding: '0.6rem 1.4rem', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
-                        fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 'bold',
-                        textTransform: 'uppercase', letterSpacing: '1px',
-                        display: 'flex', alignItems: 'center', gap: '0'
-                    }}>
-                        {tab.icon}{tab.label}
+            <div className="ui-tabs" role="tablist" aria-label="Discover">
+                {TABS.map(tab => (
+                    <button key={tab.key} role="tab" aria-selected={activeTab === tab.key} className={`ui-tab${activeTab === tab.key ? ' active' : ''}`} onClick={() => setActiveTab(tab.key)}>
+                        {tab.label}
                     </button>
                 ))}
             </div>
 
-            <div style={{ flexGrow: 1, overflowY: 'auto', paddingRight: '0.5rem', minHeight: 0 }}>
-                {activeTab === 'matchmake' && (
-                <div style={{ maxWidth: '650px', margin: '0 auto' }}>
-                    <div className="term-card">
-                        <div className="term-header">
-                            <div className="window-dots">
-                                <div className="dot dot-red"></div>
-                                <div className="dot dot-yellow"></div>
-                                <div className="dot dot-green"></div>
-                            </div>
-                            <span>matchmaking_engine.exe</span>
+            {activeTab === 'matchmake' && (
+                <div style={{ maxWidth: 720 }}>
+                    <form className="ui-card" onSubmit={(e) => { e.preventDefault(); if (requiredSkills.trim()) handleAIMatchmake(); }}>
+                        <div className="ui-card-head"><h2>Who are you looking for?</h2></div>
+                        <p>List the skills you need. The AI suggests people whose ratings and skills fit, and says why.</p>
+                        <div className="ui-inline">
+                            <input className="ui-input" value={requiredSkills} onChange={(e) => setRequiredSkills(e.target.value)} placeholder="React, Node.js" aria-label="Skills you need" />
+                            <button type="submit" className="ui-btn primary" disabled={loading || !requiredSkills.trim()}>{loading ? 'Searching…' : 'Find people'}</button>
                         </div>
-                        <div className="term-body" style={{ padding: '2rem' }}>
-                            <h3 style={{ color: 'var(--text-bright)', marginBottom: '0.5rem', fontFamily: 'var(--font-mono)' }}>
-                                Find Your Ideal Teammate
-                            </h3>
-                            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1.5rem' }}>
-                                Powered by Hybrid AI analysis.
-                            </p>
+                    </form>
 
-                            <label style={{
-                                display: 'block', marginBottom: '0.4rem', fontSize: '0.8rem',
-                                color: 'var(--term-blue)', fontFamily: 'var(--font-mono)'
-                            }}>REQUIRED_SKILLS</label>
-                            <input className="term-input" type="text" placeholder="e.g. React, Node.js"
-                                value={requiredSkills} onChange={(e) => setRequiredSkills(e.target.value)}
-                                style={{ marginBottom: '1rem' }} />
-
-                            <button className="btn-term-primary" onClick={handleAIMatchmake}
-                                disabled={loading || !requiredSkills} style={{
-                                    width: '100%', padding: '0.8rem', display: 'flex', alignItems: 'center',
-                                    justifyContent: 'center', gap: '8px', position: 'relative', overflow: 'hidden'
-                                }}>
-                                {loading ? (
-                                    <>
-                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: 'spin 1s linear infinite' }}>
-                                            <circle cx="12" cy="12" r="10" opacity="0.3"/>
-                                            <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round"/>
-                                        </svg>
-                                        ANALYZING CANDIDATES...
-                                    </>
-                                ) : (
-                                    <>
-                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                            <circle cx="12" cy="12" r="10" opacity="0.3"/>
-                                            <circle cx="12" cy="12" r="6" opacity="0.5"/>
-                                            <circle cx="12" cy="12" r="2" fill="currentColor"/>
-                                        </svg>
-                                        FIND MATCH
-                                    </>
-                                )}
-                                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-                            </button>
-                        </div>
-                    </div>
-
-                    {matchResult && matchResult.matches && matchResult.matches.map((match, idx) => (
-                        <div key={idx} className="term-card" style={{ marginTop: '1.5rem' }}>
-                            <div className="term-header">
-                                <span style={{ color: 'var(--term-green)' }}>{match.username || `match_result_${idx + 1}`}</span>
-                            </div>
-                            <div className="term-body" style={{ padding: '1.5rem' }}>
-                                <div style={{ marginBottom: '1rem' }}>
-                                    <span style={{ color: 'var(--term-blue)', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>REASONING:</span>
-                                    <p style={{ color: 'var(--text-main)', marginTop: '0.3rem' }}>{match.reason}</p>
-                                </div>
-                                <div style={{ display: 'flex', gap: '0.8rem' }}>
-                                    <Link to={`/profile/${match.userId}`} className="btn-term-primary"
-                                        style={{ textDecoration: 'none', fontSize: '0.8rem', padding: '0.5rem 1rem' }}>
-                                        VIEW PROFILE
-                                    </Link>
-                                    <button onClick={() => clickInvite(match.userId)} className="btn-term"
-                                        style={{ fontSize: '0.8rem' }}>
-                                        INVITE TO ROOM
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    ))}
+                    {matchResult?.matches && (
+                        <section className="ui-card" style={{ marginTop: 16 }}>
+                            <div className="ui-card-head"><h2>Suggestions</h2></div>
+                            {matchResult.matches.length > 0 ? (
+                                <ul className="ui-list">
+                                    {matchResult.matches.map((match, idx) => (
+                                        <li key={idx} className="ui-row" style={{ alignItems: 'flex-start' }}>
+                                            <div className="ui-row-main">
+                                                <Link to={`/profile/${match.userId}`} className="ui-row-title">{match.username || 'Unknown user'}</Link>
+                                                <span className="ui-row-sub" style={{ whiteSpace: 'normal', marginTop: 2 }}>{match.reason}</span>
+                                            </div>
+                                            <button onClick={() => clickInvite(match.userId)} className="ui-btn small">Invite</button>
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : <div className="ui-empty">Nobody fits those skills yet. Try fewer or different skills.</div>}
+                        </section>
+                    )}
                 </div>
             )}
 
             {activeTab === 'browse' && (
-                <div style={{ maxWidth: '900px', margin: '0 auto' }}>
-                    {/* Filter Bar */}
-                    <div className="term-card" style={{ marginBottom: '1.5rem', padding: '1.2rem', display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                        <div style={{ flex: 2, minWidth: '200px' }}>
-                            <label style={{ fontSize: '0.7rem', color: 'var(--term-green)', display: 'block', marginBottom: '0.4rem', fontFamily: 'var(--font-mono)' }}>SEARCH NAME</label>
-                            <input
-                                type="text" className="term-input"
-                                placeholder="Search by name..."
-                                value={filterName} onChange={e => setFilterName(e.target.value)}
-                            />
-                        </div>
-                        <div style={{ flex: 2, minWidth: '200px' }}>
-                            <label style={{ fontSize: '0.7rem', color: 'var(--term-blue)', display: 'block', marginBottom: '0.4rem', fontFamily: 'var(--font-mono)' }}>FILTER SKILL</label>
-                            <input
-                                type="text" className="term-input"
-                                placeholder="Search by skill (e.g. React)..."
-                                value={filterSkill} onChange={e => setFilterSkill(e.target.value)}
-                            />
-                        </div>
-                        <div style={{ flex: 1, minWidth: '100px' }}>
-                            <label style={{ fontSize: '0.7rem', color: 'var(--term-blue)', display: 'block', marginBottom: '0.4rem', fontFamily: 'var(--font-mono)' }}>MIN RATING</label>
-                            <input
-                                type="number" className="term-input"
-                                placeholder="0"
-                                value={filterMinElo} onChange={e => setFilterMinElo(e.target.value)}
-                            />
-                        </div>
-                        <div style={{ flex: 1, minWidth: '100px' }}>
-                            <label style={{ fontSize: '0.7rem', color: 'var(--term-blue)', display: 'block', marginBottom: '0.4rem', fontFamily: 'var(--font-mono)' }}>MAX RATING</label>
-                            <input
-                                type="number" className="term-input"
-                                placeholder="3000"
-                                value={filterMaxElo} onChange={e => setFilterMaxElo(e.target.value)}
-                            />
-                        </div>
+                <section className="ui-card">
+                    <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', marginBottom: 8 }}>
+                        <label className="ui-field" style={{ margin: 0 }}><span>Name</span><input className="ui-input" value={filterName} onChange={e => setFilterName(e.target.value)} placeholder="Search by name" /></label>
+                        <label className="ui-field" style={{ margin: 0 }}><span>Skill</span><input className="ui-input" value={filterSkill} onChange={e => setFilterSkill(e.target.value)} placeholder="React" /></label>
+                        <label className="ui-field" style={{ margin: 0 }}><span>Min rating</span><input className="ui-input" type="number" value={filterMinElo} onChange={e => setFilterMinElo(e.target.value)} placeholder="0" /></label>
+                        <label className="ui-field" style={{ margin: 0 }}><span>Max rating</span><input className="ui-input" type="number" value={filterMaxElo} onChange={e => setFilterMaxElo(e.target.value)} placeholder="3000" /></label>
                     </div>
-
-                    <div className="room-grid-display">
-                        {developers.filter(dev => {
-                            const username = dev.user?.username || '';
-                            const nameMatch = !filterName || username.toLowerCase().includes(filterName.toLowerCase());
-                            const skills = dev.skills || [];
-                            const hasSkill = !filterSkill || skills.some(s => s.name.toLowerCase().includes(filterSkill.toLowerCase()));
-                            const maxRating = skills.length > 0 ? Math.max(...skills.map(s => s.elo || 0)) : 0;
-                            const minRating = filterMinElo ? parseInt(filterMinElo) : 0;
-                            const maxRatingLimit = filterMaxElo ? parseInt(filterMaxElo) : 10000;
-                            return nameMatch && hasSkill && maxRating >= minRating && maxRating <= maxRatingLimit;
-                        }).length > 0 ? developers.filter(dev => {
-                            const username = dev.user?.username || '';
-                            const nameMatch = !filterName || username.toLowerCase().includes(filterName.toLowerCase());
-                            const skills = dev.skills || [];
-                            const hasSkill = !filterSkill || skills.some(s => s.name.toLowerCase().includes(filterSkill.toLowerCase()));
-                            const maxRating = skills.length > 0 ? Math.max(...skills.map(s => s.elo || 0)) : 0;
-                            const minRating = filterMinElo ? parseInt(filterMinElo) : 0;
-                            const maxRatingLimit = filterMaxElo ? parseInt(filterMaxElo) : 10000;
-                            return nameMatch && hasSkill && maxRating >= minRating && maxRating <= maxRatingLimit;
-                        }).map(dev => (
-                            <div key={dev._id} className="room-card-mini" style={{ flexDirection: 'column', gap: '0.8rem' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                    <div>
-                                        <div className="room-title">{dev.user?.username || 'Unknown User'}</div>
-                                        <div style={{
-                                            fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.3rem',
-                                            fontFamily: 'var(--font-mono)'
-                                        }}>
-                                            {dev.skills && dev.skills.slice(0, 5).map(s => s.name).join(' • ')}
+                    {filteredDevelopers.length > 0 ? (
+                        <ul className="ui-list">
+                            {filteredDevelopers.map(dev => {
+                                const rated = (dev.skills || []).filter(s => s.elo != null && s.matchesPlayed > 0);
+                                const best = rated.length ? Math.max(...rated.map(s => s.elo)) : null;
+                                return (
+                                    <li key={dev._id} className="ui-row">
+                                        <div className="ui-row-main">
+                                            <Link to={`/profile/${dev.user?._id}`} className="ui-row-title">{dev.user?.username || 'Unknown user'}</Link>
+                                            <span className="ui-row-sub">{(dev.skills || []).slice(0, 5).map(s => s.name).join(', ') || 'No skills listed'}</span>
                                         </div>
-                                    </div>
-                                </div>
-                                <div style={{ display: 'flex', gap: '0.5rem', marginTop: 'auto' }}>
-                                    <Link to={`/profile/${dev.user?._id}`} className="btn-term-sm"
-                                        style={{ textDecoration: 'none' }}>VIEW</Link>
-                                    <button onClick={() => clickInvite(dev.user?._id)} className="btn-term-sm"
-                                        style={{ color: 'var(--term-green)', borderColor: 'var(--term-green)' }}>INVITE</button>
-                                </div>
-                            </div>
-                        )) : (
-                            <div className="term-empty">No developers found.</div>
-                        )}
-                    </div>
-                </div>
+                                        {best != null && <span className="ui-num">{best}</span>}
+                                        <button onClick={() => clickInvite(dev.user?._id)} className="ui-btn small">Invite</button>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    ) : <div className="ui-empty">No developers match these filters.</div>}
+                </section>
             )}
 
-            {/* ─── DISCOVER ROOMS TAB ─── */}
             {activeTab === 'discover' && (
-                <div style={{ maxWidth: '900px', margin: '0 auto' }}>
-                    <div className="term-card" style={{ marginBottom: '1.5rem' }}>
-                        <div className="term-header">
-                            <div className="window-dots">
-                                <div className="dot dot-red"></div>
-                                <div className="dot dot-yellow"></div>
-                                <div className="dot dot-green"></div>
-                            </div>
-                            <span>room_discovery.exe</span>
-                        </div>
-                        <div className="term-body" style={{ padding: '1.5rem' }}>
-                            <h3 style={{ color: 'var(--text-bright)', marginBottom: '0.5rem', fontFamily: 'var(--font-mono)' }}>
-                                🔍 Discover Project Rooms
-                            </h3>
-                            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                                Rooms ranked by your skill profile, rating, and growth potential.
-                            </p>
-                        </div>
-                    </div>
-
-                    {discoverLoading && (
-                        <div className="term-card" style={{ padding: '2rem', textAlign: 'center' }}>
-                            <span style={{ color: 'var(--term-green)', fontFamily: 'var(--font-mono)' }}>
-                                SCANNING ROOMS... ▓▓▓░░░░░░
-                            </span>
-                        </div>
+                <>
+                    {discoverLoading && <Loading what="Finding rooms that fit your skills" />}
+                    {!discoverLoading && discoverLoaded && recommendedRooms.length === 0 && (
+                        <div className="ui-card"><EmptyState title="No open rooms right now" action={{ label: 'Create a room', to: '/dashboard' }}>When someone creates a room with "Let people find this room" turned on, it shows up here. You could be the first.</EmptyState></div>
                     )}
-
-                    {!discoverLoading && recommendedRooms.length === 0 && discoverLoaded && (
-                        <div className="term-card" style={{ padding: '2rem' }}>
-                            <div className="term-empty" style={{ textAlign: 'center' }}>
-                                <p style={{ color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-                                    &gt; No discoverable rooms found.
-                                </p>
-                                <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                                    Rooms need to be created with <code style={{ color: 'var(--term-green)' }}>isDiscoverable: true</code> and <code style={{ color: 'var(--term-green)' }}>requiredSkills</code> to appear here.
-                                </p>
-                            </div>
-                        </div>
-                    )}
-
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
-                        {recommendedRooms.map((room, idx) => (
-                            <div key={room.roomId} className="term-card" style={{ display: 'flex', flexDirection: 'column' }}>
-                                <div className="term-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ color: 'var(--term-green)', fontFamily: 'var(--font-mono)' }}>
-                                        room_{idx + 1}
-                                    </span>
-                                    <span style={{
-                                        color: getScoreColor(room.matchScore),
-                                        fontFamily: 'var(--font-mono)',
-                                        fontWeight: 'bold',
-                                        fontSize: '0.75rem'
-                                    }}>
-                                        MATCH: {room.matchScore}/100
-                                    </span>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
+                        {recommendedRooms.map(room => (
+                            <article key={room.roomId} className="ui-card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                                    <div style={{ minWidth: 0 }}>
+                                        <h2 style={{ margin: 0, fontSize: 17, color: 'var(--text-bright)' }}>{room.name}</h2>
+                                        {room.owner && <span className="ui-muted ui-small">by {room.owner.username}</span>}
+                                    </div>
+                                    <span className={`ui-tag ${room.matchScore >= 60 ? 'green' : 'blue'}`} title="How well your skills fit this room">{room.matchScore}% fit</span>
                                 </div>
-                                <div className="term-body" style={{ padding: '0.8rem', display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
-                                    {/* Room Name & Owner */}
-                                    <div style={{ marginBottom: '0.6rem' }}>
-                                        <h4 style={{ color: 'var(--text-bright)', margin: 0, fontFamily: 'var(--font-mono)', fontSize: '0.9rem' }}>
-                                            {room.name}
-                                        </h4>
-                                        {room.owner && (
-                                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                                                by {room.owner.username}
-                                            </span>
-                                        )}
-                                    </div>
-
-                                    {/* Description */}
-                                    {room.description && (
-                                        <p style={{ color: 'var(--text-main)', fontSize: '0.75rem', marginBottom: '0.6rem', lineHeight: '1.3' }}>
-                                            {room.description}
-                                        </p>
-                                    )}
-
-                                    {/* Required Skills */}
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginBottom: '0.6rem' }}>
-                                        {room.requiredSkills.map(skill => (
-                                            <span key={skill.name} style={{
-                                                background: 'rgba(57, 134, 250, 0.15)',
-                                                color: 'var(--term-blue)',
-                                                padding: '0.1rem 0.4rem',
-                                                borderRadius: 'var(--radius-sm)',
-                                                fontSize: '0.65rem',
-                                                fontFamily: 'var(--font-mono)',
-                                                border: '1px solid rgba(57, 134, 250, 0.3)'
-                                            }}>
-                                                {skill.name} {skill.weight > 1 ? `×${skill.weight}` : ''}
-                                            </span>
-                                        ))}
-                                    </div>
-
-                                    {/* Reasoning */}
-                                    <div style={{
-                                        background: 'rgba(0,0,0,0.2)',
-                                        padding: '0.4rem 0.6rem',
-                                        borderRadius: 'var(--radius-sm)',
-                                        marginBottom: '0.8rem',
-                                        fontSize: '0.7rem',
-                                        fontFamily: 'var(--font-mono)',
-                                        color: 'var(--text-muted)',
-                                        marginTop: 'auto'
-                                    }}>
-                                        <span style={{ color: 'var(--term-blue)' }}>ANALYSIS:</span> {room.reason}
-                                    </div>
-
-                                    {/* Footer: Members + Join Button */}
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <span style={{
-                                            fontSize: '0.7rem', color: 'var(--text-muted)',
-                                            fontFamily: 'var(--font-mono)'
-                                        }}>
-                                            👥 {room.memberCount}/{room.capacity}
-                                        </span>
-                                        <button
-                                            className="btn-term-primary"
-                                            onClick={() => handleRequestJoinRoom(room.roomId)}
-                                            style={{ fontSize: '0.7rem', padding: '0.3rem 0.8rem' }}
-                                        >
-                                            REQUEST ACCESS
-                                        </button>
-                                    </div>
+                                {room.description && <p style={{ margin: 0, fontSize: 14, color: 'var(--text-main)', lineHeight: 1.5 }}>{room.description}</p>}
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                    {room.requiredSkills.map(skill => <span key={skill.name} className="ui-tag">{skill.name}</span>)}
                                 </div>
-                            </div>
+                                {room.reason && <p className="ui-muted" style={{ margin: 0, fontSize: 13, lineHeight: 1.5 }}>{room.reason}</p>}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto' }}>
+                                    <span className="ui-muted ui-small">{room.memberCount} of {room.capacity} members</span>
+                                    <button className="ui-btn small primary" onClick={() => handleRequestJoinRoom(room.roomId)}>Ask to join</button>
+                                </div>
+                            </article>
                         ))}
                     </div>
-                </div>
+                </>
             )}
-            </div>
 
-            {/* INVITE MODAL */}
             {showInviteModal && (
-                <div className="modal-backdrop">
-                    <div className="term-card" style={{ width: '400px', maxWidth: '90%' }}>
-                        <div className="term-header">
-                            <div className="window-dots">
-                                <div className="dot dot-red"></div>
-                                <div className="dot dot-yellow"></div>
-                                <div className="dot dot-green"></div>
-                            </div>
-                            <span>invite_user.exe</span>
-                            <button onClick={() => setShowInviteModal(false)} style={{
-                                marginLeft: 'auto', background: 'none', border: 'none',
-                                color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.2rem'
-                            }}>×</button>
-                        </div>
-                        <div className="term-body" style={{ padding: '1.5rem' }}>
-                            <p style={{ marginBottom: '1rem', color: 'var(--text-main)' }}>Select a room to invite this developer to:</p>
-
-                            <select className="term-input" style={{ marginBottom: '1.5rem' }}
-                                value={selectedRoomId} onChange={(e) => setSelectedRoomId(e.target.value)}>
-                                <option value="new">[+] Create New Room</option>
-                                <optgroup label="My Rooms">
-                                    {myRooms.map(r => (
-                                        <option key={r._id} value={r._id}>{r.name}</option>
-                                    ))}
-                                </optgroup>
+                <div className="ui-modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setShowInviteModal(false)}>
+                    <div className="ui-modal" role="dialog" aria-modal="true" aria-labelledby="forum-invite-title">
+                        <h2 id="forum-invite-title">Invite to a room</h2>
+                        <label className="ui-field">
+                            <span>Room</span>
+                            <select className="ui-select" value={selectedRoomId} onChange={(e) => setSelectedRoomId(e.target.value)}>
+                                <option value="new">Create a new room</option>
+                                {myRooms.length > 0 && (
+                                    <optgroup label="Your rooms">
+                                        {myRooms.map(r => <option key={r._id} value={r._id}>{r.name}</option>)}
+                                    </optgroup>
+                                )}
                             </select>
-
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.8rem' }}>
-                                <button className="btn-term" onClick={() => setShowInviteModal(false)}>CANCEL</button>
-                                <button className="btn-term-primary" onClick={confirmInvite}>SEND INVITE</button>
-                            </div>
+                        </label>
+                        <div className="ui-modal-actions">
+                            <button className="ui-btn ghost" onClick={() => setShowInviteModal(false)}>Cancel</button>
+                            <button className="ui-btn primary" onClick={confirmInvite}>Send invite</button>
                         </div>
                     </div>
                 </div>

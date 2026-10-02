@@ -1,13 +1,14 @@
 // battle/CodeArena.jsx — dev tasks, debug races and algorithm battles: statement, editor, tests.
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Editor from '@monaco-editor/react';
+import { useEditorTheme } from '../utils/theme';
 import ReactMarkdown from 'react-markdown';
 import { socket } from '../socket';
 import { createRunner } from './runner';
 import { matches } from './compare';
 import { emit } from './useMatch';
 
-const LANG_LABEL = { python: 'Python', javascript: 'JavaScript', sql: 'SQL (SQLite)' };
+const LANG_LABEL = { python: 'Python', javascript: 'JavaScript', cpp: 'C++', c: 'C', sql: 'SQL (SQLite)' };
 
 const show = (v) => {
     const text = JSON.stringify(v);
@@ -62,6 +63,7 @@ function SampleTables({ tables }) {
 }
 
 export default function CodeArena({ m, myId }) {
+    const editorTheme = useEditorTheme();
     const { state } = m;
     const problem = state.problem;
     const inputs = state.inputs;
@@ -110,7 +112,7 @@ export default function CodeArena({ m, myId }) {
         }
     };
 
-    const runOpts = { language, code, fnName: problem.fn[language], harness: problem.harness, schema: problem.schema, onStatus: setStatus };
+    const runOpts = { language, code, fnName: problem.fn[language], harness: problem.harness, schema: problem.schema, signature: { params: problem.params, returns: problem.returns, wide: problem.wide }, onStatus: setStatus };
 
     const runExamples = useCallback(async () => {
         if (busy) return;
@@ -232,7 +234,7 @@ export default function CodeArena({ m, myId }) {
                             language={language}
                             value={code}
                             onChange={onEdit}
-                            theme="vs-dark"
+                            theme={editorTheme}
                             options={{ minimap: { enabled: false }, fontSize: 14, tabSize: 4, scrollBeyondLastLine: false, automaticLayout: true, padding: { top: 10 } }}
                         />
                     </div>
@@ -242,7 +244,7 @@ export default function CodeArena({ m, myId }) {
                             <button role="tab" aria-selected={panel === 'console'} className={panel === 'console' ? 'active' : ''} onClick={() => setPanel('console')}>Console{logs.length ? ` (${logs.length})` : ''}</button>
                         </div>
                         {panel === 'console' ? (
-                            <pre className="bt-console">{logs.length ? logs.join('\n') : 'print() / console.log() output from your last run shows up here.'}</pre>
+                            <pre className="bt-console">{logs.length ? logs.join('\n') : 'print() / console.log() / printf() output from your last run shows up here.'}</pre>
                         ) : (
                             <div className="bt-results">
                                 {submitResult && (

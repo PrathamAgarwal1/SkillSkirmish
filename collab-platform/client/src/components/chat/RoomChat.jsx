@@ -7,7 +7,7 @@ import { socket } from '../../socket';
 import './RoomChat.css';
 
 const MAX_LENGTH = 4000;
-const USER_COLORS = ['#3fb950', '#58a6ff', '#d2a8ff', '#f0883e', '#ff7b72', '#79c0ff', '#e3b341', '#56d4dd'];
+const USER_COLORS = ['var(--gh-3fb950)', 'var(--gh-58a6ff)', 'var(--gh-d2a8ff)', 'var(--gh-f0883e)', 'var(--gh-ff7b72)', 'var(--gh-79c0ff)', 'var(--gh-e3b341)', 'var(--gh-56d4dd)'];
 const colorFor = (id) => {
     let h = 0;
     for (const c of String(id || '')) h = (h * 31 + c.charCodeAt(0)) | 0;
@@ -42,7 +42,7 @@ const CodeBlock = ({ lang, code }) => {
             <SyntaxHighlighter
                 language={(lang || 'text').toLowerCase()}
                 style={oneDark}
-                customStyle={{ margin: 0, padding: '8px 10px', fontSize: 12, background: '#0b0f14', borderRadius: 0 }}
+                customStyle={{ margin: 0, padding: '8px 10px', fontSize: 12, background: 'var(--gh-0b0f14)', borderRadius: 0 }}
                 codeTagProps={{ style: { fontFamily: "'JetBrains Mono', monospace" } }}
             >
                 {code.replace(/\n$/, '')}
@@ -211,7 +211,7 @@ const Composer = ({ onSend, members, currentUser, placeholder, autoFocus }) => {
             </div>
             <div className="rc-hint">
                 {over
-                    ? <span style={{ color: '#f85149' }}>{text.length}/{MAX_LENGTH} characters, too long to send</span>
+                    ? <span style={{ color: 'var(--gh-f85149)' }}>{text.length}/{MAX_LENGTH} characters, too long to send</span>
                     : <>Enter to send · Shift+Enter new line · <b>@</b> mention · <b>```</b> code</>}
             </div>
         </div>
@@ -229,7 +229,7 @@ const MessageRow = ({ message, currentUser, onReply, compact }) => {
     return (
         <div className={`rc-msg ${mentionsMe ? 'mentioned' : ''}`}>
             <div className="rc-msg-head">
-                <span className="rc-author" style={{ color: mine ? '#f0883e' : colorFor(message.sender?._id) }}>{mine ? 'You' : message.sender?.username || 'Unknown'}</span>
+                <span className="rc-author" style={{ color: mine ? 'var(--gh-f0883e)' : colorFor(message.sender?._id) }}>{mine ? 'You' : message.sender?.username || 'Unknown'}</span>
                 <span className="rc-time" title={message.createdAt ? new Date(message.createdAt).toLocaleString() : ''}>{formatTime(message.createdAt)}</span>
                 {onReply && message._id && <button className="rc-reply-btn" onClick={() => onReply(message)} title="Reply in thread">↩ Reply</button>}
             </div>
@@ -274,7 +274,7 @@ const Thread = ({ roomId, parent, currentUser, members, onBack }) => {
             <div className="rc-log">
                 <MessageRow message={data.parent} currentUser={currentUser} compact />
                 <div className="rc-divider">{data.replies.length} {data.replies.length === 1 ? 'reply' : 'replies'}</div>
-                {error && <div className="rc-system" style={{ color: '#f85149' }}>{error}</div>}
+                {error && <div className="rc-system" style={{ color: 'var(--gh-f85149)' }}>{error}</div>}
                 {data.replies.map(r => <MessageRow key={r._id} message={r} currentUser={currentUser} compact />)}
                 <div ref={endRef} />
             </div>

@@ -10,6 +10,7 @@ import CssArena from '../battle/CssArena';
 import RoundsArena from '../battle/RoundsArena';
 import ResultOverlay from '../battle/ResultOverlay';
 import '../battle/battle.css';
+import { Loading } from '../components/layout/Friendly';
 
 const KIND_LABEL = { guessr: '🧭 CodeGuessr', quiz: '🧠 Skill Quiz', task: '🛠️ Dev Task', debug: '🐛 Debug Race', css: '🎨 CSS Battle', algo: '🧮 Algorithms' };
 const MODE_LABEL = { ranked: 'Ranked', friend: 'Friendly', practice: 'Practice', daily: 'Daily challenge' };
@@ -38,7 +39,7 @@ function Arena({ matchId }) {
         );
     }
     const ready = state && (state.engine === 'code' ? state.problem : state.engine === 'css' ? state.target : true);
-    if (!ready) return <div className="bt-page bt-center"><p className="bt-muted">Loading the battle…</p></div>;
+    if (!ready) return <div className="bt-page bt-center"><Loading what="Loading the battle" /></div>;
 
     const solo = ['practice', 'daily'].includes(state.mode);
     const forfeit = () => {

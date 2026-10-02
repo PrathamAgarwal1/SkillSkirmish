@@ -36,115 +36,39 @@ const RegisterPage = () => {
     };
 
     return (
-        <div style={{
-            minHeight: '100%', display: 'flex', alignItems: 'center',
-            justifyContent: 'center', backgroundColor: 'var(--bg-deep)', padding: '2rem'
-        }}>
-            <div className="term-card" style={{ width: '420px', maxWidth: '95%' }}>
-                <div className="term-header">
-                    <div className="window-dots">
-                        <div className="dot dot-red"></div>
-                        <div className="dot dot-yellow"></div>
-                        <div className="dot dot-green"></div>
-                    </div>
-                    <span>register.sh</span>
-                </div>
-                <div className="term-body" style={{ padding: '2rem' }}>
-                    <h2 style={{
-                        color: 'var(--text-bright)', fontSize: '1.5rem', marginBottom: '0.5rem',
-                        fontFamily: 'var(--font-mono)', letterSpacing: '1px'
-                    }}>
-                        <span style={{ color: 'var(--term-green)' }}>$</span> register
-                    </h2>
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '2rem' }}>
-                        create a new developer account
-                    </p>
+        <div className="auth-wrap">
+            <div className="ui-card auth-card">
+                <h1>Create your account</h1>
+                <p className="ui-muted">Build with others, battle, and track your skills.</p>
 
-                    <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
-                        <div>
-                            <label style={{
-                                display: 'block', marginBottom: '0.4rem', fontSize: '0.8rem',
-                                color: 'var(--term-blue)', fontFamily: 'var(--font-mono)'
-                            }}>USERNAME</label>
-                            <input className="term-input" type="text" name="username"
-                                value={username} onChange={onChange} placeholder="devuser" required
-                                minLength="3" maxLength="30" pattern="[a-zA-Z0-9_.\-]+"
-                                title="3-30 characters: letters, numbers, _ . -" />
-                        </div>
-                        <div>
-                            <label style={{
-                                display: 'block', marginBottom: '0.4rem', fontSize: '0.8rem',
-                                color: 'var(--term-blue)', fontFamily: 'var(--font-mono)'
-                            }}>EMAIL</label>
-                            <input className="term-input" type="email" name="email"
-                                value={email} onChange={onChange} placeholder="user@domain.com" required />
-                        </div>
-                        <div>
-                            <label style={{
-                                display: 'block', marginBottom: '0.4rem', fontSize: '0.8rem',
-                                color: 'var(--term-blue)', fontFamily: 'var(--font-mono)'
-                            }}>PASSWORD</label>
-                            <input className="term-input" type="password" name="password"
-                                value={password} onChange={onChange} placeholder="••••••••" required minLength="8"
-                                title="At least 8 characters" />
-                        </div>
+                <button type="button" className="ui-btn auth-google" onClick={handleGoogleLogin}>
+                    <FcGoogle size={20} /> Continue with Google
+                </button>
+                <div className="auth-or"><span>or</span></div>
 
-                        {error && (
-                            <div role="alert" style={{ color: 'var(--term-red)', fontSize: '0.85rem', fontFamily: 'var(--font-mono)' }}>
-                                ✖ {error}
-                            </div>
-                        )}
+                <form onSubmit={onSubmit}>
+                    <label className="ui-field">
+                        <span>Username</span>
+                        <input className="ui-input" type="text" name="username" value={username} onChange={onChange} placeholder="devuser" required
+                            minLength="3" maxLength="30" pattern="[a-zA-Z0-9_.\-]+" autoComplete="username" />
+                        <small>3–30 characters: letters, numbers, _ . -</small>
+                    </label>
+                    <label className="ui-field">
+                        <span>Email</span>
+                        <input className="ui-input" type="email" name="email" value={email} onChange={onChange} placeholder="you@example.com" autoComplete="email" required />
+                    </label>
+                    <label className="ui-field">
+                        <span>Password</span>
+                        <input className="ui-input" type="password" name="password" value={password} onChange={onChange} required minLength="8" autoComplete="new-password" />
+                        <small>At least 8 characters</small>
+                    </label>
 
-                        <button className="btn-term-primary" type="submit" disabled={submitting} style={{
-                            marginTop: '0.5rem', padding: '0.8rem', fontSize: '0.9rem',
-                            letterSpacing: '1px', borderRadius: 'var(--radius-sm)'
-                        }}>
-                            {submitting ? 'CREATING…' : 'CREATE ACCOUNT →'}
-                        </button>
-                    </form>
+                    {error && <div className="auth-error" role="alert">{error}</div>}
 
-                    {/* Divider */}
-                    <div style={{
-                        display: 'flex', alignItems: 'center', margin: '1.5rem 0',
-                        gap: '0.8rem', fontFamily: 'var(--font-mono)'
-                    }}>
-                        <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-subtle)' }} />
-                        <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', letterSpacing: '2px' }}>OR</span>
-                        <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-subtle)' }} />
-                    </div>
+                    <button className="ui-btn primary auth-submit" type="submit" disabled={submitting}>{submitting ? 'Creating your account…' : 'Create account'}</button>
+                </form>
 
-                    {/* Google Login Button */}
-                    <button
-                        onClick={handleGoogleLogin}
-                        style={{
-                            width: '100%', padding: '0.8rem', fontSize: '0.85rem',
-                            fontFamily: 'var(--font-mono)', letterSpacing: '0.5px',
-                            borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)',
-                            backgroundColor: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-bright)',
-                            cursor: 'pointer', display: 'flex', alignItems: 'center',
-                            justifyContent: 'center', gap: '0.6rem',
-                            transition: 'all 0.2s ease'
-                        }}
-                        onMouseEnter={e => {
-                            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-                            e.currentTarget.style.borderColor = 'var(--term-blue)';
-                        }}
-                        onMouseLeave={e => {
-                            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
-                            e.currentTarget.style.borderColor = 'var(--border-subtle)';
-                        }}
-                    >
-                        <FcGoogle size={20} />
-                        Continue with Google
-                    </button>
-
-                    <div style={{
-                        marginTop: '1.5rem', textAlign: 'center', fontSize: '0.85rem',
-                        color: 'var(--text-muted)', fontFamily: 'var(--font-mono)'
-                    }}>
-                        Already have an account? <Link to="/login" style={{ color: 'var(--term-blue)', textDecoration: 'none' }}>login</Link>
-                    </div>
-                </div>
+                <p className="auth-switch">Already have an account? <Link to="/login" className="ui-link">Log in</Link></p>
             </div>
         </div>
     );

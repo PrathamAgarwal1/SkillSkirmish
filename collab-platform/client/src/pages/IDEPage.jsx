@@ -3,7 +3,8 @@ import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import WindowManager from '../components/ide/WindowManager';
 import AuthContext from '../context/AuthContext';
-import FloatingCall from '../components/voice/FloatingCall';
+import { usePageRoom } from '../voice/pageRoom';
+import { Loading } from '../components/layout/Friendly';
 
 const IDEPage = () => {
     const { projectId, roomId } = useParams();
@@ -29,8 +30,11 @@ const IDEPage = () => {
         fetchProject();
     }, [projectId]);
 
+    // The site-wide voice pill shows this project's room channels
+    usePageRoom(project?.room ? String(project.room) : null, roomName);
+
     if (loading) {
-        return <div style={{ padding: '20px' }}><h1>Loading...</h1></div>;
+        return <div className="ui-page"><Loading what="Opening the project" full /></div>;
     }
 
     if (!project) {
@@ -46,7 +50,6 @@ const IDEPage = () => {
                 roomId={roomId}
                 user={user}
             />
-            <FloatingCall roomId={String(project.room)} roomName={roomName} />
         </>
     );
 };

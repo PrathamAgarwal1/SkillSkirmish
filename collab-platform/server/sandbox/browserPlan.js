@@ -109,6 +109,16 @@ function pythonPlan(cfg, dir, files) {
 
 /** Browser run plan for the IDE, from the regular run config (sandbox/runConfig.js). */
 function browserPlan(cfg, dir, files) {
+    if (cfg.scaffold) {
+        // Pressing Run creates the package.json (POST /api/execute/setup), then runs the real plan
+        return {
+            runtime: 'node',
+            install: [],
+            targets: cfg.targets.map(t => ({ id: t.id, label: t.label, preview: t.preview, engine: 'setup' })),
+            deploy: { kind: null, reason: cfg.deploy.reason },
+            setup: { kind: cfg.scaffold.kind, summary: cfg.scaffold.summary }
+        };
+    }
     if (cfg.env === 'python' || cfg.env === 'ml') return pythonPlan(cfg, dir, files);
     if (cfg.label === 'Empty project') {
         return { runtime: 'node', install: [], targets: [], deploy: { kind: null, reason: cfg.deploy.reason } };

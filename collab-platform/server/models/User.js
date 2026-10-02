@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const { Schema } = mongoose;
 
 // Battle record for one mode (battles/catalog.js: guessr, quiz, task, debug, css, algo)
 const modeStats = () => ({
@@ -115,7 +116,10 @@ const UserSchema = new mongoose.Schema({
     socialsPublic: {
         type: Boolean,
         default: true,
-    }
+    },
+    // Look and feel chosen on the Appearance page (utils/appearance.js validates it). Only ever
+    // sent to the user themselves.
+    appearance: { type: Schema.Types.Mixed, default: null }
 }, { timestamps: true });
 
 UserSchema.pre('save', async function (next) {

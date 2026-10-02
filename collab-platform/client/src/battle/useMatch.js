@@ -76,7 +76,7 @@ export function useMatch(matchId) {
                 return;
             }
             verifier.current ??= createRunner({ slack: 3 });
-            const r = await verifier.current.run({ language: req.language, code: req.code, fnName: req.fnName, inputs: req.inputs, harness: req.harness, schema: req.schema });
+            const r = await verifier.current.run({ language: req.language, code: req.code, fnName: req.fnName, inputs: req.inputs, harness: req.harness, schema: req.schema, signature: req.signature });
             socket.emit('battle:verify-result', { matchId, token: req.token, outputs: r.outputs });
         };
         socket.on('battle:update', onUpdate);

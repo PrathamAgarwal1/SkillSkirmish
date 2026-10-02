@@ -3,10 +3,10 @@ import { FaFolder, FaFolderOpen, FaJs, FaCss3Alt, FaFileAlt, FaTrash, FaPlus, Fa
 import axios from 'axios';
 
 const getFileIcon = (name) => {
-    if (name.endsWith('.js')) return <FaJs style={{ color: '#f7df1e' }} />;
-    if (name.endsWith('.css')) return <FaCss3Alt style={{ color: '#1572b6' }} />;
-    if (name.endsWith('.json')) return <FaFile style={{ color: '#f0db4f' }} />;
-    return <FaFileAlt style={{ color: '#ccc' }} />;
+    if (name.endsWith('.js')) return <FaJs style={{ color: 'var(--gh-f7df1e)' }} />;
+    if (name.endsWith('.css')) return <FaCss3Alt style={{ color: 'var(--gh-1572b6)' }} />;
+    if (name.endsWith('.json')) return <FaFile style={{ color: 'var(--gh-f0db4f)' }} />;
+    return <FaFileAlt style={{ color: 'var(--gh-cccccc)' }} />;
 };
 
 // This is a new, recursive component to render the tree

@@ -3,10 +3,13 @@
 // Code runs in a worker created from a data: URL, which gets an opaque origin: it can't read this
 // site's storage (login token, saved git repos, ...). That matters because players also re-run their
 // opponent's code to verify results. Python uses Pyodide (loaded once per worker), SQL uses sql.js
-// (SQLite in WebAssembly, a fresh database per test); JavaScript runs directly. A watchdog terminates
-// the worker when a test takes too long (infinite loops).
+// (SQLite in WebAssembly, a fresh database per test); JavaScript runs directly; C and C++ are compiled
+// with Clang (WebAssembly, ~23 MB download the first time) and each test runs as its own small program
+// (see native.js). A watchdog terminates the worker when a test takes too long (infinite loops).
+import { isNative, nativeSource, encodeArgs, runWasi, STDCPP_HEADER } from './native';
 const PYODIDE_URL = 'https://cdn.jsdelivr.net/pyodide/v314.0.7/full/';
 const SQLJS_URL = 'https://cdn.jsdelivr.net/npm/sql.js@1.14.2/dist/';
+const CLANG_URL = 'https://cdn.jsdelivr.net/npm/@yowasp/clang@22.0.0-git20542-10/gen/bundle.js';
 
 const WORKER_SOURCE = `
 const PYODIDE_URL = ${JSON.stringify(PYODIDE_URL)};
@@ -21,6 +24,66 @@ async function loadSql(post) {
   SQL = await initSqlJs({ locateFile: (f) => SQLJS_URL + f });
   return SQL;
 }
+const CLANG_URL = ${JSON.stringify(CLANG_URL)};
+const STDCPP_HEADER = ${JSON.stringify(STDCPP_HEADER)};
+const runWasi = ${runWasi.toString()};
+let clang = null;
+let clangLoading = null;
+async function loadClang(post) {
+  if (clang) return clang;
+  if (!clangLoading) {
+    clangLoading = (async () => {
+      post({ type: 'status', text: 'Downloading the C/C++ compiler (about 23 MB, only the first time)…' });
+      const mod = await import(CLANG_URL);
+      // Compile something tiny so the compiler's files are fetched and cached now
+      await mod.runClang(['clang', 'warm.c', '-o', 'a.out'], { 'warm.c': 'int main(void) { return 0; }' }, { fetchProgress: (p) => {
+        if (p && p.totalLength) post({ type: 'status', text: 'Downloading the C/C++ compiler: ' + Math.round(100 * p.doneLength / p.totalLength) + '%' });
+      } });
+      return mod;
+    })();
+    clangLoading.catch(() => { clangLoading = null; });
+  }
+  clang = await clangLoading;
+  return clang;
+}
+const compiled = new Map(); // source -> WebAssembly.Module (a few recent ones, e.g. run then submit)
+function tidyCompileErrors(text, fnName) {
+  const lines = String(text).split('\\n').filter((l) => l.trim() && !/^\\d+ (error|warning)s? generated/.test(l));
+  let out = lines.slice(0, 14).join('\\n');
+  if (/harness:\\d+/.test(text)) {
+    if (/redefinition of 'main'|duplicate symbol: main/.test(text)) out = "Don't write a main() function. The battle calls your function directly.\\n\\n" + out;
+    else out = 'Check that your function is named ' + fnName + ' and has the same parameters and return type as the starter code.\\n\\n' + out;
+  }
+  return out;
+}
+async function compileNative(language, source, fnName, post) {
+  if (compiled.has(source)) return { module: compiled.get(source) };
+  const cc = await loadClang(post);
+  post({ type: 'status', text: 'Compiling…' });
+  const file = language === 'c' ? 'solution.c' : 'solution.cpp';
+  let stderr = '';
+  try {
+    const out = await cc.runClang(
+      [language === 'c' ? 'clang' : 'clang++', '-O2', ...(language === 'c' ? ['-std=c17'] : ['-std=c++20', '-fno-exceptions']), '-I.', '-Wl,-z,stack-size=8388608', '-lm', file, '-o', 'a.out'],
+      { [file]: source, bits: { 'stdc++.h': STDCPP_HEADER } },
+      { stderr: (b) => { if (b) stderr += new TextDecoder().decode(b); } }
+    );
+    const module = await WebAssembly.compile(out['a.out']);
+    compiled.set(source, module);
+    if (compiled.size > 4) compiled.delete(compiled.keys().next().value);
+    return { module };
+  } catch (err) {
+    if (/exceptions disabled/.test(stderr)) stderr = "Exceptions (throw / try) aren't available in battles.\\n\\n" + stderr;
+    return { error: tidyCompileErrors(stderr || String(err && err.message || err), fnName) };
+  }
+}
+const nativeTrap = (msg) => {
+  if (/call stack/i.test(msg)) return 'Stack overflow (recursion too deep?)';
+  if (/out of bounds/i.test(msg)) return 'Runtime error: memory access out of bounds (like a segfault)';
+  if (/unreachable/i.test(msg)) return 'Runtime error: the program crashed (missing return value, abort() or a failed assert?)';
+  if (/divide by zero|integer overflow/i.test(msg)) return 'Runtime error: ' + msg;
+  return 'Runtime error: ' + msg;
+};
 const fmt = (v) => { try { return typeof v === 'string' ? v : JSON.stringify(v); } catch (e) { return String(v); } };
 const clean = (msg) => {
   const lines = String(msg).split('\\n').filter((l) => l.trim());
@@ -45,7 +108,7 @@ async function loadPython(post) {
 self.onmessage = async (e) => {
   const { id, kind, language, code, fnName, inputs, harness, schema } = e.data;
   const post = (msg) => self.postMessage(Object.assign({ id }, msg));
-  if (kind === 'warm') { try { if (language === 'python') await loadPython(post); if (language === 'sql') await loadSql(post); post({ type: 'warm' }); } catch (err) { post({ type: 'warm', error: String(err) }); } return; }
+  if (kind === 'warm') { try { if (language === 'python') await loadPython(post); if (language === 'sql') await loadSql(post); if (language === 'c' || language === 'cpp') await loadClang(post); post({ type: 'warm' }); } catch (err) { post({ type: 'warm', error: String(err) }); } return; }
   const logs = [];
   const log = (s) => { if (logs.length < 300) logs.push(String(s).slice(0, 2000)); };
   const outputs = [];
@@ -67,6 +130,27 @@ self.onmessage = async (e) => {
         } finally {
           db.close();
         }
+      }
+    } else if (language === 'c' || language === 'cpp') {
+      const { module, error } = await compileNative(language, e.data.source, fnName, post);
+      if (error) return post({ type: 'done', compileError: error, outputs, logs });
+      const encoder = new TextEncoder();
+      for (let i = 0; i < inputs.length; i++) {
+        post({ type: 'progress', i });
+        const t0 = performance.now();
+        let r;
+        try {
+          r = runWasi(module, encoder.encode(e.data.stdin[i]));
+        } catch (err) {
+          r = { stdout: '', stderr: '', code: 0, trap: String(err && err.message || err) };
+        }
+        const ms = Math.round(performance.now() - t0);
+        const at = r.stdout.lastIndexOf('\\n\\x1e');
+        const printed = (at < 0 ? r.stdout : r.stdout.slice(0, at)) + (r.stderr ? '\\n' + r.stderr : '');
+        if (printed.trim()) printed.trim().split('\\n').forEach(log);
+        if (r.trap) outputs.push({ ok: false, error: nativeTrap(r.trap), ms });
+        else if (at < 0) outputs.push({ ok: false, error: r.code ? 'The program exited with code ' + r.code : 'No result: the program stopped before returning', ms });
+        else outputs.push({ ok: true, value: r.stdout.slice(at + 2).trim(), ms });
       }
     } else if (language === 'javascript') {
       const say = (...a) => log(a.map(fmt).join(' '));
@@ -124,9 +208,10 @@ self.onmessage = async (e) => {
 `;
 
 const WORKER_URL = `data:text/javascript;charset=utf-8,${encodeURIComponent(WORKER_SOURCE)}`;
-const PER_TEST_MS = { javascript: 2500, python: 4000, sql: 3000 };
-const SLOW_START = ['python', 'sql']; // need a runtime downloaded first
+const PER_TEST_MS = { javascript: 2500, python: 4000, sql: 3000, c: 2500, cpp: 2500 };
+const SLOW_START = ['python', 'sql', 'c', 'cpp']; // need a runtime downloaded first
 const PY_LOAD_MS = 60000;
+const LOAD_MS = { c: 240000, cpp: 240000 }; // the C/C++ compiler is a bigger download
 
 /**
  * A reusable runner. run() resolves with { outputs: [{ ok, value?, error?, ms }], logs, compileError?,
@@ -160,6 +245,7 @@ export function createRunner({ slack = 1 } = {}) {
         const id = ++seq;
         pending = {
             id,
+            warm: true,
             onMessage: (m) => {
                 if (m.id !== id) return;
                 if (m.type === 'warm') { if (!m.error) ready.add(language); pending = null; }
@@ -168,9 +254,23 @@ export function createRunner({ slack = 1 } = {}) {
         ensure().postMessage({ id, kind: 'warm', language });
     };
 
-    const run = ({ language, code, fnName, inputs, harness, schema, onStatus }) => new Promise((resolve) => {
+    const run = ({ language, code, fnName, inputs, harness, schema, signature, onStatus }) => new Promise((resolve) => {
         if (language !== 'sql' && !/^[A-Za-z_$][\w$]*$/.test(fnName || '')) return resolve({ outputs: [], logs: [], compileError: 'Invalid function name' });
-        if (pending) { kill(); pending = null; }
+        let nativeJob = null;
+        if (isNative(language)) {
+            if (!signature?.params) return resolve({ outputs: [], logs: [], compileError: `${language === 'c' ? 'C' : 'C++'} isn't available for this challenge` });
+            try {
+                nativeJob = {
+                    source: nativeSource(language, code, { ...signature, fnName }),
+                    stdin: inputs.map(args => encodeArgs(signature.params, args))
+                };
+            } catch (err) {
+                return resolve({ outputs: [], logs: [], compileError: err.message });
+            }
+        }
+        // A background download (warm) can keep going: the run waits for the same runtime in the worker
+        if (pending && !pending.warm) kill();
+        pending = null;
         const id = ++seq;
         const perTest = PER_TEST_MS[language] * slack;
         let current = 0;
@@ -193,7 +293,7 @@ export function createRunner({ slack = 1 } = {}) {
             outputs: [],
             onMessage: (m) => {
                 if (m.id !== id) return;
-                if (m.type === 'status') { onStatus?.(m.text); arm(PY_LOAD_MS); return; }
+                if (m.type === 'status') { onStatus?.(m.text); arm(LOAD_MS[language] || PY_LOAD_MS); return; }
                 if (m.type === 'progress') {
                     current = m.i;
                     ready.add(language);
@@ -209,8 +309,8 @@ export function createRunner({ slack = 1 } = {}) {
                 }
             }
         };
-        arm(SLOW_START.includes(language) && !ready.has(language) ? PY_LOAD_MS : perTest);
-        ensure().postMessage({ id, kind: 'run', language, code, fnName, inputs, harness, schema });
+        arm(SLOW_START.includes(language) && !ready.has(language) ? (LOAD_MS[language] || PY_LOAD_MS) : perTest);
+        ensure().postMessage({ id, kind: 'run', language, code, fnName, inputs, harness, schema, ...nativeJob });
     });
 
     return { run, warm, dispose: kill };

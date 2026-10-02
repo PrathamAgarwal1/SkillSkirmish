@@ -1,70 +1,38 @@
-import React from 'react';
+import React, { useState } from 'react';
 
+/** Pick one of your rooms to invite someone to, with an optional message. */
 const InviteModal = ({ user, rooms, onSend, onClose }) => {
+    const [message, setMessage] = useState('');
     if (!user) return null;
 
     return (
-        <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0, 0, 0, 0.8)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000
-        }}>
-            <div style={{
-                background: '#0d0d0d',
-                border: '2px solid #00ff00',
-                borderRadius: '4px',
-                padding: '2rem',
-                maxWidth: '500px',
-                width: '90%',
-                boxShadow: '0 0 20px rgba(0, 255, 0, 0.3)'
-            }}>
-                <h3 style={{ color: '#00ff00', marginBottom: '1rem' }}>
-                    Invite {user.username} to Room
-                </h3>
+        <div className="ui-modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+            <div className="ui-modal" role="dialog" aria-modal="true" aria-labelledby="invite-title">
+                <h2 id="invite-title">Invite {user.username}</h2>
                 {rooms && rooms.length > 0 ? (
-                    <ul style={{ listStyle: 'none', padding: 0, marginBottom: '1rem' }}>
-                        {rooms.map(room => (
-                            <li key={room._id} style={{
-                                padding: '0.8rem',
-                                borderBottom: '1px solid #333',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: '0.5rem'
-                            }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                                    <span>{room.name}</span>
-                                    <button
-                                        className="btn-term-sm"
-                                        onClick={() => {
-                                            const msg = prompt(`Add a message for ${user.username}? (Optional)`);
-                                            onSend(room._id, msg);
-                                        }}
-                                    >
-                                        SEND
-                                    </button>
-                                </div>
-                            </li>
-                        ))}
-                    </ul>
+                    <>
+                        <label className="ui-field">
+                            <span>Message <small>(optional)</small></span>
+                            <input className="ui-input" value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Want to join our team?" />
+                        </label>
+                        <ul className="ui-list">
+                            {rooms.map(room => (
+                                <li key={room._id} className="ui-row">
+                                    <div className="ui-row-main">
+                                        <span className="ui-row-title">{room.name}</span>
+                                        {room.description && <span className="ui-row-sub">{room.description}</span>}
+                                    </div>
+                                    <button className="ui-btn small primary" onClick={() => onSend(room._id, message)}>Invite</button>
+                                </li>
+                            ))}
+                        </ul>
+                    </>
                 ) : (
-                    <p style={{ color: '#999', marginBottom: '1rem' }}>
-                        You don't have any rooms to invite users to. Create one first!
-                    </p>
+                    <p className="ui-muted">You don't have any rooms yet. Create one first, then invite people to it.</p>
                 )}
-                <button
-                    className="btn-term"
-                    onClick={onClose}
-                    style={{ width: '100%' }}
-                >
-                    CLOSE
-                </button>
+                <div className="ui-modal-actions">
+                    <button className="ui-btn ghost" onClick={onClose}>Close</button>
+                </div>
             </div>
         </div>
     );

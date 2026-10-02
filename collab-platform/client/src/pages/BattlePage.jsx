@@ -7,6 +7,7 @@ import AuthContext from '../context/AuthContext';
 import { socket } from '../socket';
 import { emit } from '../battle/useMatch';
 import '../battle/battle.css';
+import { Loading, EmptyState } from '../components/layout/Friendly';
 
 const MAIN_KINDS = ['guessr', 'quiz', 'task', 'debug', 'css'];
 const DIFFS = [['any', 'Any'], ['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard']];
@@ -123,7 +124,7 @@ const BattlePage = () => {
     const practice = async (problemId) => { setError(''); go(await emit('battle:practice', { ...options(), problemId })); };
     const playDaily = async () => { setError(''); go(await emit('battle:practice', { kind: 'guessr', daily: true })); };
 
-    if (!catalog) return <div className="bt-page bt-center"><p className="bt-muted">{error || 'Loading battles…'}</p></div>;
+    if (!catalog) return <div className="bt-page bt-center">{error ? <p className="bt-muted">{error}</p> : <Loading what="Loading battles" />}</div>;
 
     const K = catalog.kinds;
     const stats = me?.modes?.[kind];
@@ -284,7 +285,7 @@ const BattlePage = () => {
 
                 <section className="bt-card bt-history">
                     <h2>Your recent battles</h2>
-                    {!me?.recent?.length && <p className="bt-muted">Nothing yet.</p>}
+                    {!me?.recent?.length && <EmptyState compact title="No battles yet">Your matches show up here. Pick a mode and jump in.</EmptyState>}
                     <ul>
                         {me?.recent?.map(r => {
                             const mine = r.players.find(p => String(p.userId) === String(user?._id));

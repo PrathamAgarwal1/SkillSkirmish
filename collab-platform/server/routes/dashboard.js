@@ -138,7 +138,7 @@ router.get('/activity', auth, async (req, res) => {
                 .limit(limit)
                 .lean(),
             Notification.find({ user: userId })
-                .select('message type createdAt relatedId')
+                .select('message type createdAt date relatedId')
                 .sort({ createdAt: -1 })
                 .limit(limit)
                 .lean(),
@@ -171,7 +171,8 @@ router.get('/activity', auth, async (req, res) => {
                 icon: n.type === 'invite' ? '📨' : n.type === 'join_request' ? '🔑' : '🔔',
                 title: n.message,
                 detail: null,
-                timestamp: n.createdAt
+                // Notifications have no createdAt; the ObjectId carries the creation time
+                timestamp: n.createdAt || n.date || n._id.getTimestamp()
             });
         });
 

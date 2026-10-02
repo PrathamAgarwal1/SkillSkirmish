@@ -159,7 +159,7 @@
 
 .term-input:focus {
     border-color: var(--term-green);
-    box-shadow: 0 0 5px rgba(35, 134, 54, 0.3);
+    box-shadow: 0 0 5px color-mix(in srgb, var(--gh-238636) 30%, transparent);
 }
 
 /* Buttons */
@@ -191,15 +191,15 @@
 
 .btn-term-primary {
     background: var(--term-green);
-    color: #fff;
+    color: var(--gh-ffffff);
     border: none;
     padding: 0.75rem 1.5rem;
     border-radius: var(--radius-sm);
 }
 
 .btn-term-primary:hover {
-    background: #2ea043;
-    box-shadow: 0 0 10px rgba(46, 160, 67, 0.4);
+    background: var(--gh-2ea043);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--gh-2ea043) 40%, transparent);
 }
 
 .btn-term-sm {
@@ -211,7 +211,7 @@
 }
 
 .btn-term-sm:hover {
-    background: rgba(88, 166, 255, 0.1);
+    background: color-mix(in srgb, var(--gh-58a6ff) 10%, transparent);
 }
 
 .btn-term-action {
@@ -227,7 +227,7 @@
 
 .btn-term-action:hover {
     background: var(--term-green);
-    color: #fff;
+    color: var(--gh-ffffff);
 }
 
 
@@ -416,7 +416,7 @@
 
 .project-term-item:hover {
     border-color: var(--term-blue);
-    background: rgba(88, 166, 255, 0.05);
+    background: color-mix(in srgb, var(--gh-58a6ff) 5%, transparent);
 }
 
 .project-term-icon {
@@ -478,7 +478,7 @@
 
 .video-tile {
     position: relative;
-    background: #000;
+    background: var(--gh-000000);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-sm);
     display: flex;
@@ -549,8 +549,8 @@
 
 .polybar-btn.active {
     background: var(--term-green);
-    color: #000;
-    box-shadow: 0 0 10px rgba(46, 160, 67, 0.4);
+    color: var(--gh-000000);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--gh-2ea043) 40%, transparent);
 }
 
 .polybar-btn.danger {
@@ -559,7 +559,7 @@
 
 .polybar-btn.danger:hover {
     background: var(--term-red);
-    color: #fff;
+    color: var(--gh-ffffff);
 }
 
 /* 3. Terminal Chat Log Styles */
@@ -626,7 +626,7 @@
 .analytics-popout-container:hover {
     max-height: 800px; /* enough to show all contents */
     border-color: var(--term-gold);
-    box-shadow: 0 8px 25px rgba(210, 153, 34, 0.15);
+    box-shadow: 0 8px 25px color-mix(in srgb, var(--gh-d29922) 15%, transparent);
 }
 
 .analytics-header-collapsed {
@@ -871,7 +871,7 @@
 }
 
 .provisional-badge {
-    background: rgba(255, 185, 0, 0.2);
+    background: color-mix(in srgb, var(--gh-ffb900) 20%, transparent);
     color: var(--term-gold);
     font-size: 0.6rem;
     padding: 0 4px;
@@ -944,13 +944,13 @@
 }
 
 .pulse-tag {
-    background: rgba(88, 166, 255, 0.1);
+    background: color-mix(in srgb, var(--gh-58a6ff) 10%, transparent);
     color: var(--term-blue);
     font-family: var(--font-mono);
     font-size: 0.65rem;
     padding: 2px 6px;
     border-radius: 3px;
-    border: 1px solid rgba(88, 166, 255, 0.2);
+    border: 1px solid color-mix(in srgb, var(--gh-58a6ff) 20%, transparent);
 }
 
 .pulse-tag small {

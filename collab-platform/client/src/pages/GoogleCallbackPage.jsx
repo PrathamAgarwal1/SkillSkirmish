@@ -46,43 +46,20 @@ const GoogleCallbackPage = () => {
     }, [isAuthenticated, navigate]);
 
     return (
-        <div style={{
-            minHeight: '100%', display: 'flex', alignItems: 'center',
-            justifyContent: 'center', backgroundColor: 'var(--bg-deep)', padding: '2rem'
-        }}>
-            <div className="term-card" style={{ width: '420px', maxWidth: '95%' }}>
-                <div className="term-header">
-                    <div className="window-dots">
-                        <div className="dot dot-red"></div>
-                        <div className="dot dot-yellow"></div>
-                        <div className="dot dot-green"></div>
-                    </div>
-                    <span>google-auth.sh</span>
-                </div>
-                <div className="term-body" style={{ padding: '2rem', textAlign: 'center' }}>
-                    {error ? (
-                        <>
-                            <p style={{ color: 'var(--term-red)', fontFamily: 'var(--font-mono)', fontSize: '0.9rem' }}>
-                                ✗ {error}
-                            </p>
-                            <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '1rem' }}>
-                                Redirecting to login...
-                            </p>
-                        </>
-                    ) : (
-                        <>
-                            <p style={{
-                                color: 'var(--term-green)', fontFamily: 'var(--font-mono)',
-                                fontSize: '0.9rem', marginBottom: '1rem'
-                            }}>
-                                ✓ Google authentication successful
-                            </p>
-                            <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                                Loading your workspace...
-                            </p>
-                        </>
-                    )}
-                </div>
+        <div className="auth-wrap">
+            <div className="ui-card auth-card" style={{ textAlign: 'center' }} role="status">
+                {error ? (
+                    <>
+                        <h1 style={{ fontSize: 20 }}>Google sign-in didn't work</h1>
+                        <p className="auth-error" style={{ marginTop: 12 }}>{error}</p>
+                        <p className="ui-muted">Taking you back to the login page…</p>
+                    </>
+                ) : (
+                    <>
+                        <h1 style={{ fontSize: 20 }}>Signed in with Google</h1>
+                        <p className="ui-muted" style={{ marginTop: 8 }}>Loading your workspace…</p>
+                    </>
+                )}
             </div>
         </div>
     );
