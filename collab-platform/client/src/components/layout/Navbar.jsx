@@ -1,5 +1,6 @@
 // src/components/layout/Navbar.jsx
-import React, { useContext, useState } from 'react';
+import React, { useContext } from 'react';
+import { useAppearance } from '../../appearance/context';
 import { Link, NavLink } from 'react-router-dom';
 import AuthContext from '../../context/AuthContext';
 
@@ -15,18 +16,14 @@ const LINKS = [
 
 const itemClass = ({ isActive }) => `nav-item${isActive ? ' active' : ''}`;
 
-/** Switches between the classic (dark terminal) and cozy (warm, late-night café) themes. */
+/** Quick switch between classic and cozy (keeps the user's other appearance settings). */
 function ThemeSwitch() {
-    const [theme, setTheme] = useState(() => document.documentElement.dataset.theme || 'classic');
-    const next = theme === 'cozy' ? 'classic' : 'cozy';
-    const toggle = () => {
-        document.documentElement.dataset.theme = next;
-        try { localStorage.setItem('ss-theme', next); } catch { /* storage blocked */ }
-        setTheme(next);
-    };
+    const { appearance, save } = useAppearance();
+    const cozy = (appearance?.preset || 'classic') !== 'classic';
+    const toggle = () => save({ ...(appearance || {}), preset: cozy ? 'classic' : 'cozy', colors: {}, palette: {} }).catch(() => {});
     return (
-        <button className="nav-theme" onClick={toggle} aria-label={`Switch to the ${next} theme`} title={`Switch to the ${next} theme`}>
-            {theme === 'cozy' ? '☕' : '🌙'}
+        <button className="nav-theme" onClick={toggle} aria-label={cozy ? 'Switch to the classic theme' : 'Switch to the cozy theme'} title={cozy ? 'Classic theme' : 'Cozy theme'}>
+            {cozy ? '☕' : '🌙'}
         </button>
     );
 }
@@ -53,6 +50,7 @@ const Navbar = () => {
                     </ul>
                     <div className="nav-user">
                         <ThemeSwitch />
+                        <NavLink to="/appearance" className="nav-theme" aria-label="Customize the look" title="Customize the look">🎨</NavLink>
                         <NavLink to="/profile" end className={({ isActive }) => `nav-profile${isActive ? ' active' : ''}`} aria-label="Your profile">
                             <span className="nav-avatar" aria-hidden="true">{(user?.username || '?').slice(0, 1).toUpperCase()}</span>
                             <span className="nav-username">{user?.username || 'Profile'}</span>

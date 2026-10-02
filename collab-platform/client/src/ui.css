@@ -153,9 +153,6 @@ a.ui-row-title:hover { color: var(--term-blue); }
 .ui-log .ui-log-end { flex-shrink: 0; }
 
 /* ── friendly loading & empty states (components/layout/Friendly.jsx) ── */
-.fr-art-cozy { display: none; }
-:root[data-theme='cozy'] .fr-art-cozy { display: block; }
-:root[data-theme='cozy'] .fr-art-classic { display: none; }
 
 .fr-loading { display: flex; align-items: center; gap: 14px; padding: 18px 4px; color: var(--text-muted); }
 .fr-loading.full { min-height: 55vh; justify-content: center; }

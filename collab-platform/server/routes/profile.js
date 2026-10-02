@@ -9,7 +9,7 @@ const { isValidId } = require('../utils/access');
 // Never expose credentials or internal identity-provider data
 const PRIVATE_FIELDS = '-password -auth0Sub -assessmentHistory';
 // What other users may see (no email)
-const PUBLIC_FIELDS = `${PRIVATE_FIELDS} -email -assessmentCooldownExpires`;
+const PUBLIC_FIELDS = `${PRIVATE_FIELDS} -email -assessmentCooldownExpires -appearance`;
 
 const toPublicProfile = (userDoc) => {
     const user = userDoc.toObject ? userDoc.toObject() : { ...userDoc };
@@ -255,6 +255,21 @@ router.put('/', auth, async (req, res) => {
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
+    }
+});
+
+// @route   PUT api/profile/appearance
+// @desc    Save your look and feel (send null to go back to the default)
+// @access  Private
+router.put('/appearance', auth, async (req, res) => {
+    try {
+        const { cleanAppearance } = require('../utils/appearance');
+        const appearance = cleanAppearance(req.body?.appearance);
+        await User.updateOne({ _id: req.user.id }, { $set: { appearance } });
+        res.json({ appearance });
+    } catch (err) {
+        console.error('[profile] appearance save failed:', err.message);
+        res.status(500).json({ msg: 'Could not save your appearance settings' });
     }
 });
 
